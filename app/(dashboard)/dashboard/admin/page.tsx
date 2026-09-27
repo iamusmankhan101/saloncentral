@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle, XCircle, Clock, ImageIcon, ChevronDown, ChevronUp, Shield, Store, Pencil, Save, Ban, Trash2, AlertTriangle, X, ReceiptText, Users as UsersIcon, BadgeCheck, Landmark, Archive, Database, RotateCcw, Lock, LockOpen, Snowflake, LayoutDashboard, Banknote } from "lucide-react";
-import { getCurrentUser } from "@/lib/auth";
+import { CheckCircle, XCircle, Clock, ImageIcon, ChevronDown, ChevronUp, Shield, Store, Pencil, Save, Ban, Trash2, AlertTriangle, X, ReceiptText, Users as UsersIcon, BadgeCheck, Landmark, Archive, Database, RotateCcw, Lock, LockOpen, Snowflake, LayoutDashboard, Banknote, LogOut, RefreshCw } from "lucide-react";
+import { getCurrentUser, signOut } from "@/lib/auth";
 import {
   getPaymentRequests,
   updatePaymentRequest,
@@ -1156,16 +1156,21 @@ function FreezeAccountModal({ row, onClose, onFrozen }: {
   );
 }
 
+const ADMIN_CARD: React.CSSProperties = {
+  background: "#fff", border: "1px solid #ececf4", borderRadius: 16,
+  boxShadow: "0 6px 18px rgba(30,20,10,0.04)", minWidth: 0,
+};
+
 function AdminStatCard({ label, value, sub, icon: Icon, color }: { label: string; value: string; sub: string; icon: React.ElementType; color: string }) {
   return (
-    <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #ebebf0", padding: "18px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 10, fontWeight: 800, color: "#b0b0c8", letterSpacing: "0.08em", textTransform: "uppercase" }}>{label}</div>
-        <div style={{ fontSize: 26, fontWeight: 900, color: "#1a1a2e", marginTop: 4 }}>{value}</div>
-        <div style={{ fontSize: 11, color: "#9898b0", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub}</div>
+    <div style={{ ...ADMIN_CARD, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12 }}>
+      <div style={{ width: 38, height: 38, borderRadius: 12, background: `${color}14`, display: "grid", placeItems: "center", color, flexShrink: 0 }}>
+        <Icon size={17} />
       </div>
-      <div style={{ width: 40, height: 40, borderRadius: 12, background: `${color}14`, display: "flex", alignItems: "center", justifyContent: "center", color, flexShrink: 0 }}>
-        <Icon size={18} />
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 21, fontWeight: 900, color: "#1a1a2e", lineHeight: 1.1, letterSpacing: "-0.03em" }}>{value}</div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "#8b8ba3", marginTop: 2 }}>{label}</div>
+        <div style={{ fontSize: 10.5, color: "#a5a5bb", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub}</div>
       </div>
     </div>
   );
@@ -1173,8 +1178,8 @@ function AdminStatCard({ label, value, sub, icon: Icon, color }: { label: string
 
 function AdminSectionCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #ebebf0", overflow: "hidden" }}>
-      <div style={{ padding: "14px 18px", borderBottom: "1px solid #f4f4f8", fontSize: 12, fontWeight: 800, color: "#1a1a2e" }}>{title}</div>
+    <div style={{ ...ADMIN_CARD, overflow: "hidden" }}>
+      <div style={{ padding: "14px 18px", borderBottom: "1px solid #f0f0f6", fontSize: 13.5, fontWeight: 850, color: "#1a1a2e" }}>{title}</div>
       <div>{children}</div>
     </div>
   );
@@ -1242,7 +1247,7 @@ function AdminDashboardPanel() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {/* Primary stat cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 12 }}>
         <AdminStatCard label="Salon Accounts" value={String(owners.length)} sub={`${withPlan.length} on a paid plan`} icon={Store} color="#0284c7" />
         <AdminStatCard label="Total Accounts" value={String(users.length)} sub={`${managers.length} manager · ${staff.length} staff`} icon={UsersIcon} color="#7C3AED" />
         <AdminStatCard label="Pending Payments" value={String(pendingRequests.length)} sub={pendingValue > 0 ? `≈ ${fmt(pendingValue)} awaiting review` : "Nothing waiting"} icon={Clock} color="#d97706" />
@@ -1261,7 +1266,7 @@ function AdminDashboardPanel() {
         />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
         {/* Plan distribution */}
         <AdminSectionCard title="Plan Distribution">
           {planCounts.map((p) => (
@@ -1916,15 +1921,29 @@ function BackupsPanel() {
   );
 }
 
+type AdminTab = "dashboard" | "requests" | "salons" | "paymentMethods" | "users" | "backups";
+
+const ADMIN_TABS: { key: AdminTab; label: string; title: string; sub: string; Icon: React.ElementType }[] = [
+  { key: "dashboard",      label: "Overview",         title: "Overview",         sub: "Platform-wide view of salons, accounts, payments and backups.", Icon: LayoutDashboard },
+  { key: "requests",       label: "Payment requests", title: "Payment requests", sub: "Review and approve payment requests from salons.",                Icon: Clock },
+  { key: "salons",         label: "Salon accounts",   title: "Salon accounts",   sub: "Manage salon accounts and set custom pricing.",                   Icon: Store },
+  { key: "paymentMethods", label: "Payment methods",  title: "Payment methods",  sub: "The bank accounts shown on salon invoices.",                     Icon: Landmark },
+  { key: "users",          label: "Users",            title: "Users",            sub: "Every login on the platform — owners, managers, staff and admins.", Icon: UsersIcon },
+  { key: "backups",        label: "Backups",          title: "Backups",          sub: "Browse, trigger and restore database backups.",                   Icon: Archive },
+];
+
 export default function AdminPage() {
   const router = useRouter();
   const [requests, setRequests] = useState<PaymentRequest[]>([]);
   const [filter, setFilter] = useState<PaymentStatus | "all">("all");
-  const [tab, setTab] = useState<"dashboard" | "requests" | "salons" | "paymentMethods" | "users" | "backups">(() => {
+  const [tab, setTab] = useState<AdminTab>(() => {
     if (typeof window === "undefined") return "dashboard";
     const t = new URLSearchParams(window.location.search).get("tab");
-    return (t === "requests" || t === "salons" || t === "paymentMethods" || t === "users" || t === "backups") ? t : "dashboard";
+    return ADMIN_TABS.some((item) => item.key === t) ? (t as AdminTab) : "dashboard";
   });
+  // Bumped by Refresh — each panel loads its own data on mount, so remounting
+  // it is the simplest way to reload whichever tab is open.
+  const [refreshKey, setRefreshKey] = useState(0);
   const [isAdmin, setIsAdmin] = useState(false);
   const [checking, setChecking] = useState(true);
 
@@ -1945,78 +1964,116 @@ export default function AdminPage() {
     setRequests(getPaymentRequests());
   }
 
-  function goTab(next: "dashboard" | "requests" | "salons" | "paymentMethods" | "users" | "backups") {
+  function goTab(next: AdminTab) {
     setTab(next);
     window.history.replaceState(null, "", `?tab=${next}`);
+  }
+
+  async function handleSignOut() {
+    await signOut();
+    window.location.href = "/sign-in";
   }
 
   if (checking || !isAdmin) return null;
 
   const filtered = filter === "all" ? requests : requests.filter((r) => r.status === filter);
   const counts = { all: requests.length, pending: requests.filter((r) => r.status === "pending").length, approved: requests.filter((r) => r.status === "approved").length, rejected: requests.filter((r) => r.status === "rejected").length };
+  const current = ADMIN_TABS.find((item) => item.key === tab) ?? ADMIN_TABS[0];
 
   return (
-    <div className="dash-page dashboard-polish" style={{ background: "#f4f5f7", minHeight: "100vh", padding: "28px 32px", display: "flex", flexDirection: "column", gap: 24 }}>
+    <div style={{ minHeight: "100vh", background: "#f4f5f7" }}>
+      <style>{`
+        .ac-btn {
+          display: inline-flex; align-items: center; gap: 7px; border-radius: 10px;
+          padding: 9px 13px; font-size: 12.5px; font-weight: 700; cursor: pointer;
+          border: 1px solid #e4e4ef; background: #fff; color: #43435f; white-space: nowrap;
+          font-family: inherit;
+        }
+        .ac-btn:hover { background: #fafaff; border-color: #d6d6e6; }
+      `}</style>
 
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <div style={{ width: 40, height: 40, borderRadius: 12, background: "linear-gradient(135deg,#5B21B6,#9333EA)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <Shield size={20} color="#fff" />
+      {/* ── Top bar ──────────────────────────────────────────────────────── */}
+      <header style={{
+        background: "#0d0d14", padding: "12px 20px", display: "flex", alignItems: "center",
+        gap: 14, flexWrap: "wrap", position: "sticky", top: 0, zIndex: 60,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+          <img src="/salon-central-favicon.png" alt="" style={{ width: 26, height: 26, borderRadius: 7, background: "#fff" }} />
+          <span style={{ fontSize: 14, fontWeight: 850, color: "#fff", letterSpacing: "-0.02em" }}>Salon Central</span>
         </div>
-        <div>
-          <div style={{ fontWeight: 800, fontSize: 22, color: "#1a1a2e" }}>Admin Panel</div>
-          <div style={{ fontSize: 13, color: "#9898b0", marginTop: 1 }}>
-            {tab === "dashboard" ? "Platform-wide overview of salons, accounts, payments and backups"
-              : tab === "requests" ? "Review and approve payment requests"
-              : tab === "salons" ? "Manage salon accounts and set custom pricing"
-              : tab === "paymentMethods" ? "Manage the bank accounts shown on salon invoices"
-              : tab === "backups" ? "Browse, trigger, and restore database backups"
-              : "Every login account on the platform"}
+        <div style={{
+          display: "flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 20,
+          background: "rgba(124,58,237,0.16)", border: "1px solid rgba(167,139,250,0.35)",
+        }}>
+          <Shield size={12} color="#c4b5fd" />
+          <span style={{ fontSize: 10.5, fontWeight: 800, color: "#c4b5fd", letterSpacing: "0.07em" }}>ADMIN CONSOLE</span>
+        </div>
+
+        <div style={{ flex: 1 }} />
+
+        <button type="button" onClick={handleSignOut} className="ac-btn" style={{
+          background: "transparent", border: "1px solid #26263a", color: "#fca5a5",
+        }}>
+          <LogOut size={13} /> Sign out
+        </button>
+      </header>
+
+      <div style={{ maxWidth: 1400, margin: "0 auto", padding: "20px 16px 80px" }}>
+        {/* ── Heading ────────────────────────────────────────────────────── */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap", marginBottom: 16 }}>
+          <div>
+            <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900, color: "#1a1a2e", letterSpacing: "-0.04em" }}>
+              {current.title}
+            </h1>
+            <div style={{ fontSize: 12, color: "#9898b0", fontWeight: 600, marginTop: 4 }}>
+              {current.sub}
+            </div>
           </div>
+          <button type="button" className="ac-btn" onClick={() => { refresh(); setRefreshKey((n) => n + 1); }}>
+            <RefreshCw size={14} /> Refresh
+          </button>
         </div>
-      </div>
 
-      {/* Tab switcher */}
-      <div style={{ display: "flex", gap: 8 }}>
-        <button onClick={() => goTab("dashboard")}
-          style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 16px", borderRadius: 10, border: `2px solid ${tab === "dashboard" ? "#7C3AED" : "#ebebf0"}`, background: tab === "dashboard" ? "#f5f3ff" : "#fff", fontSize: 13, fontWeight: 700, color: tab === "dashboard" ? "#7C3AED" : "#6b6b8a", cursor: "pointer" }}>
-          <LayoutDashboard size={14} /> Dashboard
-        </button>
-        <button onClick={() => goTab("requests")}
-          style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 16px", borderRadius: 10, border: `2px solid ${tab === "requests" ? "#7C3AED" : "#ebebf0"}`, background: tab === "requests" ? "#f5f3ff" : "#fff", fontSize: 13, fontWeight: 700, color: tab === "requests" ? "#7C3AED" : "#6b6b8a", cursor: "pointer" }}>
-          <Clock size={14} /> Payment Requests
-        </button>
-        <button onClick={() => goTab("salons")}
-          style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 16px", borderRadius: 10, border: `2px solid ${tab === "salons" ? "#7C3AED" : "#ebebf0"}`, background: tab === "salons" ? "#f5f3ff" : "#fff", fontSize: 13, fontWeight: 700, color: tab === "salons" ? "#7C3AED" : "#6b6b8a", cursor: "pointer" }}>
-          <Store size={14} /> Salon Accounts
-        </button>
-        <button onClick={() => goTab("paymentMethods")}
-          style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 16px", borderRadius: 10, border: `2px solid ${tab === "paymentMethods" ? "#7C3AED" : "#ebebf0"}`, background: tab === "paymentMethods" ? "#f5f3ff" : "#fff", fontSize: 13, fontWeight: 700, color: tab === "paymentMethods" ? "#7C3AED" : "#6b6b8a", cursor: "pointer" }}>
-          <Landmark size={14} /> Payment Methods
-        </button>
-        <button onClick={() => goTab("users")}
-          style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 16px", borderRadius: 10, border: `2px solid ${tab === "users" ? "#7C3AED" : "#ebebf0"}`, background: tab === "users" ? "#f5f3ff" : "#fff", fontSize: 13, fontWeight: 700, color: tab === "users" ? "#7C3AED" : "#6b6b8a", cursor: "pointer" }}>
-          <UsersIcon size={14} /> Users
-        </button>
-        <button onClick={() => goTab("backups")}
-          style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 16px", borderRadius: 10, border: `2px solid ${tab === "backups" ? "#7C3AED" : "#ebebf0"}`, background: tab === "backups" ? "#f5f3ff" : "#fff", fontSize: 13, fontWeight: 700, color: tab === "backups" ? "#7C3AED" : "#6b6b8a", cursor: "pointer" }}>
-          <Archive size={14} /> Backups
-        </button>
-      </div>
+        {/* ── Tabs ───────────────────────────────────────────────────────── */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 16, borderBottom: "1px solid #e8e8f2", overflowX: "auto", scrollbarWidth: "none" }}>
+          {ADMIN_TABS.map(({ key, label, Icon }) => {
+            const count = key === "requests" ? counts.pending : 0;
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => goTab(key)}
+                style={{
+                  border: "none", background: "transparent", cursor: "pointer", padding: "9px 13px", flexShrink: 0, whiteSpace: "nowrap",
+                  display: "flex", alignItems: "center", gap: 7, fontSize: 13, fontFamily: "inherit",
+                  fontWeight: 800, color: tab === key ? "#6D28D9" : "#8b8ba3",
+                  borderBottom: tab === key ? "2px solid #7C3AED" : "2px solid transparent",
+                  marginBottom: -1,
+                }}
+              >
+                <Icon size={14} /> {label}
+                {count > 0 && (
+                  <span title={`${count} awaiting review`} style={{ fontSize: 10.5, fontWeight: 900, color: "#fff", background: "#b45309", borderRadius: 20, padding: "1px 7px" }}>{count}</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
 
+        <div key={refreshKey} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {tab === "dashboard" ? (
         <AdminDashboardPanel />
       ) : tab === "requests" ? (
         <>
           {/* Stats */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
             {(["all", "pending", "approved", "rejected"] as const).map((s) => {
               const meta = s === "all" ? { label: "Total", color: "#7C3AED", bg: "#EDE9FE" } : { label: STATUS_META[s].label, color: STATUS_META[s].color, bg: STATUS_META[s].bg };
               return (
                 <button key={s} onClick={() => setFilter(s)}
-                  style={{ background: filter === s ? meta.bg : "#fff", border: `2px solid ${filter === s ? meta.color : "#ebebf0"}`, borderRadius: 14, padding: "16px 18px", textAlign: "left", cursor: "pointer" }}>
-                  <div style={{ fontSize: 28, fontWeight: 800, color: meta.color }}>{counts[s]}</div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: filter === s ? meta.color : "#9898b0", marginTop: 2 }}>{meta.label}</div>
+                  style={{ ...ADMIN_CARD, background: filter === s ? meta.bg : "#fff", border: `1px solid ${filter === s ? meta.color : "#ececf4"}`, padding: "14px 16px", textAlign: "left", cursor: "pointer", fontFamily: "inherit" }}>
+                  <div style={{ fontSize: 21, fontWeight: 900, color: meta.color, lineHeight: 1.1, letterSpacing: "-0.03em" }}>{counts[s]}</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: filter === s ? meta.color : "#8b8ba3", marginTop: 2 }}>{meta.label}</div>
                 </button>
               );
             })}
@@ -2025,9 +2082,9 @@ export default function AdminPage() {
           {/* Requests */}
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {filtered.length === 0 ? (
-              <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #ebebf0", padding: "48px", textAlign: "center" }}>
-                <Clock size={32} color="#d1d5db" style={{ margin: "0 auto 12px" }} />
-                <div style={{ fontSize: 14, fontWeight: 700, color: "#9898b0" }}>No {filter === "all" ? "" : filter} requests</div>
+              <div style={{ ...ADMIN_CARD, padding: "56px 20px", textAlign: "center", color: "#9898b0" }}>
+                <Clock size={26} style={{ opacity: 0.4 }} />
+                <div style={{ fontSize: 13.5, fontWeight: 750, color: "#6b6b8a", marginTop: 10 }}>No {filter === "all" ? "" : filter} requests</div>
               </div>
             ) : (
               filtered.map((req) => <RequestCard key={req.id} req={req} onUpdate={refresh} />)
@@ -2043,6 +2100,8 @@ export default function AdminPage() {
       ) : (
         <UsersPanel />
       )}
+        </div>
+      </div>
     </div>
   );
 }

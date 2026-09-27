@@ -955,6 +955,12 @@ export default function DashboardShell({ children }: { children: React.ReactNode
     );
   }
 
+  // The platform admin console is full-screen with its own top bar: it manages
+  // every salon rather than one, so none of the salon chrome applies to it.
+  if (isAdmin && pathname.startsWith("/dashboard/admin")) {
+    return <>{children}</>;
+  }
+
   // Billing page is always accessible even when suspended
   const isBillingPage = pathname === "/dashboard/billing";
   // POS has its own internal Customer/Catalog/Cart tab bar on mobile — showing the
