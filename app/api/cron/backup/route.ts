@@ -15,6 +15,9 @@
 import { NextRequest } from "next/server";
 import { pruneOldBackups, snapshotAllSalonBundles, snapshotFullDatabase } from "@/lib/data-backup";
 
+// The first prune after a long gap can have thousands of expired rows to clear.
+export const maxDuration = 300;
+
 function authorized(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) return false;
@@ -27,15 +30,18 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    // Prune first and on its own: when it ran after the snapshot, a failing
+    // snapshot also stopped expired backups from ever being cleared, so the
+    // backup tables kept growing — which is what made the snapshot fail.
+    const pruned = await pruneOldBackups();
     const [salonBundles, database] = await Promise.all([
       snapshotAllSalonBundles("scheduled-snapshot"),
       snapshotFullDatabase("scheduled-snapshot"),
     ]);
-    const pruned = await pruneOldBackups();
     console.log("[backup] scheduled backup complete:", { salonBundles, database, pruned });
     return Response.json({ ok: true, salonBundles, database, pruned });
   } catch (err) {
     console.error("[backup] scheduled snapshot error:", err);
-    return Response.json({ ok: false, error: "Backup failed." }, { status: 500 });
+    return Response.json({ ok: false, error: err instanceof Error ? err.message : "Backup failed." }, { status: 500 });
   }
 }

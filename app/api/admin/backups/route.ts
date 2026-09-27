@@ -6,11 +6,15 @@ import {
   ensureDatabaseBackupTable,
   ensureSalonDataBackupTable,
   listSalonBackupBundles,
+  pruneOldBackups,
   restoreSalonBackupBundle,
   restoreSalonDataBackup,
   snapshotAllSalonBundles,
   snapshotFullDatabase,
 } from "@/lib/data-backup";
+
+// The first prune after a long gap can have thousands of expired rows to clear.
+export const maxDuration = 300;
 
 export async function GET(req: NextRequest) {
   if (!(await requireAdmin(req))) {
@@ -110,6 +114,8 @@ export async function POST(req: NextRequest) {
 
   try {
     if (body.action === "snapshot-all") {
+      // Same order as the daily cron — clear expired backups before taking new ones.
+      await pruneOldBackups();
       const [salonBundles, database] = await Promise.all([
         snapshotAllSalonBundles("manual-snapshot"),
         snapshotFullDatabase("manual-snapshot"),
@@ -146,6 +152,7 @@ export async function POST(req: NextRequest) {
     return Response.json({ ok: false, error: "Unsupported action." }, { status: 400 });
   } catch (err) {
     console.error("[admin/backups] POST error:", err);
-    return Response.json({ ok: false, error: "Backup operation failed." }, { status: 500 });
+    // Admin-only, so the real reason is shown instead of a generic message.
+    return Response.json({ ok: false, error: `Backup operation failed: ${err instanceof Error ? err.message : String(err)}` }, { status: 500 });
   }
 }

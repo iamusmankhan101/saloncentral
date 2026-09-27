@@ -186,16 +186,24 @@ export async function snapshotAllSalonData(reason: BackupReason = "manual-snapsh
   return { backupsCreated };
 }
 
+/**
+ * The backup tables themselves are left out of the full archive. Including them
+ * made every archive carry every earlier backup — salon_data_backups alone
+ * reached gigabytes — until the archive grew too large to write and every
+ * backup run (manual and daily) failed.
+ */
+const ARCHIVE_EXCLUDED_TABLES = ["database_backups", "salon_data_backups", "salon_backup_bundles"];
+
 export async function snapshotFullDatabase(reason: BackupReason = "manual-snapshot"): Promise<DatabaseBackupArchive> {
   await ensureDatabaseBackupTable();
-  const tables = await db.execute(`
+  const tables = await db.execute({ sql: `
     SELECT name, sql
     FROM sqlite_master
     WHERE type = 'table'
       AND name NOT LIKE 'sqlite_%'
-      AND name NOT IN ('database_backups')
+      AND name NOT IN (${ARCHIVE_EXCLUDED_TABLES.map(() => "?").join(", ")})
     ORDER BY name ASC
-  `);
+  `, args: ARCHIVE_EXCLUDED_TABLES });
 
   const archiveTables: Array<{ name: string; schema: string | null; rows: unknown[] }> = [];
   let totalRows = 0;

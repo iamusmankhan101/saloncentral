@@ -1751,6 +1751,7 @@ function BackupsPanel() {
   const [userFilter, setUserFilter] = useState("all");
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageIsError, setMessageIsError] = useState(false);
   const [restoreTarget, setRestoreTarget] = useState<SalonBundleRow | null>(null);
 
   function loadBundles(userId: string) {
@@ -1776,6 +1777,7 @@ function BackupsPanel() {
   async function runManualBackup() {
     setRunning(true);
     setMessage("");
+    setMessageIsError(false);
     try {
       const res = await fetch("/api/admin/backups", {
         method: "POST",
@@ -1791,6 +1793,7 @@ function BackupsPanel() {
       ]);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Backup failed.");
+      setMessageIsError(true);
     } finally {
       setRunning(false);
     }
@@ -1818,7 +1821,7 @@ function BackupsPanel() {
           bundle={restoreTarget}
           userLabel={userLabel(restoreTarget.userId)}
           onClose={() => setRestoreTarget(null)}
-          onRestored={() => { setRestoreTarget(null); setMessage("Restored successfully."); loadBundles(userFilter); }}
+          onRestored={() => { setRestoreTarget(null); setMessage("Restored successfully."); setMessageIsError(false); loadBundles(userFilter); }}
         />
       )}
 
@@ -1834,7 +1837,7 @@ function BackupsPanel() {
       </div>
 
       {message && (
-        <div style={{ padding: "10px 16px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, fontSize: 12, color: "#059669", fontWeight: 600 }}>
+        <div style={{ padding: "10px 16px", background: messageIsError ? "#fef2f2" : "#f0fdf4", border: `1px solid ${messageIsError ? "#fecaca" : "#bbf7d0"}`, borderRadius: 10, fontSize: 12, color: messageIsError ? "#dc2626" : "#059669", fontWeight: 600 }}>
           {message}
         </div>
       )}
