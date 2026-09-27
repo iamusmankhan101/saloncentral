@@ -86,15 +86,24 @@ function CopyField({ label, value }: { label: string; value: string }) {
 // ─── Plan card ────────────────────────────────────────────────────────────────
 
 function PlanCard({
-  plan, isCurrent, isPopular, hidePricing, onDowngrade,
+  plan, isCurrent, isPopular, hidePricing, onDowngrade, salonPrice, salonTermMonths = 1,
 }: {
   plan: PlanConfig;
   isCurrent: boolean;
   isPopular: boolean;
   hidePricing?: boolean;
   onDowngrade: () => void;
+  /**
+   * What this salon actually pays for the plan (its billing record's term
+   * price, which an admin can set per salon). Only passed for the current plan —
+   * the other cards show the standard list price.
+   */
+  salonPrice?: number | null;
+  salonTermMonths?: number;
 }) {
   const Icon = PLAN_ICONS[plan.id];
+  const shownPrice = salonPrice && salonPrice > 0 ? salonPrice : plan.price;
+  const priceSuffix = salonPrice && salonPrice > 0 && salonTermMonths > 1 ? `/ ${termLabel(salonTermMonths)}` : "/ month";
 
   return (
     <div style={{
@@ -142,8 +151,8 @@ function PlanCard({
               ? <span style={{ fontSize: 24, fontWeight: 900, color: "#fff" }}>Contact Sales</span>
             : <>
                 <span style={{ fontSize: 14, fontWeight: 800, color: "rgba(255,255,255,0.82)" }}>PKR</span>
-                <span style={{ fontSize: 34, fontWeight: 900, color: "#fff", letterSpacing: "-1px" }}>{plan.price.toLocaleString("en-PK")}</span>
-                <span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.72)" }}>/ month</span>
+                <span style={{ fontSize: 34, fontWeight: 900, color: "#fff", letterSpacing: "-1px" }}>{shownPrice.toLocaleString("en-PK")}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.72)" }}>{priceSuffix}</span>
               </>
           }
         </div>
@@ -535,6 +544,8 @@ export default function BillingPage() {
                 isPopular={planId === "pro"}
                 hidePricing={hidePricing}
                 onDowngrade={handleDowngrade}
+                salonPrice={planId === activePlanId ? actualPrice : null}
+                salonTermMonths={billingTermMonths}
               />
             </div>
           ))}
@@ -668,6 +679,8 @@ export default function BillingPage() {
                 isPopular={planId === "pro"}
                 hidePricing={hidePricing}
                 onDowngrade={handleDowngrade}
+                salonPrice={planId === activePlanId ? actualPrice : null}
+                salonTermMonths={billingTermMonths}
               />
             ))}
           </div>
