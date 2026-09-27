@@ -2,8 +2,9 @@
  * POST /api/billing/set-start-date
  * Admin-only: changes the date a salon started (shown as "Started" in the Admin
  * panel's Users tab), e.g. to correct an account created ahead of go-live.
- * Before the salon's first invoice this also moves its billing schedule; after
- * that, existing invoices keep their dates (see updateTrialStart).
+ * Until the salon has paid an invoice this also moves its billing schedule and
+ * re-dates the open invoice; after that, invoices keep their dates (see
+ * updateTrialStart).
  */
 
 import { NextRequest } from "next/server";

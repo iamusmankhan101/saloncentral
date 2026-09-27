@@ -470,22 +470,56 @@ async function setBillingAnchor(userId: string, anchor: string): Promise<void> {
 }
 
 /**
- * Admin override: change the date a salon started. Before its first invoice the
- * billing schedule (demo end, first due date) follows the new date, so the
- * saved anchor is cleared to be recomputed from it. Once invoices exist the
- * anchor stays put — moving it would start a second, overlapping invoice cycle
- * — and the admin re-dates the open invoice with its own due-date control.
+ * Admin override: change the date a salon started. Until the salon has paid an
+ * invoice, the billing schedule follows the new date: the anchor is recomputed,
+ * the open invoice is re-dated onto the new cycle (keeping an admin-set due
+ * date and its "issued" email stamp), and unpaid invoices for cycles that no
+ * longer exist are dropped. Once anything is paid the schedule stays put —
+ * moving it would start a second, overlapping cycle — and the admin re-dates
+ * the open invoice with its own due-date control.
  */
 export async function updateTrialStart(userId: string, startDate: string): Promise<{ scheduleMoved: boolean }> {
-  const invoices = await db.execute({ sql: "SELECT 1 FROM billing_invoices WHERE user_id = ? LIMIT 1", args: [userId] });
-  const scheduleMoved = invoices.rows.length === 0;
-  await db.execute({
-    sql: scheduleMoved
-      ? "UPDATE billing_users SET trial_start = ?, billing_anchor = NULL WHERE id = ?"
-      : "UPDATE billing_users SET trial_start = ? WHERE id = ?",
-    args: [startDate, userId],
+  const paid = await db.execute({
+    sql: "SELECT 1 FROM billing_invoices WHERE user_id = ? AND status = 'paid' LIMIT 1",
+    args: [userId],
   });
-  return { scheduleMoved };
+  const user = await getBillingUser(userId);
+  if (paid.rows.length || !user) {
+    await db.execute({ sql: "UPDATE billing_users SET trial_start = ? WHERE id = ?", args: [startDate, userId] });
+    return { scheduleMoved: false };
+  }
+
+  const anchor = computeBillingAnchor(startDate, user.isDemoSignup);
+  const cycleDays = billingCycleDays(user.billingTermMonths);
+  const periodStart = currentPeriodStart(anchor, undefined, cycleDays);
+
+  // Nothing is paid, so every invoice here is unpaid or overdue.
+  const invoices = await db.execute({
+    sql: "SELECT id, due_date, due_date_overridden FROM billing_invoices WHERE user_id = ? ORDER BY period_start DESC",
+    args: [userId],
+  });
+  const [latest, ...older] = invoices.rows;
+
+  const statements: { sql: string; args: (string | number | null)[] }[] = [
+    { sql: "UPDATE billing_users SET trial_start = ?, billing_anchor = ? WHERE id = ?", args: [startDate, anchor, userId] },
+  ];
+  // Every unpaid invoice except the latest belongs to a cycle the new start
+  // date removes; the latest is dropped too if the salon is back in its demo.
+  for (const inv of periodStart ? older : [latest, ...older].filter(Boolean)) {
+    statements.push({ sql: "DELETE FROM billing_invoices WHERE id = ?", args: [inv.id as string] });
+  }
+  if (periodStart && latest) {
+    const dueDate = latest.due_date_overridden ? (latest.due_date as string) : addDays(periodStart, cycleDays);
+    statements.push({
+      sql: `UPDATE billing_invoices
+              SET id = ?, number = ?, period_start = ?, issued_date = ?, due_date = ?,
+                  status = CASE WHEN ? < date('now') THEN 'overdue' ELSE 'unpaid' END
+            WHERE id = ?`,
+      args: [invoiceId(userId, periodStart), invoiceNumber(periodStart), periodStart, periodStart, dueDate, dueDate, latest.id as string],
+    });
+  }
+  await db.batch(statements, "write");
+  return { scheduleMoved: true };
 }
 
 // ─── Billing Invoices — 30-day cycles ─────────────────────────────────────────
