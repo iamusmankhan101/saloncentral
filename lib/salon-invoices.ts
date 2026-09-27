@@ -143,6 +143,21 @@ export function paymentMethodLabel(inv: Pick<SalonInvoice, "paymentMethod" | "ca
   return inv.paymentMethod === "card" && inv.cardTerminal ? `${base} · ${inv.cardTerminal}` : base;
 }
 
+/**
+ * The time the invoice was created, e.g. "3:45 pm", in Pakistan time — fixed
+ * rather than the viewer's zone because the WhatsApp PDF is built on the server,
+ * which runs in UTC. Empty when the creation moment isn't on the invoice's own
+ * date (a manual invoice dated after the fact), where the time it was typed in
+ * would be misleading.
+ */
+export function invoiceTimeLabel(inv: Pick<SalonInvoice, "date" | "createdAt">): string {
+  const created = new Date(inv.createdAt);
+  if (!inv.createdAt || Number.isNaN(created.getTime())) return "";
+  const createdDay = created.toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" }); // YYYY-MM-DD
+  if (createdDay !== inv.date) return "";
+  return created.toLocaleTimeString("en-PK", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Karachi" });
+}
+
 /** Shown on any invoice carrying an advance, on screen and on the PDF. */
 export const ADVANCE_NON_REFUNDABLE_NOTE = "Advance payment is non-refundable.";
 

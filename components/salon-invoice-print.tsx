@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { X, Printer, CheckCircle, Pencil, MessageSquare } from "lucide-react";
-import { ADVANCE_NON_REFUNDABLE_NOTE, PAYMENT_NON_REFUNDABLE_NOTE, balanceDue, advancePercent, invoiceItemsByPerson, type SalonInvoice } from "@/lib/salon-invoices";
+import { ADVANCE_NON_REFUNDABLE_NOTE, PAYMENT_NON_REFUNDABLE_NOTE, balanceDue, advancePercent, invoiceItemsByPerson, invoiceTimeLabel, type SalonInvoice } from "@/lib/salon-invoices";
 import { settingsStore } from "@/lib/settings-store";
 import SalonCentralWordmark from "@/components/salon-central-wordmark";
 import { fmtCurrency as fmt } from "@/lib/format";
@@ -480,7 +480,7 @@ export default function SalonInvoicePrint({
                     <tbody>
                       {[
                         ["Invoice No:", invoice.number],
-                        ["Issue Date:", fmtDate(invoice.date)],
+                        ["Issue Date:", [fmtDate(invoice.date), invoiceTimeLabel(invoice)].filter(Boolean).join(", ")],
                         ...(invoice.staffName ? [["Stylist:", invoice.staffName]] : []),
                         ["Payment:", METHOD_LABELS[invoice.paymentMethod ?? ""] ?? "—"],
                         ["Status:", isPaid ? "PAID" : isAdvance ? "ADVANCE PAID" : "UNPAID"],

@@ -143,7 +143,7 @@ function buildReceipt(data: ReceiptData): Buffer {
   // ── Invoice meta ──────────────────────────────────────────────────────────
   push(CMD.alignLeft);
   push(CMD.heavyOn, text(`Invoice: ${data.invoice.number}`), CMD.heavyOff);
-  push(text(`Date   : ${data.invoice.date}`));
+  push(text(`Date   : ${data.invoice.date}${receiptTime(data.invoice) ? `  ${receiptTime(data.invoice)}` : ""}`));
   push(text(`Client : ${data.invoice.clientName}`));
   if (data.invoice.clientPhone) push(text(`Phone  : ${data.invoice.clientPhone}`));
   if (data.invoice.staffName)   push(text(`Staff  : ${data.invoice.staffName}`));
@@ -269,6 +269,18 @@ function sendToprinter(ip: string, port: number, data: Buffer): Promise<void> {
   });
 }
 
+/**
+ * Mirrors invoiceTimeLabel() in lib/salon-invoices.ts (not imported: that module
+ * is browser-side storage code). Pakistan time, and only when the invoice was
+ * created on its own date.
+ */
+function receiptTime(inv: { date: string; createdAt?: string }): string {
+  const created = new Date(inv.createdAt ?? "");
+  if (!inv.createdAt || Number.isNaN(created.getTime())) return "";
+  if (created.toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" }) !== inv.date) return "";
+  return created.toLocaleTimeString("en-PK", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Karachi" });
+}
+
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 interface ReceiptData {
@@ -286,6 +298,8 @@ interface ReceiptData {
   invoice: {
     number: string;
     date: string;
+    /** ISO moment the invoice was created — its time is printed beside the date. */
+    createdAt?: string;
     clientName: string;
     clientPhone: string;
     staffName: string;

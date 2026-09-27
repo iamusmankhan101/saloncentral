@@ -1,5 +1,5 @@
 import { Document, Page, StyleSheet, Text, View, Image, renderToBuffer } from "@react-pdf/renderer";
-import { ADVANCE_NON_REFUNDABLE_NOTE, PAYMENT_NON_REFUNDABLE_NOTE, balanceDue, advancePercent, invoiceItemsByPerson, type SalonInvoice } from "@/lib/salon-invoices";
+import { ADVANCE_NON_REFUNDABLE_NOTE, PAYMENT_NON_REFUNDABLE_NOTE, balanceDue, advancePercent, invoiceItemsByPerson, invoiceTimeLabel, type SalonInvoice } from "@/lib/salon-invoices";
 
 const METHOD_LABELS: Record<string, string> = {
   cash: "Cash", jazzcash: "JazzCash", easypaisa: "EasyPaisa",
@@ -110,7 +110,7 @@ function InvoiceDocument({ invoice, salon }: {
             </View>
             <View style={styles.metaRow}>
               <Text style={styles.metaRowLabel}>Issue Date:</Text>
-              <Text style={styles.metaRowValue}>{fmtDate(invoice.date)}</Text>
+              <Text style={styles.metaRowValue}>{[fmtDate(invoice.date), invoiceTimeLabel(invoice)].filter(Boolean).join(", ")}</Text>
             </View>
             {!!invoice.staffName && (
               <View style={styles.metaRow}>
