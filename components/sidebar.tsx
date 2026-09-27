@@ -8,7 +8,7 @@ import {
   UserCog, BarChart3, Package, Globe, Sparkles, CreditCard, Scissors,
   CircleUserRound, LogOut, Shield, Wand2, ReceiptText, ShoppingCart,
   X, Gift, Banknote, ChevronRight, ChevronDown, MapPin, Check, Wallet, Star,
-  ClipboardCheck, Store, Landmark, Archive, Smartphone,
+  ClipboardCheck, Store, Landmark, Archive, Smartphone, FileText,
 } from "lucide-react";
 import { AuthUser, getCurrentUser, signOut } from "@/lib/auth";
 import { SETTINGS_CHANGED_EVENT, settingsStore, reloadSettings } from "@/lib/settings-store";
@@ -73,6 +73,7 @@ const ADMIN_NAV: { tab: string; icon: React.ElementType; label: string }[] = [
   { tab: "requests",      icon: Shield,     label: "Payment Requests" },
   { tab: "salons",        icon: Store,      label: "Salon Accounts" },
   { tab: "paymentMethods", icon: Landmark,  label: "Payment Methods" },
+  { tab: "invoiceDetails", icon: FileText,  label: "Invoice Details" },
   { tab: "users",         icon: Users,      label: "Users" },
   { tab: "backups",       icon: Archive,    label: "Backups" },
 ];

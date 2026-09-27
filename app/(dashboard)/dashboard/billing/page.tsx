@@ -16,7 +16,7 @@ import {
   PLAN_CONFIGS, ORDERED_PLANS, getCurrentPlanId,
   type PlanId, type PlanConfig,
 } from "@/lib/plan-limits";
-import { DEFAULT_BANK_DETAILS } from "@/lib/billing-constants";
+import { DEFAULT_BANK_DETAILS, DEFAULT_BILLED_FROM, type BilledFrom } from "@/lib/billing-constants";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -218,6 +218,7 @@ export default function BillingPage() {
   const [isDemoSignup, setIsDemoSignup] = useState(false);
   const [planLoaded,   setPlanLoaded]  = useState(false);
   const [bankDetails,  setBankDetails] = useState(DEFAULT_BANK_DETAILS);
+  const [billedFrom,   setBilledFrom]  = useState<BilledFrom>(DEFAULT_BILLED_FROM);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -240,6 +241,7 @@ export default function BillingPage() {
           if (data.bankTitle && data.bankAccountNumber && data.bankIban) {
             setBankDetails({ bankName: data.bankName ?? "", title: data.bankTitle, accountNumber: data.bankAccountNumber, iban: data.bankIban });
           }
+          if (data.billedFrom) setBilledFrom(data.billedFrom);
 
           // Also update localStorage for backward compatibility
           if (planId !== "free") {
@@ -355,7 +357,7 @@ export default function BillingPage() {
     <div className="dashboard-polish" style={{ background: "#f4f5f7", minHeight: "100vh" }}>
 
       {/* Shared overlays */}
-      {viewInvoice && <InvoiceViewer invoice={viewInvoice} onClose={() => setViewInvoice(null)} bankDetails={bankDetails} />}
+      {viewInvoice && <InvoiceViewer invoice={viewInvoice} onClose={() => setViewInvoice(null)} bankDetails={bankDetails} billedFrom={billedFrom} />}
 
       {/* ── Payment modal (bottom-sheet on mobile) ── */}
       {showModal && upgradePlan && (

@@ -4,7 +4,7 @@
  */
 
 import { NextRequest } from "next/server";
-import { DEFAULT_BANK_DETAILS, getBillingUser, resolveBankDetailsForUser } from "@/lib/billing-db";
+import { DEFAULT_BANK_DETAILS, getBilledFrom, getBillingUser, resolveBankDetailsForUser } from "@/lib/billing-db";
 import { resolveActor } from "@/lib/api-auth";
 
 export async function GET(req: NextRequest) {
@@ -13,6 +13,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const billingUser = await getBillingUser(actor.userId);
+    const billedFrom = await getBilledFrom();
 
     if (!billingUser) {
       // User not found in billing DB - they're on free plan
@@ -28,6 +29,7 @@ export async function GET(req: NextRequest) {
         bankTitle: DEFAULT_BANK_DETAILS.title,
         bankAccountNumber: DEFAULT_BANK_DETAILS.accountNumber,
         bankIban: DEFAULT_BANK_DETAILS.iban,
+        billedFrom,
       });
     }
 
@@ -49,6 +51,7 @@ export async function GET(req: NextRequest) {
       bankTitle: bankDetails.title,
       bankAccountNumber: bankDetails.accountNumber,
       bankIban: bankDetails.iban,
+      billedFrom,
     });
   } catch (err) {
     console.error("[billing/user] Error fetching billing user:", err);

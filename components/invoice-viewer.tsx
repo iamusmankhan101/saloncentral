@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { X, Printer } from "lucide-react";
 import SalonCentralWordmark from "@/components/salon-central-wordmark";
 import type { Invoice } from "@/lib/invoices";
-import { DEFAULT_BANK_DETAILS } from "@/lib/billing-constants";
+import { DEFAULT_BANK_DETAILS, DEFAULT_BILLED_FROM, type BilledFrom } from "@/lib/billing-constants";
 
 function fmt(n: number) { return "PKR " + n.toLocaleString("en-PK"); }
 function fmtDate(d: string) {
@@ -41,14 +41,27 @@ interface Props {
   onClose: () => void;
   /** Per-salon bank account override — defaults to the platform's if omitted. */
   bankDetails?: { bankName: string; title: string; accountNumber: string; iban: string };
+  /** Admin-set "Billed From" details — defaults to the platform's if omitted. */
+  billedFrom?: BilledFrom;
 }
 
-export default function InvoiceViewer({ invoice, onClose, bankDetails = DEFAULT_BANK_DETAILS }: Props) {
+function BilledFromLines({ billedFrom }: { billedFrom: BilledFrom }) {
+  return (
+    <>
+      {[billedFrom.tagline, billedFrom.email, billedFrom.phone, billedFrom.address]
+        .filter(Boolean)
+        .map((line) => <div key={line}>{line}</div>)}
+    </>
+  );
+}
+
+export default function InvoiceViewer({ invoice, onClose, bankDetails = DEFAULT_BANK_DETAILS, billedFrom = DEFAULT_BILLED_FROM }: Props) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
   if (!mounted) return null;
 
   const st = STATUS_STYLE[invoice.status] ?? STATUS_STYLE.unpaid;
+  const billingContact = [billedFrom.email, billedFrom.phone].filter(Boolean).join(" or ");
 
   const content = (
     <div id="werzio-invoice-portal">
@@ -88,10 +101,7 @@ export default function InvoiceViewer({ invoice, onClose, bankDetails = DEFAULT_
                     <SalonCentralWordmark />
                   </div>
                   <div style={{ fontSize: 12, color: "#555", lineHeight: 2 }}>
-                    <div>Salon Management Software</div>
-                    <div>iamusmankhan101@gmail.com</div>
-                    <div>+92 305 8562523</div>
-                    <div>Pakistan</div>
+                    <BilledFromLines billedFrom={billedFrom} />
                   </div>
                 </div>
 
@@ -126,12 +136,9 @@ export default function InvoiceViewer({ invoice, onClose, bankDetails = DEFAULT_
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 40, marginBottom: 40 }}>
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 800, color: "#888", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>Billed From</div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "#111", marginBottom: 4 }}>Salon Central</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#111", marginBottom: 4 }}>{billedFrom.name}</div>
                   <div style={{ fontSize: 12, color: "#555", lineHeight: 2 }}>
-                    <div>Salon Management Software</div>
-                    <div>iamusmankhan101@gmail.com</div>
-                    <div>+92 305 8562523</div>
-                    <div>Pakistan</div>
+                    <BilledFromLines billedFrom={billedFrom} />
                   </div>
                 </div>
                 <div>
@@ -215,7 +222,7 @@ export default function InvoiceViewer({ invoice, onClose, bankDetails = DEFAULT_
                 <div style={{ fontSize: 11, fontWeight: 800, color: "#111", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>Terms</div>
                 <div style={{ fontSize: 12, color: "#555", lineHeight: 1.9 }}>
                   Payment is due within 7 days of the invoice date. Late payments may result in service suspension.<br />
-                  For billing queries, contact iamusmankhan101@gmail.com or +92 305 8562523.
+                  {billingContact ? `For billing queries, contact ${billingContact}.` : ""}
                 </div>
               </div>
 

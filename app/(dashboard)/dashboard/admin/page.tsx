@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle, XCircle, Clock, ImageIcon, ChevronDown, ChevronUp, Shield, Store, Pencil, Save, Ban, Trash2, AlertTriangle, X, ReceiptText, Users as UsersIcon, BadgeCheck, Landmark, Archive, Database, RotateCcw, Lock, LockOpen, Snowflake, LayoutDashboard, Banknote, LogOut, RefreshCw } from "lucide-react";
+import { CheckCircle, XCircle, Clock, ImageIcon, ChevronDown, ChevronUp, Shield, Store, Pencil, Save, Ban, Trash2, AlertTriangle, X, ReceiptText, Users as UsersIcon, BadgeCheck, Landmark, Archive, Database, RotateCcw, Lock, LockOpen, Snowflake, LayoutDashboard, Banknote, LogOut, RefreshCw, FileText } from "lucide-react";
 import { getCurrentUser, signOut } from "@/lib/auth";
 import {
   getPaymentRequests,
@@ -15,7 +15,7 @@ import type { Invoice } from "@/lib/invoices";
 
 import { fmtCurrency as fmt } from "@/lib/format";
 import { PLAN_CONFIGS, ORDERED_PLANS, type PlanId } from "@/lib/plan-limits";
-import { DEFAULT_BANK_DETAILS } from "@/lib/billing-constants";
+import { DEFAULT_BANK_DETAILS, DEFAULT_BILLED_FROM, type BilledFrom } from "@/lib/billing-constants";
 
 interface BillingUserRow {
   id: string;
@@ -1921,13 +1921,115 @@ function BackupsPanel() {
   );
 }
 
-type AdminTab = "dashboard" | "requests" | "salons" | "paymentMethods" | "users" | "backups";
+const BILLED_FROM_FIELDS: { key: keyof BilledFrom; label: string; placeholder: string; hint?: string }[] = [
+  { key: "name",    label: "Business name", placeholder: DEFAULT_BILLED_FROM.name },
+  { key: "tagline", label: "Tagline",       placeholder: DEFAULT_BILLED_FROM.tagline },
+  { key: "phone",   label: "Phone",         placeholder: DEFAULT_BILLED_FROM.phone },
+  { key: "email",   label: "Email",         placeholder: "billing@example.com", hint: "Optional — leave empty to hide it." },
+  { key: "address", label: "Address",       placeholder: DEFAULT_BILLED_FROM.address },
+];
+
+function InvoiceDetailsPanel() {
+  const [saved, setSaved] = useState<BilledFrom | null>(null);
+  const [draft, setDraft] = useState<BilledFrom>(DEFAULT_BILLED_FROM);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/billing/billed-from")
+      .then((res) => res.json())
+      .then((data) => {
+        if (!data.ok) throw new Error(data.error || "Could not load invoice details.");
+        setSaved(data.billedFrom);
+        setDraft(data.billedFrom);
+      })
+      .catch((e) => setMessage({ ok: false, text: e instanceof Error ? e.message : "Could not load invoice details." }));
+  }, []);
+
+  const dirty = saved !== null && BILLED_FROM_FIELDS.some(({ key }) => draft[key] !== saved[key]);
+
+  async function save() {
+    setSaving(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/billing/billed-from", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(draft),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || "Failed to save.");
+      setSaved(data.billedFrom);
+      setDraft(data.billedFrom);
+      setMessage({ ok: true, text: "Saved — every salon's invoice now shows these details." });
+    } catch (e) {
+      setMessage({ ok: false, text: e instanceof Error ? e.message : "Failed to save." });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const input: React.CSSProperties = {
+    width: "100%", boxSizing: "border-box", border: "1px solid #e4e4ef", borderRadius: 10, padding: "9px 11px",
+    fontSize: 13, color: "#1a1a2e", background: "#fff", outline: "none", fontFamily: "inherit",
+  };
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16, alignItems: "start" }}>
+      <AdminSectionCard title="Billed From">
+        <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ fontSize: 12, color: "#8b8ba3", lineHeight: 1.6 }}>
+            Shown at the top of every salon&apos;s invoice and in its &ldquo;Billed From&rdquo; section.
+          </div>
+          {BILLED_FROM_FIELDS.map(({ key, label, placeholder, hint }) => (
+            <label key={key} style={{ display: "block" }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "#6b6b8a", marginBottom: 6, letterSpacing: "0.04em", textTransform: "uppercase" }}>{label}</div>
+              <input
+                style={input}
+                value={draft[key]}
+                placeholder={placeholder}
+                disabled={saved === null || saving}
+                onChange={(e) => setDraft((prev) => ({ ...prev, [key]: e.target.value }))}
+              />
+              {hint && <div style={{ fontSize: 10.5, color: "#a5a5bb", marginTop: 4 }}>{hint}</div>}
+            </label>
+          ))}
+          {message && (
+            <div style={{ fontSize: 12, fontWeight: 650, color: message.ok ? "#047857" : "#b91c1c" }}>{message.text}</div>
+          )}
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button type="button" className="ac-btn" disabled={!dirty || saving} onClick={() => saved && setDraft(saved)}>
+              Undo changes
+            </button>
+            <button type="button" className="ac-btn" disabled={!dirty || saving || !draft.name.trim()} onClick={save}
+              style={{ background: "#7C3AED", borderColor: "#7C3AED", color: "#fff", opacity: !dirty || saving ? 0.55 : 1 }}>
+              <Save size={13} /> {saving ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </div>
+      </AdminSectionCard>
+
+      <AdminSectionCard title="Preview">
+        <div style={{ padding: "22px 24px", fontFamily: "'Helvetica Neue', Arial, sans-serif" }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: "#888", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>Billed From</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#111", marginBottom: 4 }}>{draft.name || "—"}</div>
+          <div style={{ fontSize: 12, color: "#555", lineHeight: 2 }}>
+            {[draft.tagline, draft.email, draft.phone, draft.address].filter(Boolean).map((line) => <div key={line}>{line}</div>)}
+          </div>
+        </div>
+      </AdminSectionCard>
+    </div>
+  );
+}
+
+type AdminTab = "dashboard" | "requests" | "salons" | "paymentMethods" | "invoiceDetails" | "users" | "backups";
 
 const ADMIN_TABS: { key: AdminTab; label: string; title: string; sub: string; Icon: React.ElementType }[] = [
   { key: "dashboard",      label: "Overview",         title: "Overview",         sub: "Platform-wide view of salons, accounts, payments and backups.", Icon: LayoutDashboard },
   { key: "requests",       label: "Payment requests", title: "Payment requests", sub: "Review and approve payment requests from salons.",                Icon: Clock },
   { key: "salons",         label: "Salon accounts",   title: "Salon accounts",   sub: "Manage salon accounts and set custom pricing.",                   Icon: Store },
   { key: "paymentMethods", label: "Payment methods",  title: "Payment methods",  sub: "The bank accounts shown on salon invoices.",                     Icon: Landmark },
+  { key: "invoiceDetails", label: "Invoice details",  title: "Invoice details",  sub: "The business details shown in the “Billed From” section of salon invoices.", Icon: FileText },
   { key: "users",          label: "Users",            title: "Users",            sub: "Every login on the platform — owners, managers, staff and admins.", Icon: UsersIcon },
   { key: "backups",        label: "Backups",          title: "Backups",          sub: "Browse, trigger and restore database backups.",                   Icon: Archive },
 ];
@@ -1990,6 +2092,7 @@ export default function AdminPage() {
           font-family: inherit;
         }
         .ac-btn:hover { background: #fafaff; border-color: #d6d6e6; }
+        .ac-btn:disabled { opacity: .55; cursor: not-allowed; }
       `}</style>
 
       {/* ── Top bar ──────────────────────────────────────────────────────── */}
@@ -2095,6 +2198,8 @@ export default function AdminPage() {
         <SalonAccountsPanel />
       ) : tab === "paymentMethods" ? (
         <PaymentMethodsPanel />
+      ) : tab === "invoiceDetails" ? (
+        <InvoiceDetailsPanel />
       ) : tab === "backups" ? (
         <BackupsPanel />
       ) : (

@@ -16,7 +16,7 @@
 
 import { db } from "@/lib/db";
 import type { InValue } from "@libsql/client";
-import { DEFAULT_BANK_DETAILS } from "@/lib/billing-constants";
+import { DEFAULT_BANK_DETAILS, DEFAULT_BILLED_FROM, type BilledFrom } from "@/lib/billing-constants";
 
 export { DEFAULT_BANK_DETAILS };
 
@@ -94,6 +94,15 @@ export async function ensureBillingTables(): Promise<void> {
       account_number  TEXT NOT NULL,
       iban            TEXT NOT NULL,
       created_at      TEXT NOT NULL
+    )
+  `);
+
+  // Platform-wide key/value settings (e.g. the invoice's "Billed From" block).
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS platform_settings (
+      key         TEXT PRIMARY KEY,
+      value       TEXT NOT NULL,
+      updated_at  TEXT NOT NULL
     )
   `);
 
@@ -452,6 +461,39 @@ export async function resolveBankDetailsForUser(user: BillingUser): Promise<{ ba
     if (method) return { bankName: method.bankName, title: method.bankTitle, accountNumber: method.accountNumber, iban: method.iban };
   }
   return DEFAULT_BANK_DETAILS;
+}
+
+// ─── Invoice "Billed From" ────────────────────────────────────────────────────
+
+const BILLED_FROM_KEY = "invoice_billed_from";
+
+/** The saved "Billed From" details, filled in from the default for anything missing. */
+export async function getBilledFrom(): Promise<BilledFrom> {
+  await ensureBillingTables();
+  const res = await db.execute({ sql: "SELECT value FROM platform_settings WHERE key = ?", args: [BILLED_FROM_KEY] });
+  if (!res.rows.length) return DEFAULT_BILLED_FROM;
+  try {
+    return { ...DEFAULT_BILLED_FROM, ...(JSON.parse(res.rows[0].value as string) as Partial<BilledFrom>) };
+  } catch {
+    return DEFAULT_BILLED_FROM;
+  }
+}
+
+export async function setBilledFrom(input: BilledFrom): Promise<BilledFrom> {
+  await ensureBillingTables();
+  const value: BilledFrom = {
+    name: input.name.trim(),
+    tagline: input.tagline.trim(),
+    phone: input.phone.trim(),
+    email: input.email.trim(),
+    address: input.address.trim(),
+  };
+  await db.execute({
+    sql: `INSERT INTO platform_settings (key, value, updated_at) VALUES (?, ?, ?)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    args: [BILLED_FROM_KEY, JSON.stringify(value), new Date().toISOString()],
+  });
+  return value;
 }
 
 export async function unsuspendUser(userId: string): Promise<void> {
