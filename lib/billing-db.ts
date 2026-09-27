@@ -469,6 +469,25 @@ async function setBillingAnchor(userId: string, anchor: string): Promise<void> {
   });
 }
 
+/**
+ * Admin override: change the date a salon started. Before its first invoice the
+ * billing schedule (demo end, first due date) follows the new date, so the
+ * saved anchor is cleared to be recomputed from it. Once invoices exist the
+ * anchor stays put — moving it would start a second, overlapping invoice cycle
+ * — and the admin re-dates the open invoice with its own due-date control.
+ */
+export async function updateTrialStart(userId: string, startDate: string): Promise<{ scheduleMoved: boolean }> {
+  const invoices = await db.execute({ sql: "SELECT 1 FROM billing_invoices WHERE user_id = ? LIMIT 1", args: [userId] });
+  const scheduleMoved = invoices.rows.length === 0;
+  await db.execute({
+    sql: scheduleMoved
+      ? "UPDATE billing_users SET trial_start = ?, billing_anchor = NULL WHERE id = ?"
+      : "UPDATE billing_users SET trial_start = ? WHERE id = ?",
+    args: [startDate, userId],
+  });
+  return { scheduleMoved };
+}
+
 // ─── Billing Invoices — 30-day cycles ─────────────────────────────────────────
 
 function invoiceId(userId: string, periodStart: string): string {

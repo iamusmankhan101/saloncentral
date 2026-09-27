@@ -62,7 +62,7 @@ interface AccountUserRow {
   createdAt: string;
 }
 
-const USERS_GRID_COLUMNS = "minmax(240px,1.4fr) minmax(160px,1fr) minmax(140px,0.9fr) 96px 116px 120px 130px 120px 120px 200px";
+const USERS_GRID_COLUMNS = "minmax(240px,1.4fr) minmax(160px,1fr) minmax(140px,0.9fr) 96px 116px 120px 130px 200px 120px 200px";
 const BILLING_TERMS = [1, 3, 6, 12] as const;
 type BillingTermMonths = number;
 
@@ -1346,12 +1346,17 @@ function UsersPanel() {
   const [dueDrafts, setDueDrafts] = useState<Record<string, string>>({});
   const [savingDueId, setSavingDueId] = useState<string | null>(null);
   const [dueError, setDueError] = useState<string | null>(null);
+  const [startDrafts, setStartDrafts] = useState<Record<string, string>>({});
+  const [savingStartId, setSavingStartId] = useState<string | null>(null);
+
+  function loadUsers() {
+    return fetch("/api/admin/users")
+      .then((res) => res.json())
+      .then((data) => { if (data.ok) setRows(data.users); });
+  }
 
   useEffect(() => {
-    fetch("/api/admin/users")
-      .then((res) => res.json())
-      .then((data) => { if (data.ok) setRows(data.users); })
-      .finally(() => setLoading(false));
+    loadUsers().finally(() => setLoading(false));
   }, []);
 
   const filtered = rows.filter((r) => {
@@ -1411,6 +1416,31 @@ function UsersPanel() {
       return false;
     } finally {
       setUpdatingApproval(null);
+    }
+  }
+
+  async function saveStartDate(row: AccountUserRow) {
+    const newStart = startDrafts[row.id];
+    if (!newStart || newStart === row.startedDate?.slice(0, 10) || savingStartId) return;
+    setSavingStartId(row.id);
+    setDueError(null);
+    try {
+      const res = await fetch("/api/billing/set-start-date", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: row.id, startDate: newStart }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || "Failed to update start date");
+      setStartDrafts((prev) => { const next = { ...prev }; delete next[row.id]; return next; });
+      // Before a salon's first invoice its due date follows the start date — reload
+      // so the Invoice Due column shows the recomputed date.
+      if (data.scheduleMoved) await loadUsers();
+      else setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, startedDate: newStart } : r)));
+    } catch (e) {
+      setDueError(e instanceof Error ? e.message : "Failed to update start date");
+    } finally {
+      setSavingStartId(null);
     }
   }
 
@@ -1484,7 +1514,7 @@ function UsersPanel() {
       </div>
 
       <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #ebebf0", overflowX: "auto", overflowY: "hidden" }}>
-        <div style={{ minWidth: 1540 }}>
+        <div style={{ minWidth: 1620 }}>
           <div style={{ display: "grid", gridTemplateColumns: USERS_GRID_COLUMNS, padding: "10px 20px", background: "#fafafa", borderBottom: "1px solid #f0f0f8" }}>
           {["NAME / EMAIL", "SALON", "PHONE", "ROLE", "APPROVAL", "STATUS", "PLAN", "STARTED", "INVOICE DUE", "ACTIONS"].map((h) => (
             <div key={h} style={{ fontSize: 10, fontWeight: 800, color: "#b0b0c8", letterSpacing: "0.08em" }}>{h}</div>
@@ -1537,7 +1567,32 @@ function UsersPanel() {
                   </span>
                 </div>
                 <div style={{ fontSize: 12, color: "#6b6b8a", fontWeight: 700 }}>{row.planName ?? "—"}</div>
-                <div style={{ fontSize: 12, color: "#9898b0" }}>{fmtOptionalDate(row.startedDate)}</div>
+                <div>
+                  {row.role === "owner" && row.startedDate ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                      <input
+                        type="date"
+                        value={startDrafts[row.id] ?? row.startedDate.slice(0, 10)}
+                        onChange={(e) => setStartDrafts((prev) => ({ ...prev, [row.id]: e.target.value }))}
+                        disabled={!!savingStartId}
+                        title="Change the date this salon started. Before its first invoice, this also moves when billing begins."
+                        style={{ fontSize: 11, padding: "5px 6px", borderRadius: 7, border: "1px solid #e4e4ee", outline: "none", width: 138, color: "#1a1a2e", background: "#fff", cursor: savingStartId ? "not-allowed" : "text" }}
+                      />
+                      {!!startDrafts[row.id] && startDrafts[row.id] !== row.startedDate.slice(0, 10) && (
+                        <button
+                          onClick={() => saveStartDate(row)}
+                          disabled={!!savingStartId}
+                          title="Save new start date"
+                          style={{ padding: "5px 9px", borderRadius: 7, border: "none", background: savingStartId === row.id ? "#e4e4ee" : "#7C3AED", color: "#fff", fontSize: 11, fontWeight: 800, cursor: savingStartId ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}
+                        >
+                          {savingStartId === row.id ? "Saving…" : "Save"}
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 12, color: "#9898b0" }}>{fmtOptionalDate(row.startedDate)}</div>
+                  )}
+                </div>
                 <div>
                   {row.role === "owner" && row.invoiceId ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
