@@ -8,7 +8,7 @@
 import { NextRequest } from "next/server";
 import { resolveActor } from "@/lib/api-auth";
 import { db } from "@/lib/db";
-import { ensureBillingTables, getBillingUser, getOrCreate30DayInvoice } from "@/lib/billing-db";
+import { addDays, BILLING_CYCLE_DAYS, ensureBillingTables, getBillingUser, getOrCreate30DayInvoice } from "@/lib/billing-db";
 import type { Invoice, InvoiceStatus } from "@/lib/invoices";
 
 export async function GET(req: NextRequest) {
@@ -65,6 +65,8 @@ export async function GET(req: NextRequest) {
         dueDate: r.due_date as string,
         status: r.status as InvoiceStatus,
         paidDate: (r.paid_date as string) ?? null,
+        periodStart: r.period_start as string,
+        periodEnd: addDays(r.period_start as string, Math.max(1, user.billingTermMonths) * BILLING_CYCLE_DAYS),
       };
     });
 

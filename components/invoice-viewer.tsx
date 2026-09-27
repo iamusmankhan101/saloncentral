@@ -11,6 +11,9 @@ function fmt(n: number) { return "PKR " + n.toLocaleString("en-PK"); }
 function fmtDate(d: string) {
   return new Date(d + "T00:00:00").toLocaleDateString("en-PK", { year: "numeric", month: "long", day: "numeric" });
 }
+function fmtShortDate(d: string) {
+  return new Date(d + "T00:00:00").toLocaleDateString("en-PK", { day: "numeric", month: "short", year: "numeric" });
+}
 
 const STATUS_STYLE: Record<string, { color: string; label: string }> = {
   paid:    { color: "#059669", label: "PAID"    },
@@ -103,8 +106,11 @@ export default function InvoiceViewer({ invoice, onClose, bankDetails = DEFAULT_
               </div>
 
               {/* ── DATE ROW ── */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 0, marginBottom: 40, borderTop: "1px solid #ddd", borderBottom: "1px solid #ddd", padding: "16px 0" }}>
+              <div style={{ display: "grid", gridTemplateColumns: invoice.periodStart && invoice.periodEnd ? "1.4fr 1fr 1fr 1fr" : "1fr 1fr 1fr", gap: 0, marginBottom: 40, borderTop: "1px solid #ddd", borderBottom: "1px solid #ddd", padding: "16px 0" }}>
                 {[
+                  ...(invoice.periodStart && invoice.periodEnd
+                    ? [{ label: "Billing Period", value: `${fmtShortDate(invoice.periodStart)} – ${fmtShortDate(invoice.periodEnd)}` }]
+                    : []),
                   { label: "Issue Date", value: fmtDate(invoice.issuedDate) },
                   { label: "Due Date",   value: fmtDate(invoice.dueDate) },
                   { label: "Paid Date",  value: invoice.paidDate ? fmtDate(invoice.paidDate) : "—" },
@@ -152,7 +158,14 @@ export default function InvoiceViewer({ invoice, onClose, bankDetails = DEFAULT_
                 <tbody>
                   {invoice.items.map((item, i) => (
                     <tr key={i} style={{ borderBottom: "1px solid #e8e8e8" }}>
-                      <td style={{ padding: "13px 14px", fontSize: 13, color: "#111" }}>{item.description}</td>
+                      <td style={{ padding: "13px 14px", fontSize: 13, color: "#111" }}>
+                        {item.description}
+                        {invoice.periodStart && invoice.periodEnd && (
+                          <div style={{ fontSize: 11, color: "#888", marginTop: 3 }}>
+                            {fmtShortDate(invoice.periodStart)} – {fmtShortDate(invoice.periodEnd)}
+                          </div>
+                        )}
+                      </td>
                       <td style={{ padding: "13px 14px", fontSize: 13, color: "#555", textAlign: "right" }}>{item.qty}</td>
                       <td style={{ padding: "13px 14px", fontSize: 13, color: "#555", textAlign: "right" }}>{fmt(item.unitPrice)}</td>
                       <td style={{ padding: "13px 14px", fontSize: 13, fontWeight: 700, color: "#111", textAlign: "right" }}>{fmt(item.total)}</td>

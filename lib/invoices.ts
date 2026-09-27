@@ -25,6 +25,9 @@ export interface Invoice {
   dueDate: string;        // YYYY-MM-DD (7 days after issued)
   status: InvoiceStatus;
   paidDate: string | null;
+  /** Service period this invoice covers (YYYY-MM-DD, end exclusive-style: 20 Sep → 20 Oct). */
+  periodStart?: string;
+  periodEnd?: string;
 }
 
 import { userKey } from "./auth";

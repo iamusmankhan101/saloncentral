@@ -597,6 +597,9 @@ export default function BillingPage() {
                   </div>
                   <div className="mobile-list-body">
                     <div className="mobile-list-title">{inv.number}</div>
+                    {inv.periodStart && inv.periodEnd && (
+                      <div className="mobile-list-sub">{fmtDate(inv.periodStart)} – {fmtDate(inv.periodEnd)}</div>
+                    )}
                     <div className="mobile-list-sub">Issued {fmtDate(inv.issuedDate)} · Due {fmtDate(inv.dueDate)}</div>
                   </div>
                   <div className="mobile-list-right">
@@ -732,7 +735,12 @@ export default function BillingPage() {
               const Icon = sm.icon;
               return (
                 <div key={inv.id} style={{ display: "grid", gridTemplateColumns: "1fr 120px 120px 110px 100px 48px", padding: "13px 24px", borderBottom: i < invoices.length - 1 ? "1px solid #f4f4f8" : "none", alignItems: "center" }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "#1a1a2e" }}>{inv.number}</div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#1a1a2e" }}>{inv.number}</div>
+                    {inv.periodStart && inv.periodEnd && (
+                      <div style={{ fontSize: 11, color: "#9898b0", marginTop: 2 }}>{fmtDate(inv.periodStart)} – {fmtDate(inv.periodEnd)}</div>
+                    )}
+                  </div>
                   <div style={{ fontSize: 12, color: "#6b6b8a" }}>{fmtDate(inv.issuedDate)}</div>
                   <div style={{ fontSize: 12, color: "#6b6b8a" }}>{fmtDate(inv.dueDate)}</div>
                   <div style={{ fontSize: 13, fontWeight: 700, color: "#7C3AED" }}>PKR {inv.total.toLocaleString("en-PK")}</div>
