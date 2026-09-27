@@ -49,6 +49,7 @@ export function dataKindFromEntity(entity: string): string {
   const last = parts.at(-1) || entity;
   if (entity.endsWith("_salon_invoices")) return "salon_invoices";
   if (entity.endsWith("_loyalty_history")) return "loyalty_history";
+  if (entity.endsWith("_held_sales")) return "held_sales";
   return last;
 }
 
@@ -56,7 +57,7 @@ export function locationIdFromEntity(entity: string, userId: string): string {
   const suffix = entity === userId ? "" : entity.startsWith(`${userId}_`) ? entity.slice(userId.length + 1) : "";
   if (!suffix) return "main";
   const dataKind = dataKindFromEntity(entity);
-  const bareKinds = new Set(["settings", "loyalty_history", "clients", "appointments", "staff", "services", "inventory", "expenses", "salon_invoices"]);
+  const bareKinds = new Set(["settings", "loyalty_history", "clients", "appointments", "staff", "services", "inventory", "expenses", "salon_invoices", "held_sales"]);
   if (bareKinds.has(suffix)) return "main";
   if (!suffix.endsWith(`_${dataKind}`)) return "main";
   const location = suffix.slice(0, -(dataKind.length + 1));

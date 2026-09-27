@@ -7,7 +7,7 @@ import {
   Smartphone, Zap, Tag, UserPlus, CheckCircle2, Printer,
   MessageSquare, RefreshCw, User, ChevronRight, Sparkles,
   Clock, AlertCircle, Gift, Percent,
-  ScanBarcode, Lock,
+  ScanBarcode, Lock, PauseCircle, PlayCircle,
 } from "lucide-react";
 import { awardPoints, redeemPoints, type LoyaltySettings } from "@/lib/loyalty";
 import SalonInvoicePrint from "@/components/salon-invoice-print";
@@ -15,7 +15,9 @@ import SalonInvoiceEdit from "@/components/salon-invoice-edit";
 import {
   getStoredServices, getStoredClients, getStoredInventory,
   getStoredStaff, getStoredAppointments, saveAppointments, saveClients, saveInventory,
+  subscribeToStoredData,
 } from "@/lib/storage";
+import { getHeldSales, saveHeldSale, removeHeldSale, type HeldSale } from "@/lib/held-sales";
 import {
   createSalonInvoice, calcTotals,
   localDateKey, getSalonInvoices, saveSalonInvoices,
@@ -141,6 +143,30 @@ export default function POSPage() {
   const [activeGuest, setActiveGuest] = useState("");
   const [guestInput, setGuestInput] = useState("");
   const [guestPhoneInput, setGuestPhoneInput] = useState("");
+
+  // ── Held sales ────────────────────────────────────────────────────────────
+  // A sale put on hold keeps its cart until someone resumes and completes it,
+  // on this or any other device. `resumedHeldId` is the held sale currently
+  // open in the cart — completing the sale removes it from the held list.
+  const [heldSales,     setHeldSales]     = useState<HeldSale<CartEntry>[]>([]);
+  const [resumedHeldId, setResumedHeldId] = useState<string | null>(null);
+  const [showHeld,      setShowHeld]      = useState(false);
+  const [holdNotice,    setHoldNotice]    = useState<{ ok: boolean; message: string } | null>(null);
+  // Picking the client on resume resets loyalty redemption (see the effect on
+  // selectedClient) — this carries the held amount past that reset.
+  const resumeLoyaltyRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const load = () => setHeldSales(getHeldSales<CartEntry>());
+    load();
+    return subscribeToStoredData(load);
+  }, []);
+
+  useEffect(() => {
+    if (!holdNotice) return;
+    const timer = window.setTimeout(() => setHoldNotice(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [holdNotice]);
 
   useEffect(() => {
     const allServices  = getStoredServices().filter(s => s.isActive);
@@ -519,7 +545,10 @@ export default function POSPage() {
   }
 
   // Reset redeemed points when client changes
-  useEffect(() => { setLoyaltyRedeem(0); }, [selectedClient?.id]);
+  useEffect(() => {
+    setLoyaltyRedeem(resumeLoyaltyRef.current ?? 0);
+    resumeLoyaltyRef.current = null;
+  }, [selectedClient?.id]);
 
   // ── New sale reset ────────────────────────────────────────────────────────
   function startNewSale() {
@@ -533,6 +562,78 @@ export default function POSPage() {
     // appointment this page was opened for.
     setCheckoutAppointmentId(null); setCheckoutGroupIds([]); setApptBanner(null);
     setGuests([]); setActiveGuest(""); setGuestInput("");
+    setResumedHeldId(null);
+  }
+
+  // ── Hold / resume ─────────────────────────────────────────────────────────
+  function currentAsHeld(): HeldSale<CartEntry> {
+    const existing = resumedHeldId ? heldSales.find(h => h.id === resumedHeldId) : undefined;
+    return {
+      id: resumedHeldId ?? crypto.randomUUID(),
+      heldAt: existing?.heldAt ?? new Date().toISOString(),
+      clientId: selectedClient?.id,
+      clientName: selectedClient?.name || "Walk-in Customer",
+      staffId: selectedStaffId || undefined,
+      cart,
+      itemCount: totalQty,
+      total,
+      discount, discType, discount2, discType2, loyaltyRedeem,
+      notes: saleNotes,
+      guests,
+      isAdvance, advanceValue, advanceType,
+      checkoutAppointmentId: checkoutAppointmentId ?? undefined,
+      checkoutGroupIds: checkoutGroupIds.length ? checkoutGroupIds : undefined,
+      apptBanner: apptBanner ?? undefined,
+    };
+  }
+
+  async function holdSale() {
+    if (cart.length === 0 || completed) return;
+    const sale = currentAsHeld();
+    const saving = saveHeldSale(sale);
+    setHeldSales(getHeldSales<CartEntry>());
+    startNewSale();
+    const synced = await saving;
+    setHeldSales(getHeldSales<CartEntry>());
+    setHoldNotice(synced
+      ? { ok: true, message: `Sale for ${sale.clientName} put on hold. Open it any time from "Held sales".` }
+      : { ok: false, message: `Sale for ${sale.clientName} is held on this device, but didn't reach the server yet — it will sync when the connection is back.` });
+  }
+
+  async function resumeHeldSale(sale: HeldSale<CartEntry>) {
+    if (sale.id === resumedHeldId) { setShowHeld(false); return; }
+    // Never drop a cart in progress — hold it first so it can be picked up again.
+    if (cart.length > 0 && !completed) {
+      if (!window.confirm("The current cart will be put on hold so you can come back to it. Continue?")) return;
+      await saveHeldSale(currentAsHeld());
+    }
+    startNewSale();
+    const client = sale.clientId ? getStoredClients().find(c => c.id === sale.clientId) ?? null : null;
+    resumeLoyaltyRef.current = client ? sale.loyaltyRedeem : 0;
+    setSelectedClient(client);
+    setSelectedStaffId(sale.staffId && staff.some(s => s.id === sale.staffId) ? sale.staffId : "");
+    setCart(sale.cart);
+    setDiscount(sale.discount); setDiscType(sale.discType);
+    setDiscount2(sale.discount2); setDiscType2(sale.discType2);
+    setSaleNotes(sale.notes);
+    setGuests(sale.guests ?? []);
+    setIsAdvance(sale.isAdvance); setAdvanceValue(sale.advanceValue); setAdvanceType(sale.advanceType);
+    setCheckoutAppointmentId(sale.checkoutAppointmentId ?? null);
+    setCheckoutGroupIds(sale.checkoutGroupIds ?? []);
+    setApptBanner(sale.apptBanner ?? null);
+    setResumedHeldId(sale.id);
+    setHeldSales(getHeldSales<CartEntry>());
+    setShowHeld(false);
+    setPosTab("cart");
+    setHoldNotice({ ok: true, message: `Resumed sale for ${sale.clientName}.` });
+  }
+
+  async function discardHeldSale(sale: HeldSale<CartEntry>) {
+    if (!window.confirm(`Delete the held sale for ${sale.clientName} (${pkr(sale.total)})? This can't be undone.`)) return;
+    if (sale.id === resumedHeldId) setResumedHeldId(null);
+    const removing = removeHeldSale(sale.id);
+    setHeldSales(getHeldSales<CartEntry>());
+    await removing;
   }
 
   // ── Complete sale ─────────────────────────────────────────────────────────
@@ -583,6 +684,12 @@ export default function POSPage() {
       // failed sync doesn't block checkout — but it must not go unnoticed the way
       // it did before, silently leaving the invoice missing on every other device.
       setSyncFailed(!dbSaved);
+
+      // The sale is done — it no longer belongs in the held list on any device.
+      if (resumedHeldId) {
+        removeHeldSale(resumedHeldId).then(() => setHeldSales(getHeldSales<CartEntry>()));
+        setResumedHeldId(null);
+      }
 
       // Checking out from a booked appointment doesn't otherwise touch the
       // appointment record — mark it completed so it's reflected in the
@@ -851,6 +958,14 @@ export default function POSPage() {
           </div>
         )}
 
+        {/* Held sales */}
+        {heldSales.length > 0 && (
+          <button type="button" onClick={() => setShowHeld(true)}
+            style={{ display: "flex", alignItems: "center", gap: 6, border: "1px solid #fcd34d", borderRadius: 20, padding: "5px 14px", background: "#fffbeb", color: "#b45309", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
+            <PauseCircle size={13} /> Held sales ({heldSales.length})
+          </button>
+        )}
+
         {/* New Sale button */}
         {completed && (
           <button type="button" onClick={startNewSale}
@@ -859,6 +974,66 @@ export default function POSPage() {
           </button>
         )}
       </div>
+
+      {/* ══ HOLD NOTICE ══ */}
+      {holdNotice && (
+        <div style={{ background: holdNotice.ok ? "#fffbeb" : "#fef2f2", borderBottom: `1px solid ${holdNotice.ok ? "#fde68a" : "#fecaca"}`, display: "flex", alignItems: "center", padding: "9px 24px", gap: 10, flexShrink: 0 }}>
+          {holdNotice.ok ? <PauseCircle size={15} color="#b45309" /> : <AlertCircle size={15} color="#dc2626" />}
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: holdNotice.ok ? "#92400e" : "#b91c1c", flex: 1 }}>{holdNotice.message}</span>
+          <button onClick={() => setHoldNotice(null)} style={{ border: "none", background: "none", cursor: "pointer", color: "#9999b0", display: "flex", padding: 2 }}>
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* ══ HELD SALES LIST ══ */}
+      {showHeld && (
+        <div onClick={() => setShowHeld(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(15,15,35,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 520, maxHeight: "80vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.25)" }}>
+            <div style={{ padding: "16px 18px", borderBottom: "1px solid #f0f0f8", display: "flex", alignItems: "center", gap: 8 }}>
+              <PauseCircle size={16} color="#b45309" />
+              <span style={{ fontSize: 15, fontWeight: 800, color: "#1d1d2f", flex: 1 }}>Held sales</span>
+              <button onClick={() => setShowHeld(false)} style={{ border: "none", background: "none", cursor: "pointer", color: "#9999b0", display: "flex", padding: 2 }}>
+                <X size={16} />
+              </button>
+            </div>
+            <div style={{ overflowY: "auto", padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+              {heldSales.length === 0 ? (
+                <div style={{ padding: 28, textAlign: "center", fontSize: 13, color: "#9999b0" }}>No sales on hold</div>
+              ) : heldSales.map(h => {
+                const isOpen = h.id === resumedHeldId;
+                return (
+                  <div key={h.id} style={{ border: `1.5px solid ${isOpen ? "#c4b5fd" : "#eeeef6"}`, background: isOpen ? "#f5f3ff" : "#fff", borderRadius: 12, padding: "11px 12px", display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 800, color: "#1d1d2f", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {h.clientName}
+                        {isOpen && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, color: "#7C3AED" }}>OPEN NOW</span>}
+                      </div>
+                      <div style={{ fontSize: 11.5, color: "#8a8aa3", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {h.itemCount} item{h.itemCount === 1 ? "" : "s"} · {h.cart.map(e => e.name).slice(0, 3).join(", ")}{h.cart.length > 3 ? "…" : ""}
+                      </div>
+                      <div style={{ fontSize: 11, color: "#b0b0c8", marginTop: 2 }}>
+                        Held {new Date(h.heldAt).toLocaleString("en-PK", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 13.5, fontWeight: 900, color: "#5B21B6", whiteSpace: "nowrap" }}>{pkr(h.total)}</div>
+                    <button type="button" onClick={() => resumeHeldSale(h)} disabled={isOpen}
+                      style={{ display: "flex", alignItems: "center", gap: 4, border: "none", borderRadius: 8, padding: "7px 11px", background: isOpen ? "#e8e8f0" : "#7C3AED", color: isOpen ? "#9999b0" : "#fff", fontSize: 11.5, fontWeight: 800, cursor: isOpen ? "default" : "pointer" }}>
+                      <PlayCircle size={12} /> Resume
+                    </button>
+                    <button type="button" onClick={() => discardHeldSale(h)} title="Delete held sale"
+                      style={{ display: "flex", border: "1px solid #fee2e2", borderRadius: 8, padding: 7, background: "#fff5f5", color: "#ef4444", cursor: "pointer" }}>
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ══ APPOINTMENT BANNER ══ */}
       {apptBanner && !completed && (
@@ -1393,6 +1568,12 @@ export default function POSPage() {
                 </span>
               )}
             </span>
+            {cart.length > 0 && !completed && (
+              <button type="button" onClick={holdSale} title="Save this sale and finish it later"
+                style={{ display: "flex", alignItems: "center", gap: 4, border: "1px solid #fde68a", borderRadius: 8, background: "#fffbeb", cursor: "pointer", padding: "5px 10px", fontSize: 11, fontWeight: 700, color: "#b45309" }}>
+                <PauseCircle size={11} /> Hold
+              </button>
+            )}
             {cart.length > 0 && (
               <button type="button" onClick={() => setCart([])}
                 style={{ display: "flex", alignItems: "center", gap: 4, border: "1px solid #fee2e2", borderRadius: 8, background: "#fff5f5", cursor: "pointer", padding: "5px 10px", fontSize: 11, fontWeight: 700, color: "#ef4444" }}>
