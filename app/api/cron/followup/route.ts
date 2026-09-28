@@ -188,6 +188,16 @@ interface PosInvoice {
   items?: InvoiceItem[];
   date: string;
   createdAt?: string;
+  status?: string;
+  advanceAmount?: number;
+}
+
+/**
+ * An advance (deposit) taken ahead of the service — the client hasn't had the
+ * visit yet, so there's nothing to follow up on.
+ */
+function isAdvanceInvoice(inv: PosInvoice): boolean {
+  return inv.status === "partial" || (inv.advanceAmount ?? 0) > 0;
 }
 
 /**
@@ -381,6 +391,7 @@ async function runFollowupCron() {
       const invoiceDelayMs = invoiceTimed ? INVOICE_FOLLOWUP_DELAY_MS : followupDelayMinutes * MINUTE_MS;
       const lookaheadMs = invoiceTimed ? 24 * 60 * MINUTE_MS : 0;
       const eligibleInvoices = invoices
+        .filter((inv) => !isAdvanceInvoice(inv))
         .map((inv) => {
           const visit = invoiceTimed ? invoiceCreatedTime(inv, timezone) : invoiceVisitTime(inv, timezone);
           return visit ? { inv, ...visit } : null;
