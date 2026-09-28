@@ -189,6 +189,8 @@ interface PosInvoice {
   date: string;
   createdAt?: string;
   status?: string;
+  /** YYYY-MM-DD — set when an invoice is marked paid after the sale; unset for one paid at the till. */
+  paidDate?: string;
 }
 
 /**
@@ -245,6 +247,25 @@ function invoiceCreatedTime(inv: PosInvoice, timezone: string): { date: string; 
   const createdMs = inv.createdAt ? Date.parse(inv.createdAt) : NaN;
   if (!Number.isFinite(createdMs)) return invoiceVisitTime(inv, timezone);
   return { ...salonLocalParts(createdMs, timezone), completedAt: createdMs };
+}
+
+/**
+ * The follow-up is timed from when the invoice was paid. An invoice paid at the
+ * till carries no paidDate (or one on the sale's own day), so the sale time
+ * stands; one marked paid on a later day counts from that day instead. paidDate
+ * has no time of day, so it gets the same late-afternoon stand-in as a bare date.
+ */
+function invoicePaidTime(
+  inv: PosInvoice,
+  timezone: string,
+  invoiceTimed: boolean,
+): { date: string; time: string; completedAt: number } | null {
+  const visit = invoiceTimed ? invoiceCreatedTime(inv, timezone) : invoiceVisitTime(inv, timezone);
+  const paidDate = inv.paidDate?.trim();
+  if (!paidDate || visit?.date === paidDate) return visit;
+  const completedAt = appointmentStartMs(paidDate, FALLBACK_INVOICE_TIME, timezone);
+  if (completedAt == null) return visit;
+  return { date: paidDate, time: FALLBACK_INVOICE_TIME, completedAt };
 }
 
 /** The {{service}} variable — a product-only sale falls back to the first line. */
@@ -392,7 +413,7 @@ async function runFollowupCron() {
       const eligibleInvoices = invoices
         .filter(isCompleteInvoice)
         .map((inv) => {
-          const visit = invoiceTimed ? invoiceCreatedTime(inv, timezone) : invoiceVisitTime(inv, timezone);
+          const visit = invoicePaidTime(inv, timezone, invoiceTimed);
           return visit ? { inv, ...visit } : null;
         })
         .filter((entry): entry is { inv: PosInvoice; date: string; time: string; completedAt: number } => {
