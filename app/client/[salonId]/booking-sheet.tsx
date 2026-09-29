@@ -621,6 +621,9 @@ function SheetStyles() {
       }
       .bk-sheet {
         width: 100%; max-width: 560px;
+        /* vh first: older iOS Safari has no dvh and would drop the height entirely,
+           letting the sheet grow past the screen with nothing to scroll. */
+        height: calc(100vh - 24px - env(safe-area-inset-top));
         height: calc(100dvh - 24px - env(safe-area-inset-top));
         background: #f6f5fa; border-radius: 22px 22px 0 0;
         display: flex; flex-direction: column; overflow: hidden;
@@ -638,7 +641,15 @@ function SheetStyles() {
       .bk-progress { height: 3px; background: rgba(26,26,46,.06); margin: 0 14px; border-radius: 3px; overflow: hidden; }
       .bk-progress > div { height: 100%; background: var(--ca-accent, #7C3AED); transition: width .25s ease; }
 
-      .bk-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+      /* min-height: 0 is what lets this scroll: a flex child defaults to
+         min-height: auto, so it grew to the full service list and the sheet's
+         overflow: hidden clipped the rest out of reach. */
+      .bk-body {
+        flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+        padding: 14px; display: flex; flex-direction: column; gap: 14px;
+      }
+      .bk-body > * { flex-shrink: 0; }
       .bk-empty { margin: 0; padding: 18px 4px; font-size: 13.5px; color: #8b8ba3; text-align: center; }
 
       .bk-list { background: #fff; border-radius: 16px; overflow: hidden; }

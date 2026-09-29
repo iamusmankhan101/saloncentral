@@ -146,7 +146,8 @@ export function PaymentStyles() {
         display: flex; align-items: flex-end; justify-content: center;
       }
       .po-sheet {
-        width: 100%; max-width: 560px; max-height: calc(100dvh - 40px);
+        width: 100%; max-width: 560px;
+        max-height: calc(100vh - 40px); max-height: calc(100dvh - 40px);
         background: #f6f5fa; border-radius: 22px 22px 0 0;
         display: flex; flex-direction: column; overflow: hidden;
         padding-bottom: env(safe-area-inset-bottom);
@@ -157,7 +158,13 @@ export function PaymentStyles() {
         width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; cursor: pointer;
         background: #fff; border: 1px solid rgba(26,26,46,.08); color: #1a1a2e;
       }
-      .po-body { overflow-y: auto; padding: 8px 14px 18px; display: flex; flex-direction: column; gap: 10px; }
+      /* min-height: 0 so the list scrolls inside the sheet instead of being clipped by it. */
+      .po-body {
+        flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+        padding: 8px 14px 18px; display: flex; flex-direction: column; gap: 10px;
+      }
+      .po-body > * { flex-shrink: 0; }
       .po-card { background: #fff; border-radius: 16px; padding: 13px 14px; }
       .po-card-head { display: flex; align-items: center; gap: 11px; }
       .po-card-head > span:last-child { display: flex; flex-direction: column; }
