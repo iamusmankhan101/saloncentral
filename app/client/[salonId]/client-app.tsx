@@ -23,6 +23,7 @@ import {
 import type { Service } from "@/lib/types";
 import InstallPrompt from "@/components/install-prompt";
 import BookingSheet, { type BusinessHour, type PublicStaff } from "./booking-sheet";
+import ServiceGroups from "./service-groups";
 import { resolveSalonTheme, type SalonTheme } from "@/lib/salon-theme";
 import {
   checkPushSupport, getExistingSubscription, subscribeToPush, unsubscribeFromPush,
@@ -196,6 +197,25 @@ function ClientAppInner({ salonId }: { salonId: string }) {
     });
   }, [services, category, search]);
 
+  const serviceRow = (s: Service) => (
+    <li key={s.id} className="ca-item" role="button" tabIndex={0}
+      aria-label={`Book ${s.name}`}
+      onClick={() => setBookingFor(s.id)}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setBookingFor(s.id); } }}
+    >
+      <div className="ca-item-main">
+        <div className="ca-item-name">{s.name}</div>
+        {s.description && <div className="ca-item-desc">{s.description}</div>}
+      </div>
+      <span className="ca-item-dur"><Clock size={11} /> {s.durationMin}m</span>
+      <div className="ca-item-price">
+        {s.variablePrice && s.priceRangeMin != null && s.priceRangeMax != null
+          ? <>{money(s.priceRangeMin, currency)}<span className="ca-item-plus">+</span></>
+          : money(s.price, currency)}
+      </div>
+    </li>
+  );
+
   if (loading) return <LoadingScreen />;
 
   if (!data?.ok) {
@@ -346,27 +366,11 @@ function ClientAppInner({ salonId }: { salonId: string }) {
             <p className="ca-empty">
               {search ? `No services match "${search}".` : "No services listed yet — please ask at reception."}
             </p>
+          ) : category === "all" && !search.trim() ? (
+            // The full menu folds by category; a chosen category or a search shows its matches flat.
+            <ServiceGroups services={visible} renderRow={serviceRow} formatMoney={(n) => money(n, currency)} />
           ) : (
-            <ul className="ca-list">
-              {visible.map((s) => (
-                <li key={s.id} className="ca-item" role="button" tabIndex={0}
-                  aria-label={`Book ${s.name}`}
-                  onClick={() => setBookingFor(s.id)}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setBookingFor(s.id); } }}
-                >
-                  <div className="ca-item-main">
-                    <div className="ca-item-name">{s.name}</div>
-                    {s.description && <div className="ca-item-desc">{s.description}</div>}
-                    <div className="ca-item-meta"><Clock size={11} /> {s.durationMin} min</div>
-                  </div>
-                  <div className="ca-item-price">
-                    {s.variablePrice && s.priceRangeMin != null && s.priceRangeMax != null
-                      ? <>{money(s.priceRangeMin, currency)}<span className="ca-item-plus">+</span></>
-                      : money(s.price, currency)}
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <ul className="ca-list">{visible.map(serviceRow)}</ul>
           )}
         </section>
 
@@ -564,26 +568,28 @@ function Styles() {
       .ca-chip-cat-on { background: var(--ca-accent, #7C3AED); border-color: var(--ca-accent, #7C3AED); color: #fff; }
 
       .ca-list { list-style: none; margin: 0; padding: 0; }
+      .ca-list > li + li { border-top: 1px solid #f4f2f9; }
+      /* One line per service — name, time, price — so the menu stays short. */
       .ca-item {
-        display: flex; justify-content: space-between; gap: 14px; align-items: flex-start;
-        padding: 13px 15px; border-bottom: 1px solid #f4f2f9;
+        display: flex; gap: 10px; align-items: center;
+        padding: 11px 15px;
         cursor: pointer; transition: background .15s ease;
       }
       .ca-item:active { background: var(--ca-accent-dim, rgba(124,58,237,.08)); }
-      .ca-item:last-child { border-bottom: none; border-radius: 0 0 18px 18px; }
-      .ca-item-main { min-width: 0; }
+      .ca-list > .ca-item:last-child { border-radius: 0 0 18px 18px; }
+      .ca-item-main { min-width: 0; flex: 1; }
       .ca-item-name { font-size: 14px; font-weight: 650; line-height: 1.35; }
       .ca-item-desc {
-        font-size: 12px; color: #8b8ba3; margin-top: 3px; line-height: 1.45;
-        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+        font-size: 12px; color: #8b8ba3; margin-top: 2px; line-height: 1.4;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       }
-      .ca-item-meta {
-        display: flex; align-items: center; gap: 4px;
-        font-size: 11.5px; color: #a3a1b8; margin-top: 5px;
+      .ca-item-dur {
+        flex-shrink: 0; display: inline-flex; align-items: center; gap: 3px;
+        font-size: 11.5px; color: #a3a1b8; white-space: nowrap;
       }
       .ca-item-price {
-        flex-shrink: 0; font-size: 14px; font-weight: 800; color: var(--ca-accent, #7C3AED);
-        white-space: nowrap; padding-top: 1px;
+        flex-shrink: 0; min-width: 78px; text-align: right;
+        font-size: 13.5px; font-weight: 800; color: var(--ca-accent, #7C3AED); white-space: nowrap;
       }
       .ca-item-plus { opacity: .6; margin-left: 1px; }
       .ca-empty { margin: 0; padding: 22px 16px 26px; font-size: 13.5px; color: #a3a1b8; text-align: center; }

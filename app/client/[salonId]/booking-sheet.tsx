@@ -19,6 +19,7 @@ import {
 import type { Appointment, Client, Service } from "@/lib/types";
 import { normalizePhone } from "@/lib/whatsapp-scheduler";
 import { isSlotFree, type BusySlot } from "@/lib/availability";
+import ServiceGroups from "./service-groups";
 
 export interface BusinessHour { day: string; open: boolean; from: string; to: string }
 export interface PublicStaff { id: string; name: string; photo?: string }
@@ -273,25 +274,30 @@ export default function BookingSheet({
             services.length === 0 ? (
               <p className="bk-empty">No services are open for booking yet — please call the salon.</p>
             ) : (
-              <ul className="bk-list">
-                {services.map((s) => {
-                  const on = serviceIds.includes(s.id);
-                  return (
-                    <li key={s.id}>
-                      <button className={`bk-svc${on ? " bk-svc-on" : ""}`} onClick={() => toggle(s.id)} aria-pressed={on}>
-                        <span className="bk-check">{on && <Check size={13} strokeWidth={3} />}</span>
-                        <span className="bk-svc-main">
+              <div className="bk-list">
+                <ServiceGroups
+                  services={services}
+                  formatMoney={formatMoney}
+                  selectedIds={serviceIds}
+                  // Opened from a service's row: show that service's category, already ticked.
+                  initiallyOpen={services.filter((s) => serviceIds.includes(s.id)).map((s) => s.category?.trim() || "Other")}
+                  renderRow={(s) => {
+                    const on = serviceIds.includes(s.id);
+                    return (
+                      <li key={s.id}>
+                        <button className={`bk-svc${on ? " bk-svc-on" : ""}`} onClick={() => toggle(s.id)} aria-pressed={on}>
+                          <span className="bk-check">{on && <Check size={13} strokeWidth={3} />}</span>
                           <span className="bk-svc-name">{s.name}</span>
-                          <span className="bk-svc-meta"><Clock size={11} /> {s.durationMin} min</span>
-                        </span>
-                        <span className="bk-svc-price">
-                          {s.variablePrice && s.priceRangeMin != null ? `${formatMoney(s.priceRangeMin)}+` : formatMoney(s.price)}
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
+                          <span className="bk-svc-meta"><Clock size={11} /> {s.durationMin}m</span>
+                          <span className="bk-svc-price">
+                            {s.variablePrice && s.priceRangeMin != null ? `${formatMoney(s.priceRangeMin)}+` : formatMoney(s.price)}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  }}
+                />
+              </div>
             )
           )}
 
@@ -475,11 +481,10 @@ function SheetStyles() {
       .bk-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 14px; display: flex; flex-direction: column; gap: 14px; }
       .bk-empty { margin: 0; padding: 18px 4px; font-size: 13.5px; color: #8b8ba3; text-align: center; }
 
-      .bk-list { list-style: none; margin: 0; padding: 0; background: #fff; border-radius: 16px; overflow: hidden; }
-      .bk-list li + li { border-top: 1px solid #f1eff7; }
+      .bk-list { background: #fff; border-radius: 16px; overflow: hidden; }
       .bk-svc {
-        width: 100%; display: flex; align-items: center; gap: 12px; text-align: left;
-        padding: 13px 14px; background: transparent; border: none; cursor: pointer; color: #1a1a2e; font: inherit;
+        width: 100%; display: flex; align-items: center; gap: 10px; text-align: left;
+        padding: 11px 14px; background: transparent; border: none; cursor: pointer; color: #1a1a2e; font: inherit;
       }
       .bk-svc:active { background: var(--ca-accent-dim, rgba(124,58,237,.08)); }
       .bk-check {
@@ -488,10 +493,9 @@ function SheetStyles() {
         transition: background .12s ease, border-color .12s ease;
       }
       .bk-svc-on .bk-check { background: var(--ca-accent, #7C3AED); border-color: var(--ca-accent, #7C3AED); }
-      .bk-svc-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-      .bk-svc-name { font-size: 14px; font-weight: 650; line-height: 1.35; }
-      .bk-svc-meta { display: flex; align-items: center; gap: 4px; font-size: 11.5px; color: #a3a1b8; margin-top: 3px; }
-      .bk-svc-price { font-size: 13.5px; font-weight: 800; color: var(--ca-accent, #7C3AED); white-space: nowrap; }
+      .bk-svc-name { flex: 1; min-width: 0; font-size: 14px; font-weight: 650; line-height: 1.35; }
+      .bk-svc-meta { flex-shrink: 0; display: inline-flex; align-items: center; gap: 3px; font-size: 11.5px; color: #a3a1b8; white-space: nowrap; }
+      .bk-svc-price { flex-shrink: 0; min-width: 72px; text-align: right; font-size: 13.5px; font-weight: 800; color: var(--ca-accent, #7C3AED); white-space: nowrap; }
 
       .bk-sec { display: flex; flex-direction: column; gap: 8px; }
       .bk-label { font-size: 12px; font-weight: 700; color: #6b6b8a; letter-spacing: .02em; }
