@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import type { Service } from "@/lib/types";
 import InstallPrompt from "@/components/install-prompt";
+import BookingSheet, { type BusinessHour, type PublicStaff } from "./booking-sheet";
 import { resolveSalonTheme, type SalonTheme } from "@/lib/salon-theme";
 import {
   checkPushSupport, getExistingSubscription, subscribeToPush, unsubscribeFromPush,
@@ -30,12 +31,14 @@ import {
 interface SalonSettings {
   salon?: { name?: string; phone?: string; address?: string; logo?: string; currency?: string };
   appearance?: { accent?: string };
+  hours?: BusinessHour[];
 }
 
 interface SalonResponse {
   ok: boolean;
   error?: string;
   services?: Service[];
+  staff?: PublicStaff[];
   settings?: SalonSettings;
 }
 
@@ -90,6 +93,9 @@ function ClientAppInner({ salonId }: { salonId: string }) {
   const [pushMsg, setPushMsg]         = useState("");
   const [pushBlocked, setPushBlocked] = useState(false);
   const [offersHidden, setOffersHidden] = useState(false);
+
+  // null = closed; "" = open with nothing preselected; an id = opened from that service's row.
+  const [bookingFor, setBookingFor] = useState<string | null>(null);
 
   // Remember which salon this device belongs to, so /client — the start_url
   // baked into apps installed before the per-salon manifest shipped — can send
@@ -291,11 +297,11 @@ function ClientAppInner({ salonId }: { salonId: string }) {
 
         {/* ── Quick actions ───────────────────────────────────────────────── */}
         <section className="ca-quick">
-          <a href={`/online-booking?salon=${encodeURIComponent(salonId)}`} target="_blank" rel="noopener noreferrer" className="ca-quick-item">
+          <button onClick={() => setBookingFor("")} className="ca-quick-item">
             <CalendarPlus size={17} className="ca-quick-icon" />
             <span>Book</span>
             <ChevronRight size={15} color="#c4c2d4" style={{ marginLeft: "auto" }} />
-          </a>
+          </button>
           <a href={`/loyalty-card/${encodeURIComponent(salonId)}`} className="ca-quick-item">
             <CreditCard size={17} className="ca-quick-icon" />
             <span>Loyalty card</span>
@@ -343,7 +349,11 @@ function ClientAppInner({ salonId }: { salonId: string }) {
           ) : (
             <ul className="ca-list">
               {visible.map((s) => (
-                <li key={s.id} className="ca-item">
+                <li key={s.id} className="ca-item" role="button" tabIndex={0}
+                  aria-label={`Book ${s.name}`}
+                  onClick={() => setBookingFor(s.id)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setBookingFor(s.id); } }}
+                >
                   <div className="ca-item-main">
                     <div className="ca-item-name">{s.name}</div>
                     {s.description && <div className="ca-item-desc">{s.description}</div>}
@@ -365,10 +375,23 @@ function ClientAppInner({ salonId }: { salonId: string }) {
 
       {/* ── Persistent booking CTA ────────────────────────────────────────── */}
       <div className="ca-cta">
-        <a href={`/online-booking?salon=${encodeURIComponent(salonId)}`} target="_blank" rel="noopener noreferrer" className="ca-cta-btn">
+        <button onClick={() => setBookingFor("")} className="ca-cta-btn">
           <CalendarPlus size={17} /> Book appointment
-        </a>
+        </button>
       </div>
+
+      {bookingFor !== null && (
+        <BookingSheet
+          salonId={salonId}
+          salonName={salonName}
+          services={services}
+          staff={data.staff ?? []}
+          hours={data.settings?.hours ?? []}
+          initialServiceId={bookingFor || undefined}
+          formatMoney={(n) => money(n, currency)}
+          onClose={() => setBookingFor(null)}
+        />
+      )}
 
       <Styles />
     </div>
@@ -497,6 +520,7 @@ function Styles() {
         display: flex; align-items: center; gap: 11px;
         background: #fff; padding: 14px 15px; text-decoration: none; color: #1a1a2e;
         font-size: 14px; font-weight: 650; transition: background .15s ease;
+        width: 100%; border: none; font-family: inherit; text-align: left; cursor: pointer;
       }
       .ca-quick-item:active { background: var(--ca-accent-dim, rgba(124,58,237,.08)); }
       /* The row's label stays near-black; only the leading icon carries the brand. */
@@ -543,7 +567,9 @@ function Styles() {
       .ca-item {
         display: flex; justify-content: space-between; gap: 14px; align-items: flex-start;
         padding: 13px 15px; border-bottom: 1px solid #f4f2f9;
+        cursor: pointer; transition: background .15s ease;
       }
+      .ca-item:active { background: var(--ca-accent-dim, rgba(124,58,237,.08)); }
       .ca-item:last-child { border-bottom: none; border-radius: 0 0 18px 18px; }
       .ca-item-main { min-width: 0; }
       .ca-item-name { font-size: 14px; font-weight: 650; line-height: 1.35; }
@@ -579,6 +605,7 @@ function Styles() {
         font-size: 15px; font-weight: 750; letter-spacing: -.01em;
         box-shadow: 0 8px 22px var(--ca-accent-glow, rgba(124,58,237,.3));
         transition: transform .12s ease;
+        width: 100%; border: none; font-family: inherit; cursor: pointer;
       }
       .ca-cta-btn:active { transform: scale(.975); }
 
