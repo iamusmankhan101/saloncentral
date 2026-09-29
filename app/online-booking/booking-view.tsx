@@ -1,7 +1,7 @@
 "use client";
 
 import './onlineBooking.css';
-import { useState, useMemo, useEffect, Suspense } from "react";
+import { useState, useMemo, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { CheckCircle, Clock, Calendar, User, Scissors, ChevronRight, ChevronLeft, MessageSquare, Check } from "lucide-react";
 import {
@@ -17,6 +17,7 @@ import { settingsStore } from "@/lib/settings-store";
 import { fmtCurrency as fmt } from "@/lib/format";
 import { enqueueWhatsAppConfirmation, normalizePhone } from "@/lib/whatsapp-scheduler";
 import { getDefaultLocationId } from "@/lib/locations";
+import { busySlots, isSlotFree, type BusySlot } from "@/lib/availability";
 
 interface BusinessHour {
   day: string;
@@ -43,6 +44,11 @@ function addMinutes(timeStr: string, mins: number): string {
 
 function createId(prefix: string) {
   return `${prefix}_${Date.now()}`;
+}
+
+/** Local YYYY-MM-DD — toISOString() gives tomorrow's date to evening users east of UTC. */
+function localYmd(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 
@@ -111,6 +117,20 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
   const [phone, setPhone]                       = useState("");
   const [notes, setNotes]                       = useState("");
   const [booking, setBooking]                   = useState(false);
+  const [bookError, setBookError]               = useState("");
+  const [remoteBusy, setRemoteBusy]             = useState<BusySlot[]>([]);
+
+  // Taken times for an external customer. Only dates and stylist ids come
+  // back — never who booked. If this fails every slot shows, and the server
+  // still refuses a clash on confirm.
+  const loadBusy = useCallback(() => {
+    if (!salonId) return;
+    fetch(`/api/public/availability?salonId=${encodeURIComponent(salonId)}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { ok: boolean; busy?: BusySlot[] }) => { if (d.ok) setRemoteBusy(d.busy ?? []); })
+      .catch(() => {});
+  }, [salonId]);
+  useEffect(() => { loadBusy(); }, [loadBusy]);
 
   // Use remote settings (when external customer) or local settingsStore (owner's device)
   const rawHoursSource = salonId
@@ -135,12 +155,32 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
   const totalPrice         = selectedServices.reduce((sum, s) => sum + s.price, 0);
   const selectedHours      = getHoursForDate(selectedDate);
   const dateIsOpen         = !selectedDate || !selectedHours || selectedHours.open;
-  const today              = new Date().toISOString().split("T")[0];
+  const today              = localYmd(new Date());
+
+  // On the salon's own device the appointments are already here in full.
+  const busy = useMemo(
+    () => (salonId ? remoteBusy : busySlots(appointments, today)),
+    [salonId, remoteBusy, appointments, today],
+  );
 
   const timeSlots = useMemo(() => {
     if (!selectedDate || !selectedHours?.open || totalDuration <= 0) return [];
-    return generateTimeSlots(selectedHours.from, selectedHours.to, totalDuration);
-  }, [selectedDate, selectedHours, totalDuration]);
+    const activeStaff = staffList.filter((st) => st.isActive !== false).map((st) => st.id);
+    // Stylists who can do every chosen service; unassigned services are open to anyone.
+    const eligible = activeStaff.filter((id) =>
+      selectedServices.every((sv) => !sv.assignedStaffIds?.length || sv.assignedStaffIds.includes(id)));
+    const now = new Date();
+    // Today: hide times that have already started, plus a short buffer to get there.
+    const earliest = selectedDate === today ? now.getHours() * 60 + now.getMinutes() + 30 : 0;
+    return generateTimeSlots(selectedHours.from, selectedHours.to, totalDuration).filter((slot) =>
+      timeToMinutes(slot) >= earliest &&
+      isSlotFree(
+        busy,
+        { date: selectedDate, start: slot, end: addMinutes(slot, totalDuration) },
+        selectedStaffId, eligible, activeStaff,
+      ));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate, selectedHours, totalDuration, busy, selectedStaffId, staffList, selectedServiceIds, today]);
 
   function toggleService(id: string) {
     setSelectedServiceIds((prev) =>
@@ -149,7 +189,7 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
     setSelectedTime("");
   }
 
-  function handleBook() {
+  async function handleBook() {
     // Guards against a double-click/double-tap firing this twice before the step
     // changes to "success" on the next render — without this, each call generates
     // its own appointment (createId() has no random component, just Date.now(), so
@@ -157,6 +197,7 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
     // independently sends its own confirmation + group alert.
     if (booking) return;
     setBooking(true);
+    setBookError("");
 
     const normalizedPhone = normalizePhone(phone);
     const existing = clients.find(
@@ -195,12 +236,37 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
 
     if (salonId) {
       // External customer — save directly to DB under the salon's userId.
-      // Server handles the WhatsApp confirmation to the client.
-      fetch("/api/public/booking", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ salonId, appointment: appt, client: newClientObj ?? undefined, clientPhone: normalizedPhone }),
-      }).catch(() => {});
+      // Server handles the WhatsApp confirmation to the client. Waits for the
+      // answer: "Booking Confirmed!" must mean the booking was actually saved.
+      try {
+        const res = await fetch("/api/public/booking", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            salonId, appointment: appt, client: newClientObj ?? undefined,
+            clientPhone: normalizedPhone, checkAvailability: true,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (data.taken) {
+          // Someone else took this time first — back to the times, freshly loaded.
+          loadBusy();
+          setSelectedTime("");
+          setStep(2);
+          setBookError(data.error);
+          setBooking(false);
+          return;
+        }
+        if (!res.ok || !data.ok) {
+          setBookError(data.error || "We couldn't place your booking. Please try again or call the salon.");
+          setBooking(false);
+          return;
+        }
+      } catch {
+        setBookError("No connection. Check your internet and try again.");
+        setBooking(false);
+        return;
+      }
     } else {
       // On the salon's own device — use localStorage
       const updatedAppts = [appt, ...appointments];
@@ -245,6 +311,7 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
     setSelectedServiceIds([]); setSelectedStaffId("");
     setSelectedDate(""); setSelectedTime("");
     setName(""); setPhone(""); setNotes("");
+    setBooking(false); setBookError("");
     setStep(1);
   }
 
@@ -319,11 +386,11 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
 
               {staffList.length > 0 && (
                 <div className="staffRow">
-                  <button className={`staffChip ${!selectedStaffId ? "active" : ""}`} onClick={() => setSelectedStaffId("")}>
+                  <button className={`staffChip ${!selectedStaffId ? "active" : ""}`} onClick={() => { setSelectedStaffId(""); setSelectedTime(""); }}>
                     Any Stylist
                   </button>
                   {staffList.map((st) => (
-                    <button key={st.id} className={`staffChip ${selectedStaffId === st.id ? "active" : ""}`} onClick={() => setSelectedStaffId(st.id)}>
+                    <button key={st.id} className={`staffChip ${selectedStaffId === st.id ? "active" : ""}`} onClick={() => { setSelectedStaffId(st.id); setSelectedTime(""); }}>
                       {st.name}
                     </button>
                   ))}
@@ -386,12 +453,14 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
                 )}
               </div>
 
+              {bookError && <div className="dateWarning">{bookError}</div>}
+
               {selectedDate && dateIsOpen && timeSlots.length > 0 && (
                 <div className="formGroup">
                   <label className="formLabel">Available Times</label>
                   <div className="timeGrid">
                     {timeSlots.map((slot) => (
-                      <button key={slot} className={`timeSlot ${selectedTime === slot ? "selected" : ""}`} onClick={() => setSelectedTime(slot)}>
+                      <button key={slot} className={`timeSlot ${selectedTime === slot ? "selected" : ""}`} onClick={() => { setSelectedTime(slot); setBookError(""); }}>
                         {fmtTime12(slot)}
                       </button>
                     ))}
@@ -400,7 +469,7 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
               )}
 
               {selectedDate && dateIsOpen && timeSlots.length === 0 && (
-                <div className="emptyState">No available time slots for this date.</div>
+                <div className="emptyState">Fully booked on this date — please try another day{selectedStaffId ? " or stylist" : ""}.</div>
               )}
 
               <div className="stepNav">
@@ -448,6 +517,8 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
                 <label className="formLabel">Notes (optional)</label>
                 <textarea className="cleanTextarea" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any special requests…" rows={3} />
               </div>
+
+              {bookError && <div className="dateWarning">{bookError}</div>}
 
               <div className="totalRow">
                 <span>Total</span>
