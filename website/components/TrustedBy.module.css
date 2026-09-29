@@ -41,5 +41,14 @@
 .logoImage {
   width: 70px;
   height: 70px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+/* Logos on a white background: keep the whole mark visible and outline the circle. */
+.logoImageInset {
+  padding: 6px;
+  border: 1px solid var(--border);
+  background: #fff;
   object-fit: contain;
 }

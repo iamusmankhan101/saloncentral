@@ -30,7 +30,7 @@ export default function TrustedBy() {
             alt="HA Salon"
             width={500}
             height={500}
-            className={styles.logoImage}
+            className={`${styles.logoImage} ${styles.logoImageInset}`}
           />
         </div>
         <div className={styles.logoCard} data-animate data-delay="0.32">
@@ -48,7 +48,7 @@ export default function TrustedBy() {
             alt="Makeup by Sara"
             width={420}
             height={420}
-            className={styles.logoImage}
+            className={`${styles.logoImage} ${styles.logoImageInset}`}
           />
         </div>
         <div className={styles.logoCard} data-animate data-delay="0.48">
