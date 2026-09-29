@@ -14,12 +14,15 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Calendar, Check, CheckCircle2, ChevronLeft, Clock, Scissors, User, X,
+  Calendar, Check, CheckCircle2, ChevronLeft, Clock, Scissors, User, Wallet, X,
 } from "lucide-react";
 import type { Appointment, Client, Service } from "@/lib/types";
 import { normalizePhone } from "@/lib/whatsapp-scheduler";
 import { isSlotFree, type BusySlot } from "@/lib/availability";
 import ServiceGroups from "./service-groups";
+import {
+  availableMethods, MethodDetails, MethodIcon, PaymentStyles, type PayMethod, type PublicPayments,
+} from "./payment-options";
 
 export interface BusinessHour { day: string; open: boolean; from: string; to: string }
 export interface PublicStaff { id: string; name: string; photo?: string }
@@ -56,7 +59,7 @@ const longDate = (s: string) =>
 type Step = "services" | "when" | "details" | "done";
 
 export default function BookingSheet({
-  salonId, salonName, services, staff, hours, initialServiceId, formatMoney, onClose,
+  salonId, salonName, services, staff, hours, initialServiceId, formatMoney, payments, salonPhone, onClose,
 }: {
   salonId: string;
   salonName: string;
@@ -65,8 +68,11 @@ export default function BookingSheet({
   hours: BusinessHour[];
   initialServiceId?: string;
   formatMoney: (n: number) => string;
+  payments?: PublicPayments;
+  salonPhone?: string;
   onClose: () => void;
 }) {
+  const payMethods = availableMethods(payments);
   const [step, setStep]             = useState<Step>("services");
   const [serviceIds, setServiceIds] = useState<string[]>(initialServiceId ? [initialServiceId] : []);
   const [staffId, setStaffId]       = useState("");
@@ -79,6 +85,8 @@ export default function BookingSheet({
   const [notes, setNotes]           = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError]           = useState("");
+  const [payMethod, setPayMethod]   = useState<PayMethod>(() => availableMethods(payments)[0].id);
+  const chosenPay = payMethods.find((m) => m.id === payMethod) ?? payMethods[0];
   const [busy, setBusy]             = useState<BusySlot[]>([]);
 
   // Taken times, so they can be hidden. If this fails the customer still sees
@@ -218,7 +226,9 @@ export default function BookingSheet({
       status: "booked",
       totalAmount: totalPrice,
       source: "web",
-      notes: notes.trim() || undefined,
+      // Written into the notes so the desk sees how the customer means to pay
+      // wherever the appointment is shown.
+      notes: [notes.trim(), `Payment: ${chosenPay.label}`].filter(Boolean).join("\n"),
       createdAt: new Date().toISOString(),
     };
     // The server matches on phone: a returning customer's record is updated,
@@ -431,6 +441,26 @@ export default function BookingSheet({
                   placeholder="e.g. 0300 1234567" autoComplete="tel"
                 />
               </label>
+              <section className="bk-sec">
+                <div className="bk-label">How will you pay?</div>
+                <div className="bk-pay">
+                  {payMethods.map((m) => (
+                    <button
+                      key={m.id}
+                      className={`bk-pay-opt${payMethod === m.id ? " bk-pay-on" : ""}`}
+                      onClick={() => setPayMethod(m.id)}
+                      aria-pressed={payMethod === m.id}
+                    >
+                      <span className="po-icon"><MethodIcon id={m.id} size={16} /></span>
+                      <span className="bk-pay-text">
+                        <span className="bk-pay-label">{m.label}</span>
+                        <span className="bk-pay-sub">{m.sub}</span>
+                      </span>
+                      <span className="bk-radio" />
+                    </button>
+                  ))}
+                </div>
+              </section>
               <label className="bk-field">
                 <span className="bk-label">Notes <em>(optional)</em></span>
                 <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Anything we should know?" />
@@ -450,7 +480,18 @@ export default function BookingSheet({
                 services={selected.map((s) => s.name).join(", ")}
                 stylist={stylistLabel}
                 total={`${formatMoney(totalPrice)}${hasVariable ? "+" : ""}`}
+                payment={chosenPay.label}
               />
+              {chosenPay.id !== "counter" && (
+                <section className="po-card bk-pay-done">
+                  <div className="po-card-title">Send {formatMoney(totalPrice)}{hasVariable ? "+" : ""} via {chosenPay.label}</div>
+                  <MethodDetails method={chosenPay} />
+                  <p className="po-note">
+                    Show the payment screenshot at the counter
+                    {salonPhone ? <> or send it on WhatsApp to <strong>{salonPhone}</strong></> : null}.
+                  </p>
+                </section>
+              )}
             </div>
           )}
         </div>
@@ -480,12 +521,13 @@ export default function BookingSheet({
         </footer>
       </div>
       <SheetStyles />
+      <PaymentStyles />
     </div>
   );
 }
 
-function Summary({ date, time, duration, services, stylist, total }: {
-  date: string; time: string; duration: number; services: string; stylist?: string; total?: string;
+function Summary({ date, time, duration, services, stylist, total, payment }: {
+  date: string; time: string; duration: number; services: string; stylist?: string; total?: string; payment?: string;
 }) {
   return (
     <div className="bk-summary">
@@ -493,6 +535,7 @@ function Summary({ date, time, duration, services, stylist, total }: {
       <div><Clock size={14} /> {time12(time)} · {duration} min</div>
       <div><Scissors size={14} /> {services}</div>
       <div><User size={14} /> {stylist ?? "Any stylist"}</div>
+      {payment && <div><Wallet size={14} /> {payment}</div>}
       {total && <div className="bk-summary-total"><span>Total</span><strong>{total}</strong></div>}
     </div>
   );
@@ -591,6 +634,20 @@ function SheetStyles() {
         padding: 12px 13px; font: inherit; font-size: 16px; color: #1a1a2e; outline: none; resize: none;
       }
       .bk-field input:focus, .bk-field textarea:focus { border-color: var(--ca-accent, #7C3AED); }
+      .bk-pay { display: flex; flex-direction: column; gap: 8px; }
+      .bk-pay-opt {
+        display: flex; align-items: center; gap: 11px; width: 100%; text-align: left; cursor: pointer;
+        background: #fff; border: 1.5px solid transparent; border-radius: 14px; padding: 10px 12px;
+        font: inherit; color: #1a1a2e;
+      }
+      .bk-pay-on { border-color: var(--ca-accent, #7C3AED); }
+      .bk-pay-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+      .bk-pay-label { font-size: 14px; font-weight: 700; }
+      .bk-pay-sub { font-size: 12px; color: #8b8ba3; margin-top: 1px; }
+      .bk-radio { width: 20px; height: 20px; border-radius: 50%; border: 2px solid #d6d4e3; flex-shrink: 0; }
+      .bk-pay-on .bk-radio { border: 6px solid var(--ca-accent, #7C3AED); }
+      .bk-pay-done { width: 100%; text-align: left; margin-top: 10px; }
+      .bk-pay-done .po-note { margin: 10px 0 0; }
       .bk-error { background: #fef2f2; color: #b91c1c; font-size: 13px; border-radius: 12px; padding: 10px 13px; line-height: 1.5; }
 
       .bk-done { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; padding-top: 28px; }

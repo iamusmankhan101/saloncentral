@@ -18,12 +18,13 @@ import { Suspense, useCallback, useEffect, useMemo, useState, type CSSProperties
 import { useSearchParams } from "next/navigation";
 import {
   BellRing, BellOff, CalendarPlus, Check, ChevronRight, Clock, CreditCard,
-  MapPin, Phone, Scissors, Search, Sparkles, X,
+  MapPin, Phone, Scissors, Search, Sparkles, Wallet, X,
 } from "lucide-react";
 import type { Service } from "@/lib/types";
 import InstallPrompt from "@/components/install-prompt";
 import BookingSheet, { type BusinessHour, type PublicStaff } from "./booking-sheet";
 import ServiceGroups from "./service-groups";
+import { PaymentSheet, type PublicPayments } from "./payment-options";
 import { resolveSalonTheme, type SalonTheme } from "@/lib/salon-theme";
 import {
   checkPushSupport, getExistingSubscription, subscribeToPush, unsubscribeFromPush,
@@ -33,6 +34,7 @@ interface SalonSettings {
   salon?: { name?: string; phone?: string; address?: string; logo?: string; currency?: string };
   appearance?: { accent?: string };
   hours?: BusinessHour[];
+  payments?: PublicPayments;
 }
 
 interface SalonResponse {
@@ -97,6 +99,7 @@ function ClientAppInner({ salonId }: { salonId: string }) {
 
   // null = closed; "" = open with nothing preselected; an id = opened from that service's row.
   const [bookingFor, setBookingFor] = useState<string | null>(null);
+  const [payOpen, setPayOpen]       = useState(false);
 
   // Remember which salon this device belongs to, so /client — the start_url
   // baked into apps installed before the per-salon manifest shipped — can send
@@ -322,6 +325,11 @@ function ClientAppInner({ salonId }: { salonId: string }) {
             <span>Book</span>
             <ChevronRight size={15} color="#c4c2d4" style={{ marginLeft: "auto" }} />
           </button>
+          <button onClick={() => setPayOpen(true)} className="ca-quick-item">
+            <Wallet size={17} className="ca-quick-icon" />
+            <span>Payment options</span>
+            <ChevronRight size={15} color="#c4c2d4" style={{ marginLeft: "auto" }} />
+          </button>
           <a href={`/loyalty-card/${encodeURIComponent(salonId)}`} className="ca-quick-item">
             <CreditCard size={17} className="ca-quick-icon" />
             <span>Loyalty card</span>
@@ -393,8 +401,14 @@ function ClientAppInner({ salonId }: { salonId: string }) {
           hours={data.settings?.hours ?? []}
           initialServiceId={bookingFor || undefined}
           formatMoney={(n) => money(n, currency)}
+          payments={data.settings?.payments}
+          salonPhone={salon.phone}
           onClose={() => setBookingFor(null)}
         />
+      )}
+
+      {payOpen && (
+        <PaymentSheet payments={data.settings?.payments} salonPhone={salon.phone} onClose={() => setPayOpen(false)} />
       )}
 
       <Styles />

@@ -173,6 +173,14 @@ const defaults = {
     enabled: false,
     apiKey: "",
   },
+  // How customers can pay, shown in the client app and at booking. Public by
+  // design — /api/public/salon hands the enabled ones to anyone with the link.
+  payments: {
+    payAtCounter: true,
+    jazzcash:  { enabled: false, number: "", title: "" },
+    easypaisa: { enabled: false, number: "", title: "" },
+    bank:      { enabled: false, bankName: "", title: "", accountNumber: "", iban: "" },
+  },
   printer: {
     enabled: false,
     ip: "",
@@ -241,6 +249,13 @@ function load() {
       loyalty:  { ...dynamicDefaults.loyalty,  ...saved.loyalty  },
       cashback: { ...dynamicDefaults.cashback, ...saved.cashback },
       printer:  { ...dynamicDefaults.printer,  ...saved.printer  },
+      payments: {
+        ...dynamicDefaults.payments,
+        ...saved.payments,
+        jazzcash:  { ...dynamicDefaults.payments.jazzcash,  ...saved.payments?.jazzcash },
+        easypaisa: { ...dynamicDefaults.payments.easypaisa, ...saved.payments?.easypaisa },
+        bank:      { ...dynamicDefaults.payments.bank,      ...saved.payments?.bank },
+      },
     };
   } catch {
     return structuredClone(defaults);

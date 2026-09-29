@@ -15,9 +15,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BellRing, Check, Copy, Download, Loader2, Plus, Printer,
-  QrCode, Send, Smartphone, Trash2, Users,
+  QrCode, Send, Smartphone, Trash2, Users, Wallet,
 } from "lucide-react";
 import PageTitle from "@/components/page-title";
+import { Toggle } from "@/components/settings-sections";
+import { saveSettings, settingsStore } from "@/lib/settings-store";
 
 type QrType = "salon" | "station" | "booking" | "loyalty";
 
@@ -295,6 +297,8 @@ export default function ClientAppPage() {
         </form>
       </section>
 
+      <PaymentDetailsCard />
+
       {/* ── Station codes ───────────────────────────────────────────────────── */}
       <section style={cardStyle}>
         <div style={{ display: "flex", alignItems: "center", gap: 9, color: "var(--accent, #7C3AED)", fontSize: 12, fontWeight: 900, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 10 }}>
@@ -365,6 +369,105 @@ export default function ClientAppPage() {
 
       <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
     </div>
+  );
+}
+
+interface PaymentSettings {
+  payAtCounter: boolean;
+  jazzcash:  { enabled: boolean; number: string; title: string };
+  easypaisa: { enabled: boolean; number: string; title: string };
+  bank:      { enabled: boolean; bankName: string; title: string; accountNumber: string; iban: string };
+}
+
+/**
+ * The salon's own accounts, shown to customers in the client app's "Payment
+ * options" and at the end of booking. Everything switched on here is public —
+ * anyone with the app link can see it.
+ */
+function PaymentDetailsCard() {
+  const [form, setForm] = useState<PaymentSettings>(() => structuredClone(settingsStore.payments as PaymentSettings));
+  const [saving, setSaving] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+
+  function set<K extends "jazzcash" | "easypaisa" | "bank">(method: K, patch: Partial<PaymentSettings[K]>) {
+    setForm((f) => ({ ...f, [method]: { ...f[method], ...patch } }));
+    setResult(null);
+  }
+
+  function problem(): string {
+    if (form.jazzcash.enabled && !form.jazzcash.number.trim()) return "Add your JazzCash number, or switch JazzCash off.";
+    if (form.easypaisa.enabled && !form.easypaisa.number.trim()) return "Add your EasyPaisa number, or switch EasyPaisa off.";
+    if (form.bank.enabled && !form.bank.accountNumber.trim() && !form.bank.iban.trim())
+      return "Add your bank account number or IBAN, or switch bank transfer off.";
+    return "";
+  }
+
+  async function save() {
+    const issue = problem();
+    if (issue) { setResult({ ok: false, text: issue }); return; }
+    setSaving(true);
+    settingsStore.payments = structuredClone(form);
+    const ok = await saveSettings();
+    setSaving(false);
+    setResult(ok
+      ? { ok: true, text: "Saved — customers will see this in your app." }
+      : { ok: false, text: "Saved on this device, but it didn't reach the server. Check your connection and save again." });
+  }
+
+  const row = (label: string, on: boolean, toggle: (v: boolean) => void, fields?: React.ReactNode, hint?: string) => (
+    <div style={{ border: "1px solid #eeecf4", borderRadius: 14, padding: "12px 14px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 750, color: "#1a1a2e" }}>{label}</div>
+          {hint && <div style={{ fontSize: 12, color: "#9898b0", marginTop: 2 }}>{hint}</div>}
+        </div>
+        <Toggle value={on} onChange={toggle} />
+      </div>
+      {on && fields && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginTop: 12 }}>
+          {fields}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <section style={cardStyle}>
+      <div style={{ display: "flex", alignItems: "center", gap: 9, color: "var(--accent, #7C3AED)", fontSize: 12, fontWeight: 900, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 10 }}>
+        <Wallet size={16} /> Customer payments
+      </div>
+      <p style={{ margin: "0 0 14px", fontSize: 13, color: "#777790", lineHeight: 1.6, maxWidth: 680 }}>
+        How customers can pay you. These show in your app under &ldquo;Payment options&rdquo; and when someone books.
+        Anything switched on here is visible to anyone with your app link.
+      </p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {row("Pay at counter / POS", form.payAtCounter,
+          (v) => { setForm((f) => ({ ...f, payAtCounter: v })); setResult(null); },
+          undefined, "Cash or card when they visit")}
+        {row("JazzCash", form.jazzcash.enabled, (v) => set("jazzcash", { enabled: v }), <>
+          <input value={form.jazzcash.number} onChange={(e) => set("jazzcash", { number: e.target.value })} placeholder="JazzCash number — e.g. 0300 1234567" style={inputStyle} />
+          <input value={form.jazzcash.title} onChange={(e) => set("jazzcash", { title: e.target.value })} placeholder="Account title" style={inputStyle} />
+        </>)}
+        {row("EasyPaisa", form.easypaisa.enabled, (v) => set("easypaisa", { enabled: v }), <>
+          <input value={form.easypaisa.number} onChange={(e) => set("easypaisa", { number: e.target.value })} placeholder="EasyPaisa number — e.g. 0345 1234567" style={inputStyle} />
+          <input value={form.easypaisa.title} onChange={(e) => set("easypaisa", { title: e.target.value })} placeholder="Account title" style={inputStyle} />
+        </>)}
+        {row("Bank transfer", form.bank.enabled, (v) => set("bank", { enabled: v }), <>
+          <input value={form.bank.bankName} onChange={(e) => set("bank", { bankName: e.target.value })} placeholder="Bank name — e.g. Meezan Bank" style={inputStyle} />
+          <input value={form.bank.title} onChange={(e) => set("bank", { title: e.target.value })} placeholder="Account title" style={inputStyle} />
+          <input value={form.bank.accountNumber} onChange={(e) => set("bank", { accountNumber: e.target.value })} placeholder="Account number" style={inputStyle} />
+          <input value={form.bank.iban} onChange={(e) => set("bank", { iban: e.target.value })} placeholder="IBAN — e.g. PK36MEZN0000000000000000" style={inputStyle} />
+        </>)}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginTop: 14 }}>
+        <button onClick={save} disabled={saving} style={{ ...primaryBtn, opacity: saving ? 0.6 : 1 }}>
+          {saving ? <Loader2 size={15} style={{ animation: "spin 1s linear infinite" }} /> : <Check size={15} />} Save payment details
+        </button>
+        {result && (
+          <span style={{ fontSize: 13, fontWeight: 700, color: result.ok ? "#047857" : "#dc2626" }}>{result.text}</span>
+        )}
+      </div>
+    </section>
   );
 }
 

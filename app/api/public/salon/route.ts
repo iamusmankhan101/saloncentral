@@ -35,6 +35,23 @@ function publicSettings(settings: Json): Json {
       ? settings.hours.map((h) => pick(h, ["day", "open", "from", "to"]))
       : [],
     appearance: pick(settings.appearance, ["accent"]),
+    payments: publicPayments(settings.payments),
+  };
+}
+
+/** Only the methods the salon switched on, and only the fields a customer needs to pay. */
+function publicPayments(raw: unknown): Json {
+  const p = (raw && typeof raw === "object" ? raw : {}) as Json;
+  const on = (key: string, fields: string[]) => {
+    const m = p[key] as Json | undefined;
+    return m?.enabled ? pick(m, fields) : undefined;
+  };
+  return {
+    // Salons that saved settings before this existed still take payment at the desk.
+    payAtCounter: p.payAtCounter !== false,
+    jazzcash: on("jazzcash", ["number", "title"]),
+    easypaisa: on("easypaisa", ["number", "title"]),
+    bank: on("bank", ["bankName", "title", "accountNumber", "iban"]),
   };
 }
 
