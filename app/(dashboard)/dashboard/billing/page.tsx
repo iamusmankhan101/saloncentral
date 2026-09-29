@@ -6,6 +6,7 @@ import {
   BadgeCheck, ImagePlus, Clock, Eye, CheckCircle, AlertCircle,
   Zap, Sparkles, Lock, Shield, CreditCard,
 } from "lucide-react";
+import { EasypaisaLogo } from "@/components/wallet-logos";
 import { getCurrentUser } from "@/lib/auth";
 import { addPaymentRequest, setActivePlan, getPaymentRequests, type PaymentMethod } from "@/lib/payment-requests";
 import type { Invoice, InvoiceStatus } from "@/lib/invoices";
@@ -54,15 +55,6 @@ function termLabel(months: number) {
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
-
-function EasypaisaLogo({ size = 28 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect width="40" height="40" rx="10" fill="#2DC84D" />
-      <text x="20" y="27" textAnchor="middle" fontSize="20" fontWeight="900" fontFamily="Arial,sans-serif" fill="#fff">e</text>
-    </svg>
-  );
-}
 
 function CopyField({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = useState(false);

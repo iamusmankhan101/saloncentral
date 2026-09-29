@@ -60,7 +60,11 @@ export async function uploadImage(file: File, folder: "clients" | "staff" | "sal
   return data.url;
 }
 
-export async function fileToResizedDataUrl(file: File): Promise<string> {
+/**
+ * `maxEdge`/`quality` default to profile-photo sizing; a payment screenshot
+ * passes larger values so its transaction ID stays legible.
+ */
+export async function fileToResizedDataUrl(file: File, maxEdge = MAX_EDGE_PX, quality = JPEG_QUALITY): Promise<string> {
   if (!file.type.startsWith("image/")) {
     throw new ImageDecodeError("That file isn't an image. Pick a JPG or PNG.");
   }
@@ -85,7 +89,7 @@ export async function fileToResizedDataUrl(file: File): Promise<string> {
   });
 
   const longest = Math.max(img.width, img.height);
-  const scale = longest > MAX_EDGE_PX ? MAX_EDGE_PX / longest : 1;
+  const scale = longest > maxEdge ? maxEdge / longest : 1;
   const width = Math.max(1, Math.round(img.width * scale));
   const height = Math.max(1, Math.round(img.height * scale));
 
@@ -99,5 +103,5 @@ export async function fileToResizedDataUrl(file: File): Promise<string> {
   ctx.fillRect(0, 0, width, height);
   ctx.drawImage(img, 0, 0, width, height);
 
-  return canvas.toDataURL("image/jpeg", JPEG_QUALITY);
+  return canvas.toDataURL("image/jpeg", quality);
 }

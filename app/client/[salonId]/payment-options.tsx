@@ -8,7 +8,8 @@
  */
 
 import { useEffect, useState } from "react";
-import { Building2, Check, Copy, Smartphone, Store, X } from "lucide-react";
+import { Building2, Check, Copy, Store, X } from "lucide-react";
+import { EasypaisaLogo, JazzCashLogo } from "@/components/wallet-logos";
 
 export interface PublicPayments {
   payAtCounter?: boolean;
@@ -54,10 +55,15 @@ export function availableMethods(p: PublicPayments | undefined): MethodInfo[] {
   return out;
 }
 
-export function MethodIcon({ id, size = 17 }: { id: PayMethod; size?: number }) {
-  if (id === "counter") return <Store size={size} />;
-  if (id === "bank") return <Building2 size={size} />;
-  return <Smartphone size={size} />;
+/** A method's badge: the wallet's own logo, or a tinted icon for counter and bank. */
+export function MethodIcon({ id, size = 36 }: { id: PayMethod; size?: number }) {
+  if (id === "jazzcash") return <JazzCashLogo size={size} />;
+  if (id === "easypaisa") return <EasypaisaLogo size={size} />;
+  return (
+    <span className="po-icon" style={{ width: size, height: size }}>
+      {id === "bank" ? <Building2 size={size * 0.47} /> : <Store size={size * 0.47} />}
+    </span>
+  );
 }
 
 /** One method's account details, each line with a copy button. */
@@ -110,7 +116,7 @@ export function PaymentSheet({ payments, salonPhone, onClose }: {
           {methods.map((m) => (
             <section key={m.id} className="po-card">
               <div className="po-card-head">
-                <span className="po-icon"><MethodIcon id={m.id} /></span>
+                <MethodIcon id={m.id} />
                 <span>
                   <span className="po-card-title">{m.label}</span>
                   <span className="po-card-sub">{m.sub}</span>

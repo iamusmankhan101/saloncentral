@@ -9,6 +9,7 @@ import {
   Clock, AlertCircle, Gift, Percent,
   ScanBarcode, Lock, PauseCircle, PlayCircle,
 } from "lucide-react";
+import { EasypaisaLogo, JazzCashLogo } from "@/components/wallet-logos";
 import { awardPoints, redeemPoints, type LoyaltySettings } from "@/lib/loyalty";
 import SalonInvoicePrint from "@/components/salon-invoice-print";
 import SalonInvoiceEdit from "@/components/salon-invoice-edit";
@@ -74,10 +75,11 @@ interface CartEntry {
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-const PAY_METHODS: { value: PaymentMethod; label: string; icon: React.ElementType; color: string; bg: string }[] = [
+// `logo` replaces the icon for wallets with a brand mark customers recognise.
+const PAY_METHODS: { value: PaymentMethod; label: string; icon: React.ElementType; logo?: React.ElementType; color: string; bg: string }[] = [
   { value: "cash",      label: "Cash",      icon: Banknote,   color: "#059669", bg: "#ecfdf5" },
-  { value: "jazzcash",  label: "JazzCash",  icon: Smartphone, color: "#7C3AED", bg: "#f5f3ff" },
-  { value: "easypaisa", label: "EasyPaisa", icon: Smartphone, color: "#10b981", bg: "#f0fdf4" },
+  { value: "jazzcash",  label: "JazzCash",  icon: Smartphone, logo: JazzCashLogo,  color: "#E2231A", bg: "#fef2f2" },
+  { value: "easypaisa", label: "EasyPaisa", icon: Smartphone, logo: EasypaisaLogo, color: "#16a34a", bg: "#f0fdf4" },
   { value: "raast",     label: "Raast",     icon: Zap,        color: "#0284c7", bg: "#f0f9ff" },
   { value: "card",      label: "Card",      icon: CreditCard, color: "#6366f1", bg: "#eef2ff" },
   { value: "bank",      label: "Bank",      icon: CreditCard, color: "#0369a1", bg: "#f0f9ff" },
@@ -1810,7 +1812,9 @@ export default function POSPage() {
                       <span style={{ fontSize: 12, fontWeight: 800, color: "#fff" }}>Pay Later</span>
                     ) : selectedPayMethod ? (
                       <>
-                        <selectedPayMethod.icon size={12} color="#fff" />
+                        {selectedPayMethod.logo
+                          ? <selectedPayMethod.logo size={15} />
+                          : <selectedPayMethod.icon size={12} color="#fff" />}
                         <span style={{ fontSize: 12, fontWeight: 800, color: "#fff" }}>{selectedPayMethod.label}</span>
                       </>
                     ) : (
@@ -1830,7 +1834,9 @@ export default function POSPage() {
                     return (
                       <button key={pm.value} type="button" onClick={() => setPayMethod(pm.value)}
                         style={{ padding: "9px 6px", borderRadius: 10, border: `2px solid ${sel ? pm.color : "#e8e8f4"}`, background: sel ? pm.bg : "#fafafe", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, transition: "all 0.12s", transform: sel ? "scale(1.03)" : "scale(1)" }}>
-                        <Icon size={15} color={sel ? pm.color : "#b0b0c8"} />
+                        {pm.logo
+                          ? <span style={{ opacity: sel ? 1 : 0.8, lineHeight: 0 }}><pm.logo size={17} /></span>
+                          : <Icon size={15} color={sel ? pm.color : "#b0b0c8"} />}
                         <span style={{ fontSize: 10, fontWeight: 800, color: sel ? pm.color : "#9999b0" }}>{pm.label}</span>
                       </button>
                     );

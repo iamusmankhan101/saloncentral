@@ -15,10 +15,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BellRing, Check, Copy, Download, Loader2, Plus, Printer,
-  QrCode, Send, Smartphone, Trash2, Users, Wallet,
+  Building2, QrCode, Send, Smartphone, Store, Trash2, Users, Wallet,
 } from "lucide-react";
 import PageTitle from "@/components/page-title";
 import { Toggle } from "@/components/settings-sections";
+import { EasypaisaLogo, JazzCashLogo } from "@/components/wallet-logos";
 import { saveSettings, settingsStore } from "@/lib/settings-store";
 
 type QrType = "salon" | "station" | "booking" | "loyalty";
@@ -414,10 +415,11 @@ function PaymentDetailsCard() {
       : { ok: false, text: "Saved on this device, but it didn't reach the server. Check your connection and save again." });
   }
 
-  const row = (label: string, on: boolean, toggle: (v: boolean) => void, fields?: React.ReactNode, hint?: string) => (
+  const row = (icon: React.ReactNode, label: string, on: boolean, toggle: (v: boolean) => void, fields?: React.ReactNode, hint?: string) => (
     <div style={{ border: "1px solid #eeecf4", borderRadius: 14, padding: "12px 14px" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-        <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        {icon}
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 750, color: "#1a1a2e" }}>{label}</div>
           {hint && <div style={{ fontSize: 12, color: "#9898b0", marginTop: 2 }}>{hint}</div>}
         </div>
@@ -441,18 +443,18 @@ function PaymentDetailsCard() {
         Anything switched on here is visible to anyone with your app link.
       </p>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {row("Pay at counter / POS", form.payAtCounter,
+        {row(<MethodBadge><Store size={17} /></MethodBadge>, "Pay at counter / POS", form.payAtCounter,
           (v) => { setForm((f) => ({ ...f, payAtCounter: v })); setResult(null); },
           undefined, "Cash or card when they visit")}
-        {row("JazzCash", form.jazzcash.enabled, (v) => set("jazzcash", { enabled: v }), <>
+        {row(<JazzCashLogo size={34} />, "JazzCash", form.jazzcash.enabled, (v) => set("jazzcash", { enabled: v }), <>
           <input value={form.jazzcash.number} onChange={(e) => set("jazzcash", { number: e.target.value })} placeholder="JazzCash number — e.g. 0300 1234567" style={inputStyle} />
           <input value={form.jazzcash.title} onChange={(e) => set("jazzcash", { title: e.target.value })} placeholder="Account title" style={inputStyle} />
         </>)}
-        {row("EasyPaisa", form.easypaisa.enabled, (v) => set("easypaisa", { enabled: v }), <>
+        {row(<EasypaisaLogo size={34} />, "EasyPaisa", form.easypaisa.enabled, (v) => set("easypaisa", { enabled: v }), <>
           <input value={form.easypaisa.number} onChange={(e) => set("easypaisa", { number: e.target.value })} placeholder="EasyPaisa number — e.g. 0345 1234567" style={inputStyle} />
           <input value={form.easypaisa.title} onChange={(e) => set("easypaisa", { title: e.target.value })} placeholder="Account title" style={inputStyle} />
         </>)}
-        {row("Bank transfer", form.bank.enabled, (v) => set("bank", { enabled: v }), <>
+        {row(<MethodBadge><Building2 size={17} /></MethodBadge>, "Bank transfer", form.bank.enabled, (v) => set("bank", { enabled: v }), <>
           <input value={form.bank.bankName} onChange={(e) => set("bank", { bankName: e.target.value })} placeholder="Bank name — e.g. Meezan Bank" style={inputStyle} />
           <input value={form.bank.title} onChange={(e) => set("bank", { title: e.target.value })} placeholder="Account title" style={inputStyle} />
           <input value={form.bank.accountNumber} onChange={(e) => set("bank", { accountNumber: e.target.value })} placeholder="Account number" style={inputStyle} />
@@ -468,6 +470,15 @@ function PaymentDetailsCard() {
         )}
       </div>
     </section>
+  );
+}
+
+function MethodBadge({ children }: { children: React.ReactNode }) {
+  return (
+    <span style={{
+      width: 34, height: 34, borderRadius: 10, flexShrink: 0, display: "grid", placeItems: "center",
+      background: "rgba(124,58,237,.08)", color: "var(--accent, #7C3AED)",
+    }}>{children}</span>
   );
 }
 

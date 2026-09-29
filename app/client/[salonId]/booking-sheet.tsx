@@ -12,13 +12,14 @@
  * Rendered inside .ca-root so it inherits the salon's --ca-accent variables.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Calendar, Check, CheckCircle2, ChevronLeft, Clock, Scissors, User, Wallet, X,
+  Calendar, Check, CheckCircle2, ChevronLeft, Clock, ImageUp, Loader2, Scissors, User, Wallet, X,
 } from "lucide-react";
 import type { Appointment, Client, Service } from "@/lib/types";
 import { normalizePhone } from "@/lib/whatsapp-scheduler";
 import { isSlotFree, type BusySlot } from "@/lib/availability";
+import { fileToResizedDataUrl } from "@/lib/image";
 import ServiceGroups from "./service-groups";
 import {
   availableMethods, MethodDetails, MethodIcon, PaymentStyles, type PayMethod, type PublicPayments,
@@ -88,6 +89,8 @@ export default function BookingSheet({
   const [payMethod, setPayMethod]   = useState<PayMethod>(() => availableMethods(payments)[0].id);
   const chosenPay = payMethods.find((m) => m.id === payMethod) ?? payMethods[0];
   const [busy, setBusy]             = useState<BusySlot[]>([]);
+  /** Id of the booking once saved — the payment screenshot is attached to it. */
+  const [bookedId, setBookedId]     = useState("");
 
   // Taken times, so they can be hidden. If this fails the customer still sees
   // every slot, and the server refuses a clash when they confirm.
@@ -264,6 +267,7 @@ export default function BookingSheet({
       try {
         window.localStorage.setItem(CONTACT_KEY, JSON.stringify({ name: name.trim(), phone: phone.trim() }));
       } catch { /* not essential */ }
+      setBookedId(appointment.id);
       setStep("done");
     } catch {
       setError("No connection. Check your internet and try again.");
@@ -451,7 +455,7 @@ export default function BookingSheet({
                       onClick={() => setPayMethod(m.id)}
                       aria-pressed={payMethod === m.id}
                     >
-                      <span className="po-icon"><MethodIcon id={m.id} size={16} /></span>
+                      <MethodIcon id={m.id} size={34} />
                       <span className="bk-pay-text">
                         <span className="bk-pay-label">{m.label}</span>
                         <span className="bk-pay-sub">{m.sub}</span>
@@ -486,8 +490,9 @@ export default function BookingSheet({
                 <section className="po-card bk-pay-done">
                   <div className="po-card-title">Send {formatMoney(totalPrice)}{hasVariable ? "+" : ""} via {chosenPay.label}</div>
                   <MethodDetails method={chosenPay} />
+                  <ProofUpload salonId={salonId} appointmentId={bookedId} method={chosenPay.id} />
                   <p className="po-note">
-                    Show the payment screenshot at the counter
+                    You can also show the screenshot at the counter
                     {salonPhone ? <> or send it on WhatsApp to <strong>{salonPhone}</strong></> : null}.
                   </p>
                 </section>
@@ -522,6 +527,70 @@ export default function BookingSheet({
       </div>
       <SheetStyles />
       <PaymentStyles />
+    </div>
+  );
+}
+
+/**
+ * Lets the customer attach their transfer screenshot to the booking. Saved to
+ * the salon's database and shown to staff on the appointment.
+ */
+function ProofUpload({ salonId, appointmentId, method }: { salonId: string; appointmentId: string; method: string }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [state, setState] = useState<"idle" | "uploading" | "done" | "error">("idle");
+  const [preview, setPreview] = useState("");
+  const [message, setMessage] = useState("");
+
+  async function onFile(file: File | undefined) {
+    if (!file) return;
+    setState("uploading");
+    setMessage("");
+    try {
+      // Larger than a profile photo so the transaction ID stays readable.
+      const dataUrl = await fileToResizedDataUrl(file, 1400, 0.8);
+      setPreview(dataUrl);
+      const res = await fetch("/api/public/payment-proof", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ salonId, appointmentId, method, dataUrl }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) throw new Error(data.error || "Upload failed. Please try again.");
+      setState("done");
+    } catch (err) {
+      setState("error");
+      setMessage(err instanceof Error ? err.message : "Upload failed. Please try again.");
+    }
+    if (inputRef.current) inputRef.current.value = "";
+  }
+
+  return (
+    <div className="bk-proof">
+      <input
+        ref={inputRef} type="file" accept="image/*" hidden
+        onChange={(e) => onFile(e.target.files?.[0])}
+      />
+      {preview && (
+        // eslint-disable-next-line @next/next/no-img-element -- local data URL preview
+        <img src={preview} alt="Payment screenshot" className="bk-proof-img" />
+      )}
+      {state === "done" ? (
+        <div className="bk-proof-ok">
+          <CheckCircle2 size={16} /> Screenshot sent to the salon
+          <button className="bk-proof-link" onClick={() => inputRef.current?.click()}>Replace</button>
+        </div>
+      ) : (
+        <button
+          className="bk-proof-btn"
+          disabled={state === "uploading" || !appointmentId}
+          onClick={() => inputRef.current?.click()}
+        >
+          {state === "uploading"
+            ? <><Loader2 size={16} className="bk-spin" /> Uploading…</>
+            : <><ImageUp size={16} /> {state === "error" ? "Try again" : "Upload payment screenshot"}</>}
+        </button>
+      )}
+      {message && <div className="bk-error">{message}</div>}
     </div>
   );
 }
@@ -647,6 +716,19 @@ function SheetStyles() {
       .bk-radio { width: 20px; height: 20px; border-radius: 50%; border: 2px solid #d6d4e3; flex-shrink: 0; }
       .bk-pay-on .bk-radio { border: 6px solid var(--ca-accent, #7C3AED); }
       .bk-pay-done { width: 100%; text-align: left; margin-top: 10px; }
+      .bk-proof { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+      .bk-proof-btn {
+        display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;
+        padding: 12px; border-radius: 12px; cursor: pointer; font: inherit; font-size: 14px; font-weight: 750;
+        background: var(--ca-accent-dim, rgba(124,58,237,.08)); color: var(--ca-accent, #7C3AED);
+        border: 1.5px dashed var(--ca-accent, #7C3AED);
+      }
+      .bk-proof-btn:disabled { opacity: .6; cursor: default; }
+      .bk-proof-img { width: 100%; max-height: 260px; object-fit: contain; border-radius: 12px; background: #f6f5fa; }
+      .bk-proof-ok { display: flex; align-items: center; gap: 7px; font-size: 13.5px; font-weight: 700; color: #047857; }
+      .bk-proof-link { margin-left: auto; background: none; border: none; color: var(--ca-accent, #7C3AED); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+      .bk-spin { animation: bk-rot 1s linear infinite; }
+      @keyframes bk-rot { to { transform: rotate(360deg) } }
       .bk-pay-done .po-note { margin: 10px 0 0; }
       .bk-error { background: #fef2f2; color: #b91c1c; font-size: 13px; border-radius: 12px; padding: 10px 13px; line-height: 1.5; }
 

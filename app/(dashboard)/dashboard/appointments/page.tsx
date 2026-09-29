@@ -15,6 +15,8 @@ import { getCurrentPlan, isAtLimit, thisMonthCount } from "@/lib/plan-limits";
 import { getSectionOptions, getActiveSection, inSection } from "@/lib/sections";
 import PageTitle from "@/components/page-title";
 import MobilePageHeader from "@/components/mobile-page-header";
+import { PaymentProofBadge, PaymentProofSection, usePaymentProofs } from "@/components/payment-proof";
+import type { PaymentProofMeta } from "@/lib/payment-proofs";
 
 const STATUS: Record<AppointmentStatus, { label: string; color: string; bg: string }> = {
   booked:        { label: "Booked",      color: "#6366f1", bg: "#EEF2FF" },
@@ -477,8 +479,10 @@ function FeedbackBadge({ feedback }: { feedback?: AppointmentFeedback }) {
 
 const FLOW_STEPS: AppointmentStatus[] = ["booked", "confirmed", "arrived", "in-progress", "completed"];
 
-function DetailModal({ appt, onClose, clients, staffList, allServices, onStatusChange, onSaveFeedback }: {
+function DetailModal({ appt, onClose, clients, staffList, allServices, onStatusChange, onSaveFeedback, proof }: {
   appt: Appointment; onClose: () => void; clients: Client[]; staffList: Staff[];
+  /** The customer's payment screenshot, when they sent one from the client app. */
+  proof?: PaymentProofMeta;
   allServices: Service[]; onStatusChange: (apptId: string, status: AppointmentStatus) => void;
   onSaveFeedback: (apptId: string, feedback: AppointmentFeedback | undefined) => void;
 }) {
@@ -756,6 +760,8 @@ function DetailModal({ appt, onClose, clients, staffList, allServices, onStatusC
           {appt.notes && (
             <InfoRow icon={<Tag size={14} color="#9898b0" />} label="Notes">{appt.notes}</InfoRow>
           )}
+
+          {proof && <PaymentProofSection appointmentId={appt.id} proof={proof} />}
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "#f9f8ff", borderRadius: 12, border: "1px solid #ede9fe" }}>
             <span style={{ fontSize: 13, color: "#6b6b8a", fontWeight: 600 }}>Total Amount</span>
@@ -1925,6 +1931,7 @@ export default function AppointmentsPage() {
   const [dateFilter, setDateFilter] = useState<string>("");
   const [sortBy, setSortBy] = useState<"apptDateDesc" | "apptDateAsc" | "createdDesc" | "createdAsc">("apptDateDesc");
   const [selected, setSelected] = useState<Appointment | null>(null);
+  const paymentProofs = usePaymentProofs();
   const [showFilters, setShowFilters] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -2087,6 +2094,7 @@ export default function AppointmentsPage() {
       {selected && (
         <DetailModal
           appt={selected}
+          proof={paymentProofs.get(selected.id)}
           onClose={() => setSelected(null)}
           clients={clients}
           staffList={staffList}
@@ -2510,6 +2518,7 @@ export default function AppointmentsPage() {
                       {(appt.guests?.length ?? 0) > 0 && (
                         <span title={`Also billed: ${appt.guests!.map((g) => g.name).join(", ")}`} style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: "#be185d", background: "#fdf2f8", padding: "2px 6px", borderRadius: 20, letterSpacing: "0.04em", flexShrink: 0 }}>Family +{appt.guests!.length}</span>
                       )}
+                      {paymentProofs.has(appt.id) && <PaymentProofBadge />}
                     </div>
                     <div style={{ fontSize: 11, color: "#9898b0", marginTop: 2, textTransform: "capitalize", fontWeight: 500 }}>{appt.source}</div>
                   </div>
@@ -2589,6 +2598,7 @@ export default function AppointmentsPage() {
                         {(appt.guests?.length ?? 0) > 0 && (
                           <span style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: "#be185d", background: "#fdf2f8", padding: "2px 6px", borderRadius: 20, letterSpacing: "0.04em", flexShrink: 0 }}>Family +{appt.guests!.length}</span>
                         )}
+                        {paymentProofs.has(appt.id) && <PaymentProofBadge />}
                       </div>
                       <div style={{ fontSize: 11, color: "#9898b0", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{appt.serviceNames.join(", ")}</div>
                     </div>
