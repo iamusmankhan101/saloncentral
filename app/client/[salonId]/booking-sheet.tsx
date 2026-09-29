@@ -70,6 +70,8 @@ export default function BookingSheet({
   const [step, setStep]             = useState<Step>("services");
   const [serviceIds, setServiceIds] = useState<string[]>(initialServiceId ? [initialServiceId] : []);
   const [staffId, setStaffId]       = useState("");
+  /** Stylist per service ("" = anyone), used when the picked services are done by different stylists. */
+  const [staffFor, setStaffFor]     = useState<Record<string, string>>({});
   const [date, setDate]             = useState("");
   const [time, setTime]             = useState("");
   const [name, setName]             = useState("");
@@ -115,14 +117,30 @@ export default function BookingSheet({
   const totalPrice    = selected.reduce((sum, s) => sum + (s.price || 0), 0);
   const hasVariable   = selected.some((s) => s.variablePrice);
 
-  // Only stylists who can do every chosen service. A service with no assigned
-  // staff is treated as doable by anyone, matching how the dashboard books it.
-  const eligibleStaff = useMemo(() => staff.filter((st) =>
-    selected.every((s) => !s.assignedStaffIds?.length || s.assignedStaffIds.includes(st.id)),
-  ), [staff, selected]);
+  // Who can do a service. One with no assigned staff is open to anyone,
+  // matching how the dashboard books it.
+  const eligibleFor = (s: Service) =>
+    staff.filter((st) => !s.assignedStaffIds?.length || s.assignedStaffIds.includes(st.id));
+
+  // Services done by different stylists (a facial by one, a haircut by another)
+  // get a stylist each — a single "who does everything" list would leave out
+  // whoever does only one of them, or come up empty.
+  const perService = selected.length > 1 &&
+    new Set(selected.map((s) => eligibleFor(s).map((st) => st.id).join(","))).size > 1;
+  // Only reached when every picked service shares the same stylists.
+  const eligibleStaff = selected.length > 0 ? eligibleFor(selected[0]) : staff;
+
+  const chosenFor = (s: Service) => (perService ? staffFor[s.id] ?? "" : staffId);
+  /** The stylists named for this booking, lead first, without repeats. */
+  const named = [...new Set(selected.map(chosenFor).filter(Boolean))];
+  const staffName = (id: string) => staff.find((st) => st.id === id)?.name ?? "Any stylist";
+  const stylistLabel = perService
+    ? selected.map((s) => `${chosenFor(s) ? staffName(chosenFor(s)) : "Any stylist"} (${s.name})`).join(", ")
+    : named[0] ? staffName(named[0]) : undefined;
+  // Recomputes the free times whenever any stylist choice changes.
+  const staffKey = selected.map((s) => `${s.id}:${chosenFor(s)}`).join("|");
 
   const allStaffIds = useMemo(() => staff.map((s) => s.id), [staff]);
-  const eligibleIds = useMemo(() => eligibleStaff.map((s) => s.id), [eligibleStaff]);
 
   // Every bookable start time on `d`, skipping ones already taken.
   const freeSlotsFor = (d: string): string[] => {
@@ -136,7 +154,10 @@ export default function BookingSheet({
     for (let t = toMin(h.from); t + need <= toMin(h.to); t += 30) {
       if (t < earliest) continue;
       const slot = { date: d, start: fromMin(t), end: fromMin(t + (totalDuration || 60)) };
-      if (isSlotFree(busy, slot, staffId, eligibleIds, allStaffIds)) out.push(slot.start);
+      // Every service's stylist (or, for "anyone", someone who does it) must be free.
+      const free = selected.every((s) =>
+        isSlotFree(busy, slot, chosenFor(s), eligibleFor(s).map((st) => st.id), allStaffIds));
+      if (free) out.push(slot.start);
     }
     return out;
   };
@@ -157,10 +178,10 @@ export default function BookingSheet({
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hours, busy, staffId, totalDuration, eligibleIds, allStaffIds]);
+  }, [hours, busy, staffKey, totalDuration, allStaffIds]);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const slots = useMemo(() => (date ? freeSlotsFor(date) : []), [date, busy, staffId, totalDuration, eligibleIds, allStaffIds, hours]);
+  const slots = useMemo(() => (date ? freeSlotsFor(date) : []), [date, busy, staffKey, totalDuration, allStaffIds, hours]);
 
   // Changing stylist can make the chosen time unavailable — drop it rather than book a clash.
   useEffect(() => {
@@ -180,14 +201,15 @@ export default function BookingSheet({
     const normalizedPhone = normalizePhone(phone);
     const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
     const clientId = `c_${uid()}`;
-    const stylist = staff.find((s) => s.id === staffId);
 
     const appointment: Appointment = {
       id: `a_${uid()}`,
       clientId,
       clientName: name.trim(),
-      staffId: stylist?.id ?? "any",
-      staffName: stylist?.name ?? "Any Stylist",
+      staffId: named[0] ?? "any",
+      staffName: named[0] ? staffName(named[0]) : "Any Stylist",
+      // More than one stylist is recorded the same way the dashboard does it.
+      ...(named.length > 1 ? { staffIds: named, staffNames: named.map(staffName) } : {}),
       serviceIds,
       serviceNames: selected.map((s) => s.name),
       date,
@@ -304,7 +326,33 @@ export default function BookingSheet({
           {/* ── 2. Stylist, date, time ── */}
           {step === "when" && (
             <>
-              {eligibleStaff.length > 0 && (
+              {perService ? (
+                <section className="bk-sec">
+                  <div className="bk-label">Stylists</div>
+                  {selected.map((s) => (
+                    <div key={s.id} className="bk-per">
+                      <div className="bk-per-name">{s.name}</div>
+                      <div className="bk-scroll">
+                        <button
+                          className={`bk-pill${!chosenFor(s) ? " bk-pill-on" : ""}`}
+                          onClick={() => setStaffFor((p) => ({ ...p, [s.id]: "" }))}
+                        >
+                          Anyone
+                        </button>
+                        {eligibleFor(s).map((st) => (
+                          <button
+                            key={st.id}
+                            className={`bk-pill${chosenFor(s) === st.id ? " bk-pill-on" : ""}`}
+                            onClick={() => setStaffFor((p) => ({ ...p, [s.id]: st.id }))}
+                          >
+                            {st.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </section>
+              ) : eligibleStaff.length > 0 && (
                 <section className="bk-sec">
                   <div className="bk-label">Stylist</div>
                   <div className="bk-scroll">
@@ -349,7 +397,7 @@ export default function BookingSheet({
                 <section className="bk-sec">
                   <div className="bk-label">Time</div>
                   {slots.length === 0 ? (
-                    <p className="bk-empty">Fully booked on this day — try another date{staffId ? " or stylist" : ""}.</p>
+                    <p className="bk-empty">Fully booked on this day — try another date{named.length ? " or stylist" : ""}.</p>
                   ) : (
                     <div className="bk-times">
                       {slots.map((t) => (
@@ -370,7 +418,7 @@ export default function BookingSheet({
               <Summary
                 date={date} time={time} duration={totalDuration}
                 services={selected.map((s) => s.name).join(", ")}
-                stylist={staff.find((s) => s.id === staffId)?.name}
+                stylist={stylistLabel}
               />
               <label className="bk-field">
                 <span className="bk-label">Full name</span>
@@ -400,7 +448,7 @@ export default function BookingSheet({
               <Summary
                 date={date} time={time} duration={totalDuration}
                 services={selected.map((s) => s.name).join(", ")}
-                stylist={staff.find((s) => s.id === staffId)?.name}
+                stylist={stylistLabel}
                 total={`${formatMoney(totalPrice)}${hasVariable ? "+" : ""}`}
               />
             </div>
@@ -499,6 +547,9 @@ function SheetStyles() {
 
       .bk-sec { display: flex; flex-direction: column; gap: 8px; }
       .bk-label { font-size: 12px; font-weight: 700; color: #6b6b8a; letter-spacing: .02em; }
+      .bk-per { display: flex; flex-direction: column; gap: 6px; }
+      .bk-per + .bk-per { margin-top: 4px; }
+      .bk-per-name { font-size: 13px; font-weight: 650; color: #1a1a2e; }
       .bk-label em { font-weight: 500; font-style: normal; color: #a3a1b8; }
       .bk-scroll { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin: 0 -14px; padding: 2px 14px; }
       .bk-scroll::-webkit-scrollbar { display: none; }

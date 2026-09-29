@@ -12,6 +12,7 @@ import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { createBooking } from "@/lib/booking";
 import { db } from "@/lib/db";
 import { busySlots, isSlotFree } from "@/lib/availability";
+import { appointmentStaffIds } from "@/lib/appointment-staff";
 import type { Appointment, Client, Service, Staff } from "@/lib/types";
 
 async function load<T>(entity: string): Promise<T[]> {
@@ -30,14 +31,14 @@ async function slotStillFree(salonId: string, appt: Appointment): Promise<boolea
   const chosen = services.filter((s) => appt.serviceIds?.includes(s.id));
   const eligible = allStaffIds.filter((id) =>
     chosen.every((s) => !s.assignedStaffIds?.length || s.assignedStaffIds.includes(id)));
-  return isSlotFree(
-    // Skip this booking's own id — a retried submission must not clash with itself.
-    busySlots(appointments.filter((a) => a.id !== appt.id), appt.date),
-    { date: appt.date, start: appt.startTime, end: appt.endTime },
-    appt.staffId === "any" ? "" : appt.staffId,
-    eligible,
-    allStaffIds,
-  );
+  // Skip this booking's own id — a retried submission must not clash with itself.
+  const busy = busySlots(appointments.filter((a) => a.id !== appt.id), appt.date);
+  const slot = { date: appt.date, start: appt.startTime, end: appt.endTime };
+  // Every named stylist must be free; a booking naming none needs anyone who can do it.
+  const named = appointmentStaffIds(appt).filter((id) => id !== "any");
+  return named.length > 0
+    ? named.every((id) => isSlotFree(busy, slot, id, [], allStaffIds))
+    : isSlotFree(busy, slot, "", eligible, allStaffIds);
 }
 
 export async function POST(req: NextRequest) {
