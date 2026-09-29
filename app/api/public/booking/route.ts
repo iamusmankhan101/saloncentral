@@ -10,7 +10,35 @@
 import { NextRequest } from "next/server";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { createBooking } from "@/lib/booking";
-import type { Appointment, Client } from "@/lib/types";
+import { db } from "@/lib/db";
+import { busySlots, isSlotFree } from "@/lib/availability";
+import type { Appointment, Client, Service, Staff } from "@/lib/types";
+
+async function load<T>(entity: string): Promise<T[]> {
+  const row = await db.execute({ sql: "SELECT data FROM salon_data WHERE entity = ?", args: [entity] });
+  try { return row.rows.length ? JSON.parse(row.rows[0].data as string) : []; } catch { return []; }
+}
+
+/** Re-checks the slot against what's on the books right now, in case someone else took it first. */
+async function slotStillFree(salonId: string, appt: Appointment): Promise<boolean> {
+  const [appointments, services, staff] = await Promise.all([
+    load<Appointment>(`${salonId}_appointments`),
+    load<Service>(`${salonId}_services`),
+    load<Staff>(`${salonId}_staff`),
+  ]);
+  const allStaffIds = staff.filter((s) => s.isActive !== false).map((s) => s.id);
+  const chosen = services.filter((s) => appt.serviceIds?.includes(s.id));
+  const eligible = allStaffIds.filter((id) =>
+    chosen.every((s) => !s.assignedStaffIds?.length || s.assignedStaffIds.includes(id)));
+  return isSlotFree(
+    // Skip this booking's own id — a retried submission must not clash with itself.
+    busySlots(appointments.filter((a) => a.id !== appt.id), appt.date),
+    { date: appt.date, start: appt.startTime, end: appt.endTime },
+    appt.staffId === "any" ? "" : appt.staffId,
+    eligible,
+    allStaffIds,
+  );
+}
 
 export async function POST(req: NextRequest) {
   // Public + unauthenticated by design (customer self-booking), but each
@@ -23,7 +51,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let body: { salonId: string; appointment: Appointment; client?: Client; clientPhone?: string };
+  // checkAvailability is sent by the client app, which shows the error. The
+  // older online-booking page ignores the response, so it isn't refused there.
+  let body: { salonId: string; appointment: Appointment; client?: Client; clientPhone?: string; checkAvailability?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -36,6 +66,12 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    if (body.checkAvailability && !(await slotStillFree(salonId, appointment))) {
+      return Response.json(
+        { ok: false, taken: true, error: "Sorry, that time was just booked. Please pick another time." },
+        { status: 409 },
+      );
+    }
     // clientPhone is always sent from the booking form (covers both new and
     // returning clients).
     const result = await createBooking(salonId, appointment, client, body.clientPhone);

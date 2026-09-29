@@ -12,12 +12,13 @@
  * Rendered inside .ca-root so it inherits the salon's --ca-accent variables.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Calendar, Check, CheckCircle2, ChevronLeft, Clock, Scissors, User, X,
 } from "lucide-react";
 import type { Appointment, Client, Service } from "@/lib/types";
 import { normalizePhone } from "@/lib/whatsapp-scheduler";
+import { isSlotFree, type BusySlot } from "@/lib/availability";
 
 export interface BusinessHour { day: string; open: boolean; from: string; to: string }
 export interface PublicStaff { id: string; name: string; photo?: string }
@@ -75,6 +76,17 @@ export default function BookingSheet({
   const [notes, setNotes]           = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError]           = useState("");
+  const [busy, setBusy]             = useState<BusySlot[]>([]);
+
+  // Taken times, so they can be hidden. If this fails the customer still sees
+  // every slot, and the server refuses a clash when they confirm.
+  const loadBusy = useCallback(() => {
+    fetch(`/api/public/availability?salonId=${encodeURIComponent(salonId)}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { ok: boolean; busy?: BusySlot[] }) => { if (d.ok) setBusy(d.busy ?? []); })
+      .catch(() => {});
+  }, [salonId]);
+  useEffect(() => { loadBusy(); }, [loadBusy]);
 
   // Freeze the page behind the sheet so a scroll inside it doesn't drag the menu.
   useEffect(() => {
@@ -108,8 +120,28 @@ export default function BookingSheet({
     selected.every((s) => !s.assignedStaffIds?.length || s.assignedStaffIds.includes(st.id)),
   ), [staff, selected]);
 
+  const allStaffIds = useMemo(() => staff.map((s) => s.id), [staff]);
+  const eligibleIds = useMemo(() => eligibleStaff.map((s) => s.id), [eligibleStaff]);
+
+  // Every bookable start time on `d`, skipping ones already taken.
+  const freeSlotsFor = (d: string): string[] => {
+    const h = hoursFor(d);
+    if (!h?.open) return [];
+    const need = Math.max(totalDuration, 30);
+    const now = new Date();
+    // Today: nothing that has already started, plus a short buffer to get there.
+    const earliest = d === ymd(now) ? now.getHours() * 60 + now.getMinutes() + 30 : 0;
+    const out: string[] = [];
+    for (let t = toMin(h.from); t + need <= toMin(h.to); t += 30) {
+      if (t < earliest) continue;
+      const slot = { date: d, start: fromMin(t), end: fromMin(t + (totalDuration || 60)) };
+      if (isSlotFree(busy, slot, staffId, eligibleIds, allStaffIds)) out.push(slot.start);
+    }
+    return out;
+  };
+
   const days = useMemo(() => {
-    const out: { value: string; dow: string; dom: number; open: boolean }[] = [];
+    const out: { value: string; dow: string; dom: number; open: boolean; full: boolean }[] = [];
     const base = new Date();
     for (let i = 0; i < DAYS_AHEAD; i++) {
       const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + i);
@@ -119,27 +151,20 @@ export default function BookingSheet({
         dow: i === 0 ? "Today" : d.toLocaleDateString("en-US", { weekday: "short" }),
         dom: d.getDate(),
         open: hoursFor(value)?.open !== false,
+        full: freeSlotsFor(value).length === 0,
       });
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hours]);
+  }, [hours, busy, staffId, totalDuration, eligibleIds, allStaffIds]);
 
-  const slots = useMemo(() => {
-    if (!date) return [];
-    const h = hoursFor(date);
-    if (!h?.open) return [];
-    const need = Math.max(totalDuration, 30);
-    const now = new Date();
-    // Today: nothing that has already started, plus a short buffer to get there.
-    const earliest = date === ymd(now) ? now.getHours() * 60 + now.getMinutes() + 30 : 0;
-    const out: string[] = [];
-    for (let t = toMin(h.from); t + need <= toMin(h.to); t += 30) {
-      if (t >= earliest) out.push(fromMin(t));
-    }
-    return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [date, totalDuration, hours]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const slots = useMemo(() => (date ? freeSlotsFor(date) : []), [date, busy, staffId, totalDuration, eligibleIds, allStaffIds, hours]);
+
+  // Changing stylist can make the chosen time unavailable — drop it rather than book a clash.
+  useEffect(() => {
+    if (time && !slots.includes(time)) setTime("");
+  }, [slots, time]);
 
   function toggle(id: string) {
     setServiceIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
@@ -186,9 +211,18 @@ export default function BookingSheet({
       const res = await fetch("/api/public/booking", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ salonId, appointment, client, clientPhone: normalizedPhone }),
+        body: JSON.stringify({ salonId, appointment, client, clientPhone: normalizedPhone, checkAvailability: true }),
       });
       const data = await res.json().catch(() => ({}));
+      if (data.taken) {
+        // Someone else got there first — send them back to pick again with fresh times.
+        loadBusy();
+        setTime("");
+        setStep("when");
+        setError(data.error);
+        setSubmitting(false);
+        return;
+      }
       if (!res.ok || !data.ok) {
         setError(data.error || "We couldn't place your booking. Please try again or call the salon.");
         setSubmitting(false);
@@ -290,27 +324,30 @@ export default function BookingSheet({
                   {days.map((d) => (
                     <button
                       key={d.value}
-                      disabled={!d.open}
+                      disabled={!d.open || d.full}
                       className={`bk-day${date === d.value ? " bk-day-on" : ""}`}
                       onClick={() => { setDate(d.value); setTime(""); }}
                     >
                       <span className="bk-day-dow">{d.dow}</span>
                       <span className="bk-day-dom">{d.dom}</span>
-                      {!d.open && <span className="bk-day-closed">Closed</span>}
+                      {!d.open ? <span className="bk-day-closed">Closed</span>
+                        : d.full && <span className="bk-day-closed">Full</span>}
                     </button>
                   ))}
                 </div>
               </section>
 
+              {error && <div className="bk-error">{error}</div>}
+
               {date && (
                 <section className="bk-sec">
                   <div className="bk-label">Time</div>
                   {slots.length === 0 ? (
-                    <p className="bk-empty">No times left on this day — try another date.</p>
+                    <p className="bk-empty">Fully booked on this day — try another date{staffId ? " or stylist" : ""}.</p>
                   ) : (
                     <div className="bk-times">
                       {slots.map((t) => (
-                        <button key={t} className={`bk-time${time === t ? " bk-time-on" : ""}`} onClick={() => setTime(t)}>
+                        <button key={t} className={`bk-time${time === t ? " bk-time-on" : ""}`} onClick={() => { setTime(t); setError(""); }}>
                           {time12(t)}
                         </button>
                       ))}
