@@ -51,6 +51,15 @@ export default function TrustedBy() {
             className={styles.logoImage}
           />
         </div>
+        <div className={styles.logoCard} data-animate data-delay="0.48">
+          <Image
+            src="/prestige-salon-logo.jpg"
+            alt="Prestige Salon &amp; Spa"
+            width={500}
+            height={500}
+            className={styles.logoImage}
+          />
+        </div>
       </div>
     </div>
   );
