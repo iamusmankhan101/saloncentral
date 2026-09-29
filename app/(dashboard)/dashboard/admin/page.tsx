@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle, XCircle, Clock, ImageIcon, ChevronDown, ChevronUp, Shield, Store, Pencil, Save, Ban, Trash2, AlertTriangle, X, ReceiptText, Users as UsersIcon, BadgeCheck, Landmark, Archive, Database, RotateCcw, Lock, LockOpen, Snowflake, LayoutDashboard, Banknote, LogOut, RefreshCw, FileText } from "lucide-react";
+import { CheckCircle, XCircle, Clock, ImageIcon, ChevronDown, ChevronUp, Shield, Store, Pencil, Save, Ban, Trash2, AlertTriangle, X, ReceiptText, Users as UsersIcon, BadgeCheck, Landmark, Archive, Database, RotateCcw, Lock, LockOpen, Snowflake, LayoutDashboard, Banknote, LogOut, RefreshCw, FileText, ShoppingCart } from "lucide-react";
 import { getCurrentUser, signOut } from "@/lib/auth";
+import PointlyConsole from "@/components/pointly-admin/console";
 import {
   getPaymentRequests,
   updatePaymentRequest,
@@ -2022,7 +2023,7 @@ function InvoiceDetailsPanel() {
   );
 }
 
-type AdminTab = "dashboard" | "requests" | "salons" | "paymentMethods" | "invoiceDetails" | "users" | "backups";
+type AdminTab = "dashboard" | "requests" | "salons" | "paymentMethods" | "invoiceDetails" | "users" | "backups" | "pointly";
 
 const ADMIN_TABS: { key: AdminTab; label: string; title: string; sub: string; Icon: React.ElementType }[] = [
   { key: "dashboard",      label: "Overview",         title: "Overview",         sub: "Platform-wide view of salons, accounts, payments and backups.", Icon: LayoutDashboard },
@@ -2032,6 +2033,7 @@ const ADMIN_TABS: { key: AdminTab; label: string; title: string; sub: string; Ic
   { key: "invoiceDetails", label: "Invoice details",  title: "Invoice details",  sub: "The business details shown in the “Billed From” section of salon invoices.", Icon: FileText },
   { key: "users",          label: "Users",            title: "Users",            sub: "Every login on the platform — owners, managers, staff and admins.", Icon: UsersIcon },
   { key: "backups",        label: "Backups",          title: "Backups",          sub: "Browse, trigger and restore database backups.",                   Icon: Archive },
+  { key: "pointly",        label: "Pointly",          title: "Pointly",          sub: "Accounts, billing and activity for Pointly.",                     Icon: ShoppingCart },
 ];
 
 export default function AdminPage() {
@@ -2123,6 +2125,8 @@ export default function AdminPage() {
 
       <div style={{ maxWidth: 1400, margin: "0 auto", padding: "20px 16px 80px" }}>
         {/* ── Heading ────────────────────────────────────────────────────── */}
+        {/* The Pointly tab brings its own heading and Refresh. */}
+        {tab !== "pointly" && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap", marginBottom: 16 }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900, color: "#1a1a2e", letterSpacing: "-0.04em" }}>
@@ -2136,6 +2140,7 @@ export default function AdminPage() {
             <RefreshCw size={14} /> Refresh
           </button>
         </div>
+        )}
 
         {/* ── Tabs ───────────────────────────────────────────────────────── */}
         <div style={{ display: "flex", gap: 6, marginBottom: 16, borderBottom: "1px solid #e8e8f2", overflowX: "auto", scrollbarWidth: "none" }}>
@@ -2202,6 +2207,8 @@ export default function AdminPage() {
         <InvoiceDetailsPanel />
       ) : tab === "backups" ? (
         <BackupsPanel />
+      ) : tab === "pointly" ? (
+        <PointlyConsole />
       ) : (
         <UsersPanel />
       )}
