@@ -841,17 +841,26 @@ export default function ServicesPage() {
     return { added, updated, skipped, errors: [] };
   };
 
-  // Sub-categories of the selected category tab, in the order they first appear.
-  const subcategoryTabs = filter === "all" ? [] : Array.from(new Set(
-    services.filter(s => s.category === filter).map(s => s.subcategory).filter((x): x is string => Boolean(x))
-  ));
-  const filteredServices = services
-    .filter(s => filter === "all" || s.category === filter)
-    .filter(s => subFilter === "all" || s.subcategory === subFilter)
-    .filter(s => inSection(s, sectionFilter))
-    .filter(s => !search.trim() || s.name.toLowerCase().includes(search.trim().toLowerCase()));
+  // Everything below narrows from the chosen section first: with Men's picked,
+  // only categories and sub-categories that have Men's services are offered.
+  const sectionServices = services.filter(s => inSection(s, sectionFilter));
   const customCategories = Array.from(new Set(services.map(s => s.category))).filter(c => !PRESET_CATEGORIES.includes(c));
-  const tabCategories = ["all", ...PRESET_CATEGORIES, ...customCategories];
+  const tabCategories = sectionFilter === "all"
+    ? ["all", ...PRESET_CATEGORIES, ...customCategories]
+    : ["all", ...[...PRESET_CATEGORIES, ...customCategories].filter(c => sectionServices.some(s => s.category === c))];
+  // Switching section can hide the chosen tab — fall back to All rather than show an empty page.
+  const activeFilter = tabCategories.includes(filter) ? filter : "all";
+
+  // Sub-categories of the selected category tab, in the order they first appear.
+  const subcategoryTabs = activeFilter === "all" ? [] : Array.from(new Set(
+    sectionServices.filter(s => s.category === activeFilter).map(s => s.subcategory).filter((x): x is string => Boolean(x))
+  ));
+  const activeSub = subcategoryTabs.includes(subFilter) ? subFilter : "all";
+
+  const filteredServices = sectionServices
+    .filter(s => activeFilter === "all" || s.category === activeFilter)
+    .filter(s => activeSub === "all" || s.subcategory === activeSub)
+    .filter(s => !search.trim() || s.name.toLowerCase().includes(search.trim().toLowerCase()));
   const tabSections = ["all", ...getSectionOptions(services)];
 
   const totalCount  = services.length;
@@ -979,54 +988,6 @@ export default function ServicesPage() {
         {search && <button onClick={() => setSearch("")} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", padding: 0 }}><X size={14} color="#b0b0c8" /></button>}
       </div>
 
-      {/* Category filter */}
-      <div className="filter-tabs" style={{ display: "flex", gap: 6, background: "#f4f4f9", border: "1px solid #e3e0eb", borderRadius: 12, padding: 4, alignSelf: "flex-start", marginBottom: 4 }}>
-        {tabCategories.map((cat) => {
-          const active = filter === cat;
-          return (
-            <button key={cat} onClick={() => { setFilter(cat); setSubFilter("all"); }}
-              style={{
-                padding: "7px 16px",
-                borderRadius: 9,
-                border: "none",
-                background: active ? "var(--accent-gradient)" : "transparent",
-                color: active ? "#fff" : "#6b6b8a",
-                fontSize: 13,
-                fontWeight: 750,
-                cursor: "pointer",
-                boxShadow: active ? "0 4px 10px var(--accent-glow)" : "none",
-                transition: "all 0.18s ease"
-              }}>
-              {cat === "all" ? "All Services" : catLabel(cat)}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Sub-category chips — only when the chosen category has any */}
-      {subcategoryTabs.length > 0 && (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignSelf: "flex-start", marginTop: -8 }}>
-          {["all", ...subcategoryTabs].map((sub) => {
-            const active = subFilter === sub;
-            return (
-              <button key={sub} onClick={() => setSubFilter(sub)}
-                style={{
-                  padding: "6px 13px", borderRadius: 999, cursor: "pointer",
-                  border: `1px solid ${active ? "#7C3AED" : "#e3e0eb"}`,
-                  background: active ? "#F5F3FF" : "#fff",
-                  color: active ? "#7C3AED" : "#6b6b8a",
-                  fontSize: 12, fontWeight: 750,
-                }}>
-                {sub === "all" ? `All ${catLabel(filter)}` : sub}
-                <span style={{ marginLeft: 6, opacity: 0.6 }}>
-                  {services.filter(s => s.category === filter && (sub === "all" || s.subcategory === sub)).length}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
       {/* Section filter — locked to the active dashboard section when one is
           set; switch the global "Active Section" control to see another. */}
       {getActiveSection() !== "all" ? (
@@ -1053,6 +1014,54 @@ export default function ServicesPage() {
                   transition: "all 0.18s ease"
                 }}>
                 {sec === "all" ? "All Sections" : sec}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Category filter */}
+      <div className="filter-tabs" style={{ display: "flex", gap: 6, background: "#f4f4f9", border: "1px solid #e3e0eb", borderRadius: 12, padding: 4, alignSelf: "flex-start", marginBottom: 4 }}>
+        {tabCategories.map((cat) => {
+          const active = activeFilter === cat;
+          return (
+            <button key={cat} onClick={() => { setFilter(cat); setSubFilter("all"); }}
+              style={{
+                padding: "7px 16px",
+                borderRadius: 9,
+                border: "none",
+                background: active ? "var(--accent-gradient)" : "transparent",
+                color: active ? "#fff" : "#6b6b8a",
+                fontSize: 13,
+                fontWeight: 750,
+                cursor: "pointer",
+                boxShadow: active ? "0 4px 10px var(--accent-glow)" : "none",
+                transition: "all 0.18s ease"
+              }}>
+              {cat === "all" ? "All Services" : catLabel(cat)}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Sub-category chips — only when the chosen category has any */}
+      {subcategoryTabs.length > 0 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignSelf: "flex-start", marginTop: -8 }}>
+          {["all", ...subcategoryTabs].map((sub) => {
+            const active = activeSub === sub;
+            return (
+              <button key={sub} onClick={() => setSubFilter(sub)}
+                style={{
+                  padding: "6px 13px", borderRadius: 999, cursor: "pointer",
+                  border: `1px solid ${active ? "#7C3AED" : "#e3e0eb"}`,
+                  background: active ? "#F5F3FF" : "#fff",
+                  color: active ? "#7C3AED" : "#6b6b8a",
+                  fontSize: 12, fontWeight: 750,
+                }}>
+                {sub === "all" ? `All ${catLabel(activeFilter)}` : sub}
+                <span style={{ marginLeft: 6, opacity: 0.6 }}>
+                  {sectionServices.filter(s => s.category === activeFilter && (sub === "all" || s.subcategory === sub)).length}
+                </span>
               </button>
             );
           })}
