@@ -11,6 +11,7 @@
  * Renders nothing.
  */
 
+import "@/lib/polyfills";
 import { useEffect } from "react";
 
 export default function PWARegister() {
