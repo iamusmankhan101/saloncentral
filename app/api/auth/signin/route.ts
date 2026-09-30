@@ -8,6 +8,7 @@ import { validateCredentials } from "@/lib/auth-db";
 import { createSessionToken, COOKIE_NAME, cookieOptions, tokenId } from "@/lib/session";
 import { createDbSession } from "@/lib/auth-db";
 import { clientIp, rateLimit, rateLimitClear } from "@/lib/rate-limit";
+import { logSigninEvent } from "@/lib/signin-log";
 
 const BLOCK_MS = 30 * 60 * 1000; // 30-minute lockout
 
@@ -19,6 +20,7 @@ export async function POST(req: NextRequest) {
   // Check rate limit before doing any work
   const limit = rateLimit("signin", ip, { maxAttempts: 10, blockMs: BLOCK_MS });
   if (limit.blocked) {
+    await logSigninEvent(req, "server", "ip_rate_limited");
     const minutes = Math.ceil((limit.retryAfter ?? BLOCK_MS / 1000) / 60);
     return Response.json(
       { ok: false, error: `Too many failed attempts. Try again in ${minutes} minute${minutes !== 1 ? "s" : ""}.`, retryAfter: limit.retryAfter },
@@ -47,6 +49,7 @@ export async function POST(req: NextRequest) {
   const emailKey = email.trim().toLowerCase();
   const emailLimit = rateLimit("signin-email", emailKey, { maxAttempts: 10, blockMs: BLOCK_MS });
   if (emailLimit.blocked) {
+    await logSigninEvent(req, "server", "email_rate_limited", email);
     const minutes = Math.ceil((emailLimit.retryAfter ?? BLOCK_MS / 1000) / 60);
     return Response.json(
       { ok: false, error: `Too many failed attempts. Try again in ${minutes} minute${minutes !== 1 ? "s" : ""}.`, retryAfter: emailLimit.retryAfter },
@@ -58,6 +61,7 @@ export async function POST(req: NextRequest) {
     const user = await validateCredentials(email, password);
     const isStaff = user.role === "staff";
     if ((body.portal === "staff" && !isStaff) || (body.portal === "admin" && isStaff)) {
+      await logSigninEvent(req, "server", "wrong_portal", email, `portal=${body.portal} role=${user.role}`);
       return Response.json(
         { ok: false, error: `This account belongs to the ${isStaff ? "Staff" : "Admin"} login.` },
         { status: 403 },
@@ -96,9 +100,11 @@ export async function POST(req: NextRequest) {
 
     // Set HTTP-only cookie — not readable by JavaScript
     res.cookies.set(COOKIE_NAME, token, cookieOptions);
+    await logSigninEvent(req, "server", "success", email, `role=${user.role}`);
     return res;
   } catch (err) {
     const message = err instanceof Error ? err.message : "Authentication failed.";
+    await logSigninEvent(req, "server", "failed", email, message);
 
     if (message === "Invalid email or password.") {
       return Response.json({ ok: false, error: message }, { status: 401 });

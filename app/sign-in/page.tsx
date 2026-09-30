@@ -7,6 +7,19 @@ import { ArrowRight, Eye, EyeOff, LockKeyhole, Mail, ShieldCheck, Users } from "
 import { getCurrentUser } from "@/lib/auth";
 import styles from "../auth.module.css";
 
+// Sign-in diagnostics (see lib/signin-log.ts). sendBeacon survives the page
+// navigating away on success; fetch keepalive is the fallback.
+function report(event: string, email?: string, detail?: string) {
+  try {
+    const body = JSON.stringify({ event, email, detail });
+    if (!navigator.sendBeacon?.("/api/auth/signin-log", body)) {
+      fetch("/api/auth/signin-log", { method: "POST", body, keepalive: true }).catch(() => {});
+    }
+  } catch {
+    /* diagnostics must never break sign-in */
+  }
+}
+
 export default function SignInPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -17,6 +30,18 @@ export default function SignInPage() {
   const [submitting, setSubmitting] = useState(false);
   const [verifiedMessage, setVerifiedMessage] = useState(false);
   const [portal, setPortal] = useState<"admin" | "staff">("admin");
+
+  useEffect(() => {
+    report("page_loaded");
+    const onError = (e: ErrorEvent) => report("js_error", undefined, `${e.message} @ ${e.filename}:${e.lineno}`);
+    const onRejection = (e: PromiseRejectionEvent) => report("js_error", undefined, String(e.reason));
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onRejection);
+    return () => {
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onRejection);
+    };
+  }, []);
 
   useEffect(() => {
     if (getCurrentUser()) router.replace("/dashboard");
@@ -37,6 +62,7 @@ export default function SignInPage() {
   }, [router]);
 
   function handleSubmit() {
+    report("button_pressed", email, rateLocked ? "rate_locked" : submitting ? "already_submitting" : undefined);
     if (rateLocked || submitting) return;
     if (!email.trim() || !password) {
       setError("Please enter your email and password.");
@@ -59,6 +85,7 @@ export default function SignInPage() {
       .then(async res => {
         const data = await res.json().catch(() => ({ ok: false, error: `Server error (${res.status}). Please try again.` })) as { ok: boolean; error?: string; retryAfter?: number; user?: { id: string } & Record<string, unknown> };
         if (!data.ok) {
+          report("error", email, `${res.status}: ${data.error ?? ""}`);
           if (res.status === 429) {
             setRateLocked(true);
             setError(data.error || "Too many attempts. Please wait before trying again.");
@@ -72,6 +99,7 @@ export default function SignInPage() {
           setSubmitting(false);
           return;
         }
+        report("success", email);
         localStorage.setItem("werzio_auth_session", data.user!.id);
         localStorage.setItem(`werzio_user_cache_${data.user!.id}`, JSON.stringify(data.user));
         // Hard navigation, not router.replace: the dashboard is gated by an
@@ -86,6 +114,8 @@ export default function SignInPage() {
       .catch(err => {
         console.error("[sign-in] Error:", err);
         setSubmitting(false);
+        const timedOut = err instanceof DOMException && err.name === "AbortError";
+        report(timedOut ? "timeout" : "network_error", email, String(err));
         setError(
           err instanceof DOMException && err.name === "AbortError"
             ? "The server is taking too long to respond. Please check your internet connection (try mobile data or a VPN) and try again."
@@ -97,6 +127,8 @@ export default function SignInPage() {
 
   return (
     <main className={styles.authPage}>
+      {/* Plain image request, so the visit is logged even if the page's JS never runs. */}
+      <img src="/api/auth/signin-log?event=html_loaded" alt="" width={1} height={1} style={{ position: "absolute", opacity: 0, pointerEvents: "none" }} />
       <div className={styles.authShell}>
         <section className={styles.brandPanel}>
           <div className={styles.brandTop}>
