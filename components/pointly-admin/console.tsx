@@ -15,13 +15,14 @@ import {
   AlertTriangle, Building2, Check, Copy, Database, Download,
   KeyRound, LayoutGrid, Loader2, LogOut, MoreVertical, RefreshCw, Search, Shield,
   ShieldCheck, ShieldOff, Snowflake, Sparkles, Tag, Trash2, UserCheck, UserX, Users, Wallet, X, Zap,
-  Gauge, Pencil, UserPlus,
+  Gauge, Pencil, UserPlus, Landmark, FileText,
 } from "lucide-react";
 import type { AuditEntry, PlatformStats, PlatformUser } from "@/lib/pointly/types";
 import type { AuthUser } from "@/lib/pointly/types";
 import { Modal, Pill, StatCard } from "./ui";
 import BillingTab from "./billing-tab";
 import OverviewTab from "./overview-tab";
+import { InvoiceDetailsTab, PaymentMethodsTab } from "./invoice-settings-tab";
 import { CreateAccountModal, EditProfileModal } from "./account-modals";
 import type { OwnSubscription } from "@/lib/pointly/types";
 import { cycleLabel } from "@/lib/pointly/billing";
@@ -141,7 +142,7 @@ export default function PointlyConsole() {
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<{ tone: "ok" | "bad"; text: string } | null>(null);
 
-  const [tab, setTab] = useState<"overview" | "accounts" | "billing" | "activity">("overview");
+  const [tab, setTab] = useState<"overview" | "accounts" | "users" | "billing" | "paymentMethods" | "invoiceDetails" | "activity">("overview");
   const [billingRefresh, setBillingRefresh] = useState(0);
   const [recordRequest, setRecordRequest] = useState<{ ownerId: string; nonce: number; kind?: "payment" | "terms" } | null>(null);
   const [search, setSearch] = useState("");
@@ -305,7 +306,9 @@ export default function PointlyConsole() {
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
     const filtered = users.filter((user) => {
-      if (roleFilter !== "all" && user.role !== roleFilter) return false;
+      // Accounts is the businesses (their owner logins); Users is every login.
+      const role = tab === "accounts" ? "owner" : roleFilter;
+      if (role !== "all" && user.role !== role) return false;
       if (statusFilter !== "all" && statusOf(user) !== statusFilter) return false;
       // Type and plan belong to the business, so a team login is matched on its owner's.
       const owner = user.businessOwnerId ? users.find((u) => u.id === user.businessOwnerId) ?? user : user;
@@ -327,7 +330,7 @@ export default function PointlyConsole() {
       }
     });
     return sorted;
-  }, [users, search, roleFilter, statusFilter, typeFilter, planFilter, sortKey]);
+  }, [users, search, roleFilter, statusFilter, typeFilter, planFilter, sortKey, tab]);
 
   const selectedUsers = useMemo(() => users.filter((user) => selected.has(user.id)), [users, selected]);
   const allVisibleSelected = visible.length > 0 && visible.every((user) => selected.has(user.id));
@@ -391,15 +394,18 @@ export default function PointlyConsole() {
   }
 
   /** From the Overview: jump to a tab, optionally pre-filtered. */
-  function gotoTab(next: "accounts" | "billing" | "activity", filter?: "pending" | "frozen") {
+  function gotoTab(next: "accounts" | "users" | "billing" | "activity", filter?: "pending" | "frozen") {
     if (filter) { setStatusFilter(filter); setRoleFilter("all"); setSearch(""); }
     setTab(next);
   }
 
   const TAB_COPY: Record<typeof tab, { title: string; sub: string }> = {
     overview: { title: "Overview", sub: "What needs a decision today, and how the platform is doing." },
-    accounts: { title: "Accounts", sub: "Every login on the platform — business owners, their managers and staff, and other platform admins." },
+    accounts: { title: "Accounts", sub: "Every business on Pointly — its owner, plan, status and data." },
+    users: { title: "Users", sub: "Every login on the platform — owners, managers, staff and admins." },
     billing: { title: "Billing", sub: "Subscriptions, pricing and payments for every business." },
+    paymentMethods: { title: "Payment methods", sub: "The bank accounts shown on business invoices." },
+    invoiceDetails: { title: "Invoice details", sub: "The business details shown in the “Billed From” section of invoices." },
     activity: { title: "Activity log", sub: "Every action taken in this console, by whom and when." },
   };
 
@@ -466,7 +472,7 @@ export default function PointlyConsole() {
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {tab === "accounts" && (
+            {(tab === "accounts" || tab === "users") && (
               <button type="button" className="ac-btn" onClick={exportCsv} disabled={visible.length === 0}>
                 <Download size={14} /> Export CSV
               </button>
@@ -486,7 +492,7 @@ export default function PointlyConsole() {
         </div>
 
         {/* ── Stats ──────────────────────────────────────────────────────── */}
-        {stats && tab === "accounts" && (
+        {stats && (tab === "accounts" || tab === "users") && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12, marginBottom: 18 }}>
             <StatCard icon={<Users size={17} />} label="Login accounts" value={stats.total} hint={`${stats.newThisWeek} added this week`} />
             <StatCard icon={<Building2 size={17} />} label="Businesses" value={stats.owners} hint={`${stats.managers + stats.staff} team logins`} tone="#0369a1" />
@@ -502,7 +508,10 @@ export default function PointlyConsole() {
           {([
             { key: "overview", label: "Overview", Icon: Gauge, count: stats?.pending ?? 0 },
             { key: "accounts", label: "Accounts", Icon: LayoutGrid, count: 0 },
+            { key: "users", label: "Users", Icon: Users, count: 0 },
             { key: "billing", label: "Billing", Icon: Wallet, count: 0 },
+            { key: "paymentMethods", label: "Payment methods", Icon: Landmark, count: 0 },
+            { key: "invoiceDetails", label: "Invoice details", Icon: FileText, count: 0 },
             { key: "activity", label: "Activity log", Icon: Shield, count: 0 },
           ] as const).map(({ key, label, Icon, count }) => (
             <button
@@ -553,8 +562,22 @@ export default function PointlyConsole() {
             onRecordPayment={(ownerId) => { setRecordRequest({ ownerId, nonce: Date.now() }); setTab("billing"); }}
             onGoto={gotoTab}
           />
-        ) : tab === "accounts" ? (
+        ) : tab === "accounts" || tab === "users" ? (
           <>
+            {tab === "users" && (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+                {(["all", "owner", "manager", "staff", "admin"] as const).map((r) => {
+                  const count = r === "all" ? users.length : users.filter((u) => u.role === r).length;
+                  const on = roleFilter === r;
+                  return (
+                    <button key={r} type="button" onClick={() => setRoleFilter(r)} aria-pressed={on} className="ac-btn"
+                      style={{ padding: "6px 12px", fontSize: 11.5, borderColor: on ? "#EA580C" : undefined, background: on ? "#fff7ed" : undefined, color: on ? "#c2410c" : undefined }}>
+                      {r === "all" ? "All" : ROLE_STYLE[r].label} ({count})
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             {/* ── Filters ────────────────────────────────────────────────── */}
             <div style={{ display: "flex", gap: 9, flexWrap: "wrap", marginBottom: 12 }}>
               <div style={{ position: "relative", flex: "1 1 240px", minWidth: 200 }}>
@@ -567,14 +590,6 @@ export default function PointlyConsole() {
                   onChange={(event) => setSearch(event.target.value)}
                 />
               </div>
-              <select className="ac-input" style={{ width: "auto", minWidth: 130, cursor: "pointer" }}
-                value={roleFilter} onChange={(event) => setRoleFilter(event.target.value as RoleFilter)} aria-label="Filter by role">
-                <option value="all">All roles</option>
-                <option value="owner">Owners</option>
-                <option value="manager">Managers</option>
-                <option value="staff">Staff</option>
-                <option value="admin">Platform admins</option>
-              </select>
               <select className="ac-input" style={{ width: "auto", minWidth: 130, cursor: "pointer" }}
                 value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as StatusFilter)} aria-label="Filter by status">
                 <option value="all">All statuses</option>
@@ -601,7 +616,7 @@ export default function PointlyConsole() {
                 <option value="all">All plans</option>
                 {PLAN_IDS.map((id) => <option key={id} value={id}>{PLANS[id].name}</option>)}
               </select>
-              {(search || roleFilter !== "all" || statusFilter !== "all" || typeFilter !== "all" || planFilter !== "all") && (
+              {(search || (tab === "users" && roleFilter !== "all") || statusFilter !== "all" || typeFilter !== "all" || planFilter !== "all") && (
                 <button type="button" className="ac-btn" onClick={() => { setSearch(""); setRoleFilter("all"); setStatusFilter("all"); setTypeFilter("all"); setPlanFilter("all"); }}>
                   <X size={13} /> Clear filters
                 </button>
@@ -904,6 +919,10 @@ export default function PointlyConsole() {
           </>
         ) : tab === "billing" ? (
           <BillingTab refreshKey={billingRefresh} recordRequest={recordRequest} onToast={setToast} />
+        ) : tab === "paymentMethods" ? (
+          <PaymentMethodsTab key={billingRefresh} onToast={setToast} />
+        ) : tab === "invoiceDetails" ? (
+          <InvoiceDetailsTab key={billingRefresh} onToast={setToast} />
         ) : (
           /* ── Activity log ─────────────────────────────────────────────── */
           <>

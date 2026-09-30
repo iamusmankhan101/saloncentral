@@ -12,10 +12,11 @@ import {
   Plus, Receipt, Search, Tag, TrendingUp, Wallet,
 } from "lucide-react";
 import { Modal, Pill, StatCard } from "./ui";
+import { DEFAULT_BANK_DETAILS, type PaymentMethod } from "@/lib/pointly/invoice-settings";
 import { PLAN_IDS, PLANS, planPriceLabel, type PlanId } from "@/lib/pointly/plans";
 import {
   billingStatus, cycleLabel, daysBetween, durationLabel, MAX_PAYMENT_DAYS, MAX_PAYMENT_MONTHS, monthlyPrice,
-  nextPeriodStart, PAYMENT_METHODS, PAYMENT_MONTH_OPTIONS, periodEnd, priceForPeriod, todayIso, whatsAppNumber,
+  billingDates, DUE_SOON_DAYS, nextPeriodStart, PAYMENT_METHODS, PAYMENT_MONTH_OPTIONS, periodEnd, priceForPeriod, todayIso, whatsAppNumber,
   type BillingAccount, type BillingStatus, type BillingSummary, type PeriodLength, type SubscriptionPayment,
 } from "@/lib/pointly/billing";
 
@@ -52,11 +53,18 @@ function lastCoveredDay(paidUntil: string): string {
 
 function dueLine(account: BillingAccount): string {
   if (account.daysLeft === null) return "No payment recorded";
+  if (account.status === "never-paid") return `First payment due in ${account.daysLeft} day${account.daysLeft === 1 ? "" : "s"}`;
   if (account.daysLeft <= 0) {
     const late = -account.daysLeft;
     return late === 0 ? "Due today" : `${late} day${late === 1 ? "" : "s"} overdue`;
   }
   return `${account.daysLeft} day${account.daysLeft === 1 ? "" : "s"} left`;
+}
+
+/** Where a new payment's period begins: after the paid-up date, or — for a first payment — the billing start date. */
+function periodStartFor(account: BillingAccount | undefined, paidAt: string): string {
+  if (account?.paidUntil) return nextPeriodStart(account.paidUntil, paidAt);
+  return account?.billingStartDate ?? paidAt;
 }
 
 function reminderLink(account: BillingAccount): string | null {
@@ -122,7 +130,7 @@ function draftLength(draft: RecordDraft, account: BillingAccount | undefined): P
   if (draft.unit === "months") return Number.isInteger(n) && n >= 1 && n <= MAX_PAYMENT_MONTHS ? { months: n } : null;
   if (draft.unit === "days") return Number.isInteger(n) && n >= 1 && n <= MAX_PAYMENT_DAYS ? { days: n } : null;
   if (!draft.until || !draft.paidAt) return null;
-  const start = nextPeriodStart(account?.paidUntil ?? null, draft.paidAt);
+  const start = periodStartFor(account, draft.paidAt);
   const days = daysBetween(start, draft.until) + 1;
   return days >= 1 && days <= MAX_PAYMENT_DAYS ? { days } : null;
 }
@@ -149,11 +157,21 @@ function draftFor(account: BillingAccount | undefined): RecordDraft {
   }, account);
 }
 
+/** Billing date overrides being edited; "" = use the default. */
+interface DatesDraft {
+  ownerId: string;
+  start: string;
+  issue: string;
+  due: string;
+}
+
 interface TermsDraft {
   ownerId: string;
   useCustom: boolean;
   price: string;
   cycle: string;
+  /** "" = the default account. */
+  paymentMethodId: string;
 }
 
 export default function BillingTab({ refreshKey, recordRequest, onToast }: {
@@ -176,6 +194,7 @@ export default function BillingTab({ refreshKey, recordRequest, onToast }: {
 
   const [draft, setDraft] = useState<RecordDraft | null>(null);
   const [terms, setTerms] = useState<TermsDraft | null>(null);
+  const [dates, setDates] = useState<DatesDraft | null>(null);
   const [voidFor, setVoidFor] = useState<SubscriptionPayment | null>(null);
   const [voidReason, setVoidReason] = useState("");
 
@@ -186,7 +205,14 @@ export default function BillingTab({ refreshKey, recordRequest, onToast }: {
     setPayments(data.payments);
   }, []);
 
+  // The bank accounts a business's invoices can point at (Payment methods tab).
+  const [methods, setMethods] = useState<PaymentMethod[]>([]);
+
   const load = useCallback(async () => {
+    fetch("/api/admin/pointly/invoice-settings", { cache: "no-store", credentials: "same-origin" })
+      .then((res) => res.json() as Promise<{ ok: boolean; methods?: PaymentMethod[] }>)
+      .then((data) => { if (data.ok && data.methods) setMethods(data.methods); })
+      .catch(() => { /* the picker just shows the default */ });
     try {
       const res = await fetch("/api/admin/pointly/billing", { cache: "no-store", credentials: "same-origin" });
       const data = await res.json() as { ok: boolean; error?: string } & Partial<Overview>;
@@ -266,25 +292,54 @@ export default function BillingTab({ refreshKey, recordRequest, onToast }: {
     }
   }
 
+  function openDates(account: BillingAccount) {
+    setDates({
+      ownerId: account.id,
+      start: account.billingStartDate ?? "",
+      issue: account.invoiceIssueDate ?? "",
+      due: account.invoiceDueDate ?? "",
+    });
+  }
+
+  async function submitDates() {
+    if (!dates) return;
+    const ok = await post({
+      action: "set-dates",
+      ownerId: dates.ownerId,
+      billingStartDate: dates.start || null,
+      invoiceIssueDate: dates.issue || null,
+      invoiceDueDate: dates.due || null,
+    });
+    if (ok) {
+      const account = accounts.find((a) => a.id === dates.ownerId);
+      onToast({ tone: "ok", text: `Billing dates updated for ${account?.businessName || "the account"}.` });
+      setDates(null);
+    }
+  }
+
   function openTerms(account: BillingAccount) {
     setTerms({
       ownerId: account.id,
       useCustom: account.customPricePkr !== null,
       price: String(account.customPricePkr ?? PLANS[account.plan].pricePkr),
       cycle: String(account.billingCycleMonths ?? 1),
+      paymentMethodId: account.paymentMethodId ?? "",
     });
   }
 
   async function submitTerms() {
     if (!terms) return;
-    const ok = await post({
+    const account = accounts.find((a) => a.id === terms.ownerId);
+    let ok = await post({
       action: "set-terms",
       ownerId: terms.ownerId,
       customPricePkr: terms.useCustom ? Number(terms.price) : null,
       billingCycleMonths: Number(terms.cycle),
     });
+    if (ok && (account?.paymentMethodId ?? "") !== terms.paymentMethodId) {
+      ok = await post({ action: "set-payment-method", ownerId: terms.ownerId, paymentMethodId: terms.paymentMethodId || null });
+    }
     if (ok) {
-      const account = accounts.find((a) => a.id === terms.ownerId);
       onToast({ tone: "ok", text: `Pricing updated for ${account?.businessName || "the account"}.` });
       setTerms(null);
     }
@@ -327,13 +382,21 @@ export default function BillingTab({ refreshKey, recordRequest, onToast }: {
   const draftValid = Boolean(draft && draft.ownerId && draft.amount !== "" && draftAmount >= 0 && draft.paidAt && draftLen);
   const draftPreview = draft && draftAccount && draft.paidAt && draftLen
     ? (() => {
-        const start = nextPeriodStart(draftAccount.paidUntil, draft.paidAt);
+        const start = periodStartFor(draftAccount, draft.paidAt);
         const end = periodEnd(start, draftLen);
         return { start, end, status: billingStatus(end) };
       })()
     : null;
   const draftMonthlyPrice = draft ? draftMonthly(draft, draftAccount) : 0;
   const expectedAmount = draft && draftLen ? priceForPeriod(draftMonthlyPrice, draftLen) : 0;
+  const datesAccount = dates ? accounts.find((a) => a.id === dates.ownerId) : undefined;
+  const datesPreview = dates && datesAccount ? billingDates({
+    createdAt: datesAccount.createdAt,
+    paidUntil: datesAccount.paidUntil,
+    billingStartDate: dates.start || null,
+    invoiceIssueDate: dates.issue || null,
+    invoiceDueDate: dates.due || null,
+  }) : null;
   const termsAccount = terms ? accounts.find((a) => a.id === terms.ownerId) : undefined;
   const termsPrice = terms ? (terms.useCustom ? Number(terms.price) : PLANS[termsAccount?.plan ?? "starter"].pricePkr) : 0;
   const termsCycle = terms ? Number(terms.cycle) : 0;
@@ -362,7 +425,7 @@ export default function BillingTab({ refreshKey, recordRequest, onToast }: {
       <style>{`
         .bt-row {
           display: grid;
-          grid-template-columns: minmax(200px, 2fr) 130px minmax(120px, 1fr) minmax(130px, 1fr) minmax(120px, 1fr) 200px;
+          grid-template-columns: minmax(190px, 2fr) 120px minmax(120px, 1fr) 100px 100px minmax(120px, 1fr) minmax(110px, 1fr) 190px;
           gap: 12px; align-items: center; padding: 11px 16px;
         }
         .bt-pay {
@@ -371,14 +434,14 @@ export default function BillingTab({ refreshKey, recordRequest, onToast }: {
           gap: 12px; align-items: center; padding: 11px 16px;
         }
         @media (max-width: 1100px) {
-          .bt-row { grid-template-columns: minmax(180px, 2fr) 120px minmax(120px, 1fr) minmax(120px, 1fr) 180px; }
-          .bt-col-last { display: none; }
+          .bt-row { grid-template-columns: minmax(180px, 2fr) 120px minmax(120px, 1fr) 100px minmax(120px, 1fr) 170px; }
+          .bt-col-last, .bt-col-start { display: none; }
           .bt-pay { grid-template-columns: 96px minmax(160px, 2fr) 110px minmax(110px, 1fr) 70px; }
           .bt-pay-plan, .bt-pay-period { display: none; }
         }
         @media (max-width: 720px) {
           .bt-row { grid-template-columns: 1fr auto; row-gap: 8px; }
-          .bt-col-plan, .bt-col-until { display: none; }
+          .bt-col-plan, .bt-col-until, .bt-col-invoice { display: none; }
           .bt-pay { grid-template-columns: 1fr auto; row-gap: 4px; }
           .bt-pay-method { display: none; }
         }
@@ -458,7 +521,9 @@ export default function BillingTab({ refreshKey, recordRequest, onToast }: {
             <span>Business</span>
             <span className="bt-col-plan">Plan</span>
             <span>Status</span>
+            <span className="bt-col-start">Started</span>
             <span className="bt-col-until">Paid until</span>
+            <span className="bt-col-invoice">Next invoice</span>
             <span className="bt-col-last">Last payment</span>
             <span />
           </div>
@@ -496,8 +561,16 @@ export default function BillingTab({ refreshKey, recordRequest, onToast }: {
                   <Pill {...STATUS_STYLE[account.status]} />
                   <div style={{ fontSize: 11, color: "#a5a5bb", marginTop: 3 }}>{dueLine(account)}</div>
                 </div>
+                <div className="bt-col-start" style={{ fontSize: 12, fontWeight: 650, color: "#43435f" }}>
+                  {fmtDay(account.startDate)}
+                  {account.billingStartDate && <div style={{ fontSize: 10.5, color: "#7c3aed", fontWeight: 700 }}>set by admin</div>}
+                </div>
                 <div className="bt-col-until" style={{ fontSize: 12.5, fontWeight: 700, color: "#43435f" }}>
                   {account.paidUntil ? fmtDay(lastCoveredDay(account.paidUntil)) : "—"}
+                </div>
+                <div className="bt-col-invoice" style={{ fontSize: 11.5, color: "#6b6b8a", lineHeight: 1.55 }}>
+                  <div>Issued <b style={{ color: account.invoiceIssueDate ? "#7c3aed" : "#43435f" }}>{fmtDay(account.issueDate)}</b></div>
+                  <div>Due <b style={{ color: account.invoiceDueDate ? "#7c3aed" : "#43435f" }}>{fmtDay(account.dueDate)}</b></div>
                 </div>
                 <div className="bt-col-last" style={{ fontSize: 12, color: "#6b6b8a" }}>
                   {account.lastPayment ? (
@@ -516,6 +589,9 @@ export default function BillingTab({ refreshKey, recordRequest, onToast }: {
                       <MessageCircle size={13} />
                     </a>
                   )}
+                  <button type="button" className="ac-btn" style={{ padding: "7px 9px" }} title="Started, invoice issue and due dates" onClick={() => openDates(account)}>
+                    <CalendarClock size={13} />
+                  </button>
                   <button type="button" className="ac-btn" style={{ padding: "7px 9px" }} title="Pricing & billing cycle" onClick={() => openTerms(account)}>
                     <Tag size={13} />
                   </button>
@@ -737,6 +813,59 @@ export default function BillingTab({ refreshKey, recordRequest, onToast }: {
       )}
 
       {/* ── Pricing & billing cycle ────────────────────────────────────────── */}
+      {dates && datesAccount && datesPreview && (
+        <Modal
+          title={`Billing dates — ${datesAccount.businessName}`}
+          icon={<CalendarClock size={17} color="#7c3aed" />}
+          width={480}
+          onClose={() => setDates(null)}
+          footer={
+            <>
+              <button type="button" className="ac-btn" onClick={() => setDates(null)}>Cancel</button>
+              <button type="button" className="ac-btn ac-btn-primary" disabled={busy || datesPreview.issueDate > datesPreview.dueDate} onClick={submitDates}>
+                <CheckCircle2 size={13} /> Save dates
+              </button>
+            </>
+          }
+        >
+          <div style={{ display: "grid", gap: 14 }}>
+            {([
+              { key: "start", label: "Started date", value: datesPreview.startDate, fallback: `sign-up date, ${fmtDay(datesAccount.createdAt.slice(0, 10))}`,
+                hint: datesAccount.paidUntil ? "When this business's subscription began." : "When billing begins — its first payment will cover from this date." },
+              { key: "issue", label: "Invoice issue date", value: datesPreview.issueDate, fallback: `${DUE_SOON_DAYS} days before it's due`,
+                hint: "When the next invoice goes out to the business." },
+              { key: "due", label: "Invoice due date", value: datesPreview.dueDate, fallback: datesAccount.paidUntil ? `paid-until date, ${fmtDay(datesAccount.paidUntil)}` : "the started date",
+                hint: "When the next payment is due. Set it later to give extra time — the business isn't overdue until then." },
+            ] as const).map(({ key, label: title, value, fallback, hint }) => (
+              <div key={key}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                  <label style={{ ...label, flex: 1 }} htmlFor={`bt-date-${key}`}>{title}</label>
+                  {dates[key] && (
+                    <button type="button" onClick={() => setDates({ ...dates, [key]: "" })}
+                      style={{ border: "none", background: "none", padding: 0, fontSize: 11, fontWeight: 750, color: "#c2410c", cursor: "pointer", fontFamily: "inherit" }}>
+                      Use default
+                    </button>
+                  )}
+                </div>
+                <input id={`bt-date-${key}`} className="ac-input" type="date" value={dates[key] || value}
+                  onChange={(e) => setDates({ ...dates, [key]: e.target.value })} />
+                <div style={{ fontSize: 11, color: "#8b8ba3", marginTop: 5, lineHeight: 1.5 }}>
+                  {hint} {!dates[key] && <span style={{ color: "#a5a5bb" }}>Default: {fallback}.</span>}
+                </div>
+              </div>
+            ))}
+            {datesPreview.issueDate > datesPreview.dueDate ? (
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#b91c1c" }}>The invoice can&apos;t be issued after it&apos;s due.</div>
+            ) : (
+              <div style={{ padding: "12px 14px", borderRadius: 12, background: "#f5f3ff", border: "1px solid #ddd6fe", fontSize: 12.5, color: "#4c1d95", lineHeight: 1.6 }}>
+                Next invoice issued <b>{fmtDay(datesPreview.issueDate)}</b>, due <b>{fmtDay(datesPreview.dueDate)}</b>.
+                <div>The issue and due dates reset to their defaults when the next payment is recorded.</div>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+
       {terms && termsAccount && (
         <Modal
           title={`Pricing — ${termsAccount.businessName}`}
@@ -801,10 +930,22 @@ export default function BillingTab({ refreshKey, recordRequest, onToast }: {
               <div style={{ fontSize: 11, color: "#8b8ba3", marginTop: 5 }}>New payments for this business start from this many months.</div>
             </div>
 
+            <div>
+              <label style={label} htmlFor="bt-pay-method">Payment method on invoices</label>
+              <select id="bt-pay-method" className="ac-input" style={{ cursor: "pointer" }}
+                value={terms.paymentMethodId} onChange={(e) => setTerms({ ...terms, paymentMethodId: e.target.value })}>
+                <option value="">Default — {DEFAULT_BANK_DETAILS.bankTitle}, {DEFAULT_BANK_DETAILS.bankName}</option>
+                {methods.map((m) => <option key={m.id} value={m.id}>{m.label} — {m.bankName}</option>)}
+              </select>
+              <div style={{ fontSize: 11, color: "#8b8ba3", marginTop: 5 }}>
+                The bank account this business is told to pay into. Add accounts on the Payment methods tab.
+              </div>
+            </div>
+
             {termsValid && (
               <div style={{ padding: "12px 14px", borderRadius: 12, background: "#f5f3ff", border: "1px solid #ddd6fe", fontSize: 12.5, color: "#4c1d95", lineHeight: 1.6 }}>
                 <div style={{ fontWeight: 800 }}>{cycleLabel(termsPrice, termsCycle)}</div>
-                <div>Shown to the business in Settings → Subscription, and used for MRR and payment reminders.</div>
+                <div>Shown to the business on its Billing page, and used for MRR and payment reminders.</div>
               </div>
             )}
           </div>

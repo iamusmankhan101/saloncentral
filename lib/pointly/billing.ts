@@ -84,6 +84,16 @@ export interface BillingAccount {
   daysLeft: number | null;
   lastPayment: { paidAt: string; amountPkr: number; method: string } | null;
   totalPaidPkr: number;
+  /** The bank account printed on this business's invoices; null = the platform default. */
+  paymentMethodId: string | null;
+  /** Effective billing dates — see billingDates(). */
+  startDate: string;
+  issueDate: string;
+  dueDate: string;
+  /** The admin overrides behind them; null = the default. */
+  billingStartDate: string | null;
+  invoiceIssueDate: string | null;
+  invoiceDueDate: string | null;
 }
 
 export interface BillingSummary {
@@ -155,6 +165,46 @@ export function billingStatus(paidUntil: string | null, today = todayIso()): { s
   if (daysLeft <= 0) return { status: "overdue", daysLeft };
   if (daysLeft <= DUE_SOON_DAYS) return { status: "due-soon", daysLeft };
   return { status: "paid", daysLeft };
+}
+
+/**
+ * A business's billing dates. Each can be set by an admin; otherwise:
+ *   • started — the day the account was created;
+ *   • due     — the day it's paid up to, or its start date if it never paid;
+ *   • issued  — DUE_SOON_DAYS before the due date.
+ * Issue and due belong to the next invoice only: recording or voiding a
+ * payment clears them (clearInvoiceDates), so the next cycle starts fresh.
+ */
+export function billingDates(input: {
+  createdAt: string;
+  paidUntil: string | null;
+  billingStartDate: string | null;
+  invoiceIssueDate: string | null;
+  invoiceDueDate: string | null;
+}): { startDate: string; issueDate: string; dueDate: string } {
+  const startDate = input.billingStartDate ?? input.createdAt.slice(0, 10);
+  const dueDate = input.invoiceDueDate ?? input.paidUntil ?? startDate;
+  const issueDate = input.invoiceIssueDate ?? addDays(dueDate, -DUE_SOON_DAYS);
+  return { startDate, issueDate, dueDate };
+}
+
+/**
+ * Status against the due date rather than the paid-until date, so a due date
+ * moved later works as a grace period. A business that never paid stays
+ * "never-paid" — until an admin sets a due date and it passes.
+ */
+export function accountBillingStatus(
+  paidUntil: string | null,
+  dueDate: string,
+  dueDateSet: boolean,
+  today = todayIso(),
+): { status: BillingStatus; daysLeft: number | null } {
+  if (!paidUntil) {
+    if (!dueDateSet) return { status: "never-paid", daysLeft: null };
+    const daysLeft = daysBetween(today, dueDate);
+    return { status: daysLeft <= 0 ? "overdue" : "never-paid", daysLeft };
+  }
+  return billingStatus(dueDate, today);
 }
 
 /** The monthly price a business pays: its custom price when one is set, else the plan's. */

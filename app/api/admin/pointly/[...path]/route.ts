@@ -19,8 +19,8 @@ import { getUserById } from "@/lib/auth-db";
 const POINTLY_URL = (process.env.POINTLY_URL ?? "").replace(/\/+$/, "");
 const LINKED_ADMIN_KEY = process.env.LINKED_ADMIN_KEY ?? "";
 
-// Pointly's admin surface: users, users/<id>, billing, audit.
-const ALLOWED_PATH = /^(users(\/[A-Za-z0-9_-]+)?|billing|audit)$/;
+// Pointly's admin surface: users, users/<id>, billing, invoice-settings, audit.
+const ALLOWED_PATH = /^(users(\/[A-Za-z0-9_-]+)?|billing|invoice-settings|audit)$/;
 
 async function forward(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
   const actorId = await getSessionUserId(req);

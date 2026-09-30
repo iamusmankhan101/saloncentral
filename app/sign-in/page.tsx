@@ -14,6 +14,7 @@ export default function SignInPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [rateLocked, setRateLocked] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [verifiedMessage, setVerifiedMessage] = useState(false);
   const [portal, setPortal] = useState<"admin" | "staff">("admin");
 
@@ -36,16 +37,27 @@ export default function SignInPage() {
   }, [router]);
 
   function handleSubmit() {
-    if (rateLocked) return;
+    if (rateLocked || submitting) return;
+    if (!email.trim() || !password) {
+      setError("Please enter your email and password.");
+      return;
+    }
     setError("");
+    setSubmitting(true);
+
+    // Without a timeout, a slow or blocked connection leaves the button looking
+    // dead — the user gets no feedback at all while the request hangs.
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 20000);
 
     fetch("/api/auth/signin", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password, portal }),
+      body: JSON.stringify({ email: email.trim(), password, portal }),
+      signal: controller.signal,
     })
       .then(async res => {
-        const data = await res.json() as { ok: boolean; error?: string; retryAfter?: number; user?: { id: string } & Record<string, unknown> };
+        const data = await res.json().catch(() => ({ ok: false, error: `Server error (${res.status}). Please try again.` })) as { ok: boolean; error?: string; retryAfter?: number; user?: { id: string } & Record<string, unknown> };
         if (!data.ok) {
           if (res.status === 429) {
             setRateLocked(true);
@@ -57,6 +69,7 @@ export default function SignInPage() {
           } else {
             setError(data.error || "Unable to sign in.");
           }
+          setSubmitting(false);
           return;
         }
         localStorage.setItem("werzio_auth_session", data.user!.id);
@@ -72,8 +85,14 @@ export default function SignInPage() {
       })
       .catch(err => {
         console.error("[sign-in] Error:", err);
-        setError("Unable to sign in. Please try again.");
-      });
+        setSubmitting(false);
+        setError(
+          err instanceof DOMException && err.name === "AbortError"
+            ? "The server is taking too long to respond. Please check your internet connection (try mobile data or a VPN) and try again."
+            : "Couldn't reach the server. Please check your internet connection and try again.",
+        );
+      })
+      .finally(() => window.clearTimeout(timeout));
   }
 
   return (
@@ -170,9 +189,9 @@ export default function SignInPage() {
 
             {error && <div className={styles.error}>{error}</div>}
 
-            <button type="button" onClick={handleSubmit} disabled={rateLocked} className={styles.primaryButton}
-              style={rateLocked ? { opacity: 0.5, cursor: "not-allowed" } : undefined}>
-              {rateLocked ? "Too many attempts — wait and retry" : <><span>Sign in</span> <ArrowRight size={14} /></>}
+            <button type="button" onClick={handleSubmit} disabled={rateLocked || submitting} className={styles.primaryButton}
+              style={rateLocked || submitting ? { opacity: 0.5, cursor: "not-allowed" } : undefined}>
+              {rateLocked ? "Too many attempts — wait and retry" : submitting ? "Signing in…" : <><span>Sign in</span> <ArrowRight size={14} /></>}
             </button>
 
             <p className={styles.footerText}>
