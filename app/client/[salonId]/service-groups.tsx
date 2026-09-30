@@ -13,15 +13,22 @@
 import { useState, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import type { Service } from "@/lib/types";
+import { categoryLabel, groupByCategory, groupBySubcategory } from "@/lib/service-groups";
 
-export function groupByCategory(services: Service[]): [string, Service[]][] {
-  const groups = new Map<string, Service[]>();
-  for (const s of services) {
-    const cat = s.category?.trim() || "Other";
-    groups.set(cat, [...(groups.get(cat) ?? []), s]);
-  }
-  // Biggest categories first — they're usually what the salon is known for.
-  return [...groups.entries()].sort((a, b) => b[1].length - a[1].length);
+/** A category's rows, under sub-headings when the salon has sub-categories. */
+function GroupRows({ items, renderRow }: { items: Service[]; renderRow: (s: Service) => ReactNode }) {
+  const subs = groupBySubcategory(items);
+  if (subs.length === 1 && subs[0][0] === null) return <ul className="sg-rows">{items.map(renderRow)}</ul>;
+  return (
+    <>
+      {subs.map(([sub, rows]) => (
+        <div key={sub ?? "_"} className="sg-subgroup">
+          {sub && <div className="sg-sub">{sub}</div>}
+          <ul className="sg-rows">{rows.map(renderRow)}</ul>
+        </div>
+      ))}
+    </>
+  );
 }
 
 export default function ServiceGroups({
@@ -38,7 +45,7 @@ export default function ServiceGroups({
   const [open, setOpen] = useState<Set<string>>(() => new Set(initiallyOpen));
 
   // One category needs no folding.
-  if (groups.length <= 1) return <ul className="sg-rows">{services.map(renderRow)}</ul>;
+  if (groups.length <= 1) return <GroupRows items={services} renderRow={renderRow} />;
 
   const toggle = (cat: string) =>
     setOpen((prev) => {
@@ -57,7 +64,7 @@ export default function ServiceGroups({
           <section key={cat} className={`sg-group${isOpen ? " sg-open" : ""}`}>
             <button className="sg-head" onClick={() => toggle(cat)} aria-expanded={isOpen}>
               <span className="sg-head-main">
-                <span className="sg-head-name">{cat}</span>
+                <span className="sg-head-name">{categoryLabel(cat)}</span>
                 <span className="sg-head-meta">
                   {items.length} service{items.length === 1 ? "" : "s"} · from {formatMoney(from)}
                 </span>
@@ -65,7 +72,7 @@ export default function ServiceGroups({
               {picked > 0 && <span className="sg-badge">{picked}</span>}
               <ChevronDown size={17} className="sg-chev" />
             </button>
-            {isOpen && <ul className="sg-rows">{items.map(renderRow)}</ul>}
+            {isOpen && <div className="sg-body"><GroupRows items={items} renderRow={renderRow} /></div>}
           </section>
         );
       })}
@@ -91,7 +98,13 @@ export default function ServiceGroups({
         .sg-open .sg-head { background: #faf9fd; }
         .sg-rows { list-style: none; margin: 0; padding: 0; }
         .sg-rows > li + li { border-top: 1px solid #f4f2f9; }
-        .sg-open .sg-rows { border-top: 1px solid #f1eff7; }
+        .sg-open .sg-body { border-top: 1px solid #f1eff7; }
+        .sg-sub {
+          padding: 10px 15px 6px; background: #faf9fd;
+          font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+          color: var(--ca-accent, #7C3AED);
+        }
+        .sg-subgroup + .sg-subgroup { border-top: 1px solid #f1eff7; }
       `}</style>
     </div>
   );

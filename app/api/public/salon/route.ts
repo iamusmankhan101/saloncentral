@@ -60,7 +60,7 @@ function publicServices(services: unknown): Json[] {
   return services
     .filter((s) => (s as Json)?.isActive !== false)
     .map((s) => pick(s, [
-      "id", "name", "description", "category", "section", "durationMin", "price",
+      "id", "name", "description", "category", "subcategory", "section", "durationMin", "price",
       "variablePrice", "priceRangeMin", "priceRangeMax", "packageServiceIds",
       "customServices", "assignedStaffIds", "multiStylist", "isActive",
     ]));

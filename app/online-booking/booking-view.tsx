@@ -19,6 +19,7 @@ import { enqueueWhatsAppConfirmation, normalizePhone } from "@/lib/whatsapp-sche
 import { getDefaultLocationId } from "@/lib/locations";
 import { busySlots, isSlotFree, type BusySlot } from "@/lib/availability";
 import { resolveSalonTheme, type SalonTheme } from "@/lib/salon-theme";
+import { categoryLabel, groupByCategory, groupBySubcategory } from "@/lib/service-groups";
 
 /** How far ahead the date row reaches. */
 const DAYS_AHEAD = 21;
@@ -171,14 +172,7 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
   const searchMatches = searchQuery
     ? availableServices.filter((sv) => sv.name.toLowerCase().includes(searchQuery) || (sv.category ?? "").toLowerCase().includes(searchQuery))
     : [];
-  const serviceGroups = useMemo(() => {
-    const groups = new Map<string, Service[]>();
-    for (const sv of availableServices) {
-      const cat = sv.category?.trim() || "Other";
-      groups.set(cat, [...(groups.get(cat) ?? []), sv]);
-    }
-    return [...groups.entries()].sort((a, b) => b[1].length - a[1].length);
-  }, [availableServices]);
+  const serviceGroups = useMemo(() => groupByCategory(availableServices), [availableServices]);
   function toggleCat(cat: string) {
     setOpenCats((prev) => {
       const next = new Set(prev);
@@ -360,6 +354,18 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
     setStep("success");
   }
 
+  /** A category's rows, under sub-headings when the salon has sub-categories. */
+  function renderGroupRows(items: Service[]) {
+    const subs = groupBySubcategory(items);
+    if (subs.length === 1 && subs[0][0] === null) return <div className="svcRows">{items.map(renderServiceRow)}</div>;
+    return subs.map(([sub, rows]) => (
+      <div key={sub ?? "_"} className="svcSubgroup">
+        {sub && <div className="svcSub">{sub}</div>}
+        <div className="svcRows">{rows.map(renderServiceRow)}</div>
+      </div>
+    ));
+  }
+
   function renderServiceRow(sv: Service) {
     const checked = selectedServiceIds.includes(sv.id);
     return (
@@ -511,7 +517,7 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
                     ? <div className="emptyState">No services match &ldquo;{serviceSearch}&rdquo;.</div>
                     : <div className="svcRows">{searchMatches.map(renderServiceRow)}</div>
                 ) : serviceGroups.length === 1 ? (
-                  <div className="svcRows">{serviceGroups[0][1].map(renderServiceRow)}</div>
+                  renderGroupRows(serviceGroups[0][1])
                 ) : serviceGroups.map(([cat, items]) => {
                   const open = openCats.has(cat);
                   const picked = items.filter((sv) => selectedServiceIds.includes(sv.id)).length;
@@ -520,13 +526,13 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
                     <div key={cat} className={`svcGroup ${open ? "open" : ""}`}>
                       <button className="svcGroupHead" onClick={() => toggleCat(cat)} aria-expanded={open}>
                         <span className="svcGroupText">
-                          <span className="svcGroupName">{cat}</span>
+                          <span className="svcGroupName">{categoryLabel(cat)}</span>
                           <span className="svcGroupMeta">{items.length} service{items.length === 1 ? "" : "s"} · from {fmt(from)}</span>
                         </span>
                         {picked > 0 && <span className="svcGroupBadge">{picked}</span>}
                         <ChevronDown size={18} className="svcGroupChev" />
                       </button>
-                      {open && <div className="svcRows">{items.map(renderServiceRow)}</div>}
+                      {open && <div className="svcGroupBody">{renderGroupRows(items)}</div>}
                     </div>
                   );
                 })}

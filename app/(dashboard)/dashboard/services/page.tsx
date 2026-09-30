@@ -23,7 +23,7 @@ const catLabel = (cat: string) => CATEGORY_LABELS[cat]?.label ?? (cat.charAt(0).
 import { fmtCurrency as fmt } from "@/lib/format";
 
 const SERVICE_EXPORT_COLS = [
-  "Service ID", "Name", "Description", "Category", "Section", "Duration (Min)",
+  "Service ID", "Name", "Description", "Category", "Sub-category", "Section", "Duration (Min)",
   "Variable Price", "Price", "Min Price", "Max Price", "Included Services", "Assigned Staff", "Active",
 ];
 
@@ -55,6 +55,7 @@ function servicesToRows(list: Service[], staffList: Staff[]) {
       "Name": sv.name,
       "Description": sv.description ?? "",
       "Category": sv.category,
+      "Sub-category": sv.subcategory ?? "",
       "Section": sv.section ?? "",
       "Duration (Min)": sv.durationMin,
       "Variable Price": sv.variablePrice ? "Yes" : "No",
@@ -153,6 +154,9 @@ function ServiceImportModal({ existing, staffList, onClose, onImport }: {
             name,
             description: String(row["Description"] ?? row["description"] ?? "").trim() || existingService?.description,
             category,
+            subcategory: String(row["Sub-category"] ?? row["Subcategory"] ?? row["subcategory"] ?? "").trim()
+              || existingService?.subcategory
+              || undefined,
             section: String(row["Section"] ?? row["section"] ?? "").trim()
               || existingService?.section
               || defaultSectionForNewRecord()
@@ -187,12 +191,12 @@ function ServiceImportModal({ existing, staffList, onClose, onImport }: {
     const sample = [
       {
         "Service ID": "", "Name": "Hydrafacial Premium", "Description": "Deep hydrating facial treatment",
-        "Category": "skin", "Section": "", "Duration (Min)": 60, "Variable Price": "No",
+        "Category": "skin", "Sub-category": "Facials", "Section": "", "Duration (Min)": 60, "Variable Price": "No",
         "Price": 3500, "Min Price": "", "Max Price": "", "Included Services": "", "Assigned Staff": "Sara Ahmed", "Active": "Yes",
       },
       {
         "Service ID": "", "Name": "Bridal Glow Combo", "Description": "",
-        "Category": "package", "Section": "", "Duration (Min)": 180, "Variable Price": "No",
+        "Category": "package", "Sub-category": "", "Section": "", "Duration (Min)": 180, "Variable Price": "No",
         "Price": 15000, "Min Price": "", "Max Price": "", "Included Services": "Hydrafacial Premium, Haircut", "Assigned Staff": "", "Active": "Yes",
       },
     ];
@@ -319,6 +323,7 @@ function AddEditServiceModal({ onClose, onSave, staffList, servicesList, invento
     description:      serviceToEdit?.description ?? "",
     category:         editedCategoryIsCustom ? "custom" : (serviceToEdit?.category ?? "hair"),
     customCategory:   editedCategoryIsCustom ? serviceToEdit!.category : "",
+    subcategory:      serviceToEdit?.subcategory ?? "",
     section:          serviceToEdit?.section ?? defaultSectionForNewRecord(),
     durationMin:      serviceToEdit ? String(serviceToEdit.durationMin) : "60",
     price:            serviceToEdit ? String(serviceToEdit.price) : "",
@@ -420,6 +425,7 @@ function AddEditServiceModal({ onClose, onSave, staffList, servicesList, invento
       name:             form.name.trim(),
       description:      form.description.trim() || undefined,
       category:         form.isPackage ? "package" : (form.category === "custom" ? form.customCategory.trim() : form.category),
+      subcategory:      !form.isPackage && form.subcategory.trim() ? form.subcategory.trim() : undefined,
       section:          form.section || undefined,
       durationMin,
       price:            form.variablePrice ? rangeMin : price,
@@ -525,6 +531,25 @@ function AddEditServiceModal({ onClose, onSave, staffList, servicesList, invento
               <label style={{ fontSize: 11, fontWeight: 700, color: "#9898b0", textTransform: "uppercase", letterSpacing: "0.06em" }}>Custom Category Name</label>
               <input type="text" value={form.customCategory} onChange={(e) => set("customCategory", e.target.value)} placeholder="e.g. Massage"
                 style={{ padding: "9px 12px", borderRadius: 8, border: "1px solid #e8e8f0", fontSize: 13, color: "#1a1a2e", outline: "none" }} />
+            </div>
+          )}
+
+          {!form.isPackage && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={{ fontSize: 11, fontWeight: 700, color: "#9898b0", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                Sub-category <span style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0 }}>(optional)</span>
+              </label>
+              <input type="text" list="subcategory-options" value={form.subcategory} onChange={(e) => set("subcategory", e.target.value)}
+                placeholder="e.g. Keratin, Men's Haircuts"
+                style={{ padding: "9px 12px", borderRadius: 8, border: "1px solid #e8e8f0", fontSize: 13, color: "#1a1a2e", outline: "none" }} />
+              {/* Suggests the sub-categories already used in this category, so the same group isn't typed two ways. */}
+              <datalist id="subcategory-options">
+                {Array.from(new Set(servicesList
+                  .filter((s) => s.category === (form.category === "custom" ? form.customCategory.trim() : form.category))
+                  .map((s) => s.subcategory)
+                  .filter((x): x is string => Boolean(x))))
+                  .map((sub) => <option key={sub} value={sub} />)}
+              </datalist>
             </div>
           )}
 
@@ -740,6 +765,8 @@ export default function ServicesPage() {
   const [editingService, setEditingService] = useState<Service | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Service | null>(null);
   const [filter, setFilter] = useState("all");
+  // Sub-category within the selected category tab; "all" shows every group.
+  const [subFilter, setSubFilter] = useState("all");
   const [sectionFilter, setSectionFilter] = useState(() => getActiveSection());
   const [search, setSearch] = useState("");
   const [showImport, setShowImport] = useState(false);
@@ -814,8 +841,13 @@ export default function ServicesPage() {
     return { added, updated, skipped, errors: [] };
   };
 
+  // Sub-categories of the selected category tab, in the order they first appear.
+  const subcategoryTabs = filter === "all" ? [] : Array.from(new Set(
+    services.filter(s => s.category === filter).map(s => s.subcategory).filter((x): x is string => Boolean(x))
+  ));
   const filteredServices = services
     .filter(s => filter === "all" || s.category === filter)
+    .filter(s => subFilter === "all" || s.subcategory === subFilter)
     .filter(s => inSection(s, sectionFilter))
     .filter(s => !search.trim() || s.name.toLowerCase().includes(search.trim().toLowerCase()));
   const customCategories = Array.from(new Set(services.map(s => s.category))).filter(c => !PRESET_CATEGORIES.includes(c));
@@ -952,7 +984,7 @@ export default function ServicesPage() {
         {tabCategories.map((cat) => {
           const active = filter === cat;
           return (
-            <button key={cat} onClick={() => setFilter(cat)}
+            <button key={cat} onClick={() => { setFilter(cat); setSubFilter("all"); }}
               style={{
                 padding: "7px 16px",
                 borderRadius: 9,
@@ -970,6 +1002,30 @@ export default function ServicesPage() {
           );
         })}
       </div>
+
+      {/* Sub-category chips — only when the chosen category has any */}
+      {subcategoryTabs.length > 0 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignSelf: "flex-start", marginTop: -8 }}>
+          {["all", ...subcategoryTabs].map((sub) => {
+            const active = subFilter === sub;
+            return (
+              <button key={sub} onClick={() => setSubFilter(sub)}
+                style={{
+                  padding: "6px 13px", borderRadius: 999, cursor: "pointer",
+                  border: `1px solid ${active ? "#7C3AED" : "#e3e0eb"}`,
+                  background: active ? "#F5F3FF" : "#fff",
+                  color: active ? "#7C3AED" : "#6b6b8a",
+                  fontSize: 12, fontWeight: 750,
+                }}>
+                {sub === "all" ? `All ${catLabel(filter)}` : sub}
+                <span style={{ marginLeft: 6, opacity: 0.6 }}>
+                  {services.filter(s => s.category === filter && (sub === "all" || s.subcategory === sub)).length}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Section filter — locked to the active dashboard section when one is
           set; switch the global "Active Section" control to see another. */}
@@ -1029,6 +1085,7 @@ export default function ServicesPage() {
                     <span style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", background: badge.bg, color: badge.color, padding: "3px 10px", borderRadius: 20, letterSpacing: "0.05em", display: "inline-flex", alignItems: "center", gap: 4 }}>
                       {includedNames && <PackageIcon size={10} />}
                       {badge.label}
+                      {sv.subcategory && <span style={{ opacity: 0.7 }}>· {sv.subcategory}</span>}
                     </span>
                     <div style={{ fontSize: 15, fontWeight: 800, color: "#1a1a2e", marginTop: 12, letterSpacing: "-0.01em" }}>{sv.name}</div>
                     {sv.description && (

@@ -80,6 +80,13 @@ export interface Service {
   name: string;
   description?: string;
   category: ServiceCategoryValue;
+  /**
+   * Optional grouping inside the category — "Keratin" or "Men's Haircuts"
+   * under Hair Care. Free text. Groups the service list on the Services page
+   * and in the customer booking menus, so a big category opens as short
+   * labelled groups instead of one long list.
+   */
+  subcategory?: string;
   /** Which salon section this service belongs to (e.g. "Men's", "Women's"). Free text, cosmetic only. */
   section?: string;
   durationMin: number;

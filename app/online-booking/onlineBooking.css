@@ -184,7 +184,13 @@ html:has(.pageWrapper), body:has(.pageWrapper) { background: #f6f5f9; }
 .svcGroup.open .svcGroupChev { transform: rotate(180deg); color: var(--bk-accent); }
 
 .svcRows { display: flex; flex-direction: column; }
-.svcGroup .svcRows { border-top: 1px solid #f0eef5; }
+.svcGroupBody { border-top: 1px solid #f0eef5; }
+.svcSub {
+  padding: 10px 16px 6px; background: var(--bk-softer);
+  font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--bk-accent);
+}
+.svcSubgroup + .svcSubgroup { border-top: 1px solid #f0eef5; }
 .svcRow {
   display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
   padding: 11px 16px; background: #fff; border: none; cursor: pointer; font: inherit; color: #111827;

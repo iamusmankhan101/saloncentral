@@ -24,6 +24,7 @@ import type { Service } from "@/lib/types";
 import InstallPrompt from "@/components/install-prompt";
 import BookingSheet, { type BusinessHour, type PublicStaff } from "./booking-sheet";
 import ServiceGroups from "./service-groups";
+import { categoryLabel } from "@/lib/service-groups";
 import { PaymentSheet, type PublicPayments } from "./payment-options";
 import { resolveSalonTheme, type SalonTheme } from "@/lib/salon-theme";
 import {
@@ -361,7 +362,7 @@ function ClientAppInner({ salonId }: { salonId: string }) {
                 {categories.map(([cat, count]) => (
                   <Chip
                     key={cat}
-                    label={`${cat} ${count}`}
+                    label={`${categoryLabel(cat)} ${count}`}
                     active={category === cat}
                     onClick={() => setCategory(cat)}
                   />
@@ -374,8 +375,9 @@ function ClientAppInner({ salonId }: { salonId: string }) {
             <p className="ca-empty">
               {search ? `No services match "${search}".` : "No services listed yet — please ask at reception."}
             </p>
-          ) : category === "all" && !search.trim() ? (
-            // The full menu folds by category; a chosen category or a search shows its matches flat.
+          ) : !search.trim() ? (
+            // The full menu folds by category; a chosen category opens under its
+            // sub-headings; a search shows its matches flat.
             <ServiceGroups services={visible} renderRow={serviceRow} formatMoney={(n) => money(n, currency)} />
           ) : (
             <ul className="ca-list">{visible.map(serviceRow)}</ul>
