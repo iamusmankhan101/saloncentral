@@ -3,7 +3,7 @@
 import './onlineBooking.css';
 import { useState, useMemo, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { CheckCircle, Clock, Calendar, User, Scissors, ChevronRight, ChevronLeft, MessageSquare, Check } from "lucide-react";
+import { CheckCircle, Clock, Calendar, User, Scissors, ChevronRight, ChevronLeft, ChevronDown, MessageSquare, Check, Search, X } from "lucide-react";
 import {
   getStoredAppointments,
   saveAppointments,
@@ -118,6 +118,9 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
   const [notes, setNotes]                       = useState("");
   const [booking, setBooking]                   = useState(false);
   const [bookError, setBookError]               = useState("");
+  const [serviceSearch, setServiceSearch]       = useState("");
+  // Categories the customer has expanded. All start folded so the menu fits on one screen.
+  const [openCats, setOpenCats]                 = useState<Set<string>>(new Set());
   const [remoteBusy, setRemoteBusy]             = useState<BusySlot[]>([]);
 
   // Taken times for an external customer. Only dates and stylist ids come
@@ -151,6 +154,27 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
     ? services.filter((s) => s.assignedStaffIds.includes(selectedStaffId))
     : services;
   const selectedServices   = services.filter((s) => selectedServiceIds.includes(s.id));
+
+  // The menu folded by category, biggest first; a search shows its matches flat instead.
+  const searchQuery = serviceSearch.trim().toLowerCase();
+  const searchMatches = searchQuery
+    ? availableServices.filter((sv) => sv.name.toLowerCase().includes(searchQuery) || (sv.category ?? "").toLowerCase().includes(searchQuery))
+    : [];
+  const serviceGroups = useMemo(() => {
+    const groups = new Map<string, Service[]>();
+    for (const sv of availableServices) {
+      const cat = sv.category?.trim() || "Other";
+      groups.set(cat, [...(groups.get(cat) ?? []), sv]);
+    }
+    return [...groups.entries()].sort((a, b) => b[1].length - a[1].length);
+  }, [availableServices]);
+  function toggleCat(cat: string) {
+    setOpenCats((prev) => {
+      const next = new Set(prev);
+      if (next.has(cat)) next.delete(cat); else next.add(cat);
+      return next;
+    });
+  }
   const totalDuration      = selectedServices.reduce((sum, s) => sum + s.durationMin, 0);
   const totalPrice         = selectedServices.reduce((sum, s) => sum + s.price, 0);
   const selectedHours      = getHoursForDate(selectedDate);
@@ -307,6 +331,18 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
     setStep("success");
   }
 
+  function renderServiceRow(sv: Service) {
+    const checked = selectedServiceIds.includes(sv.id);
+    return (
+      <button key={sv.id} className={`svcRow ${checked ? "selected" : ""}`} onClick={() => toggleService(sv.id)} aria-pressed={checked}>
+        <span className="svcRowCheck">{checked && <Check size={12} strokeWidth={3} />}</span>
+        <span className="svcRowName">{sv.name}</span>
+        <span className="svcRowDur"><Clock size={11} /> {sv.durationMin}m</span>
+        <span className="svcRowPrice">{fmt(sv.price)}</span>
+      </button>
+    );
+  }
+
   function resetAll() {
     setSelectedServiceIds([]); setSelectedStaffId("");
     setSelectedDate(""); setSelectedTime("");
@@ -397,19 +433,45 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
                 </div>
               )}
 
-              <div className="serviceGrid">
+              {availableServices.length > 6 && (
+                <div className="svcSearch">
+                  <Search size={15} />
+                  <input
+                    value={serviceSearch}
+                    onChange={(e) => setServiceSearch(e.target.value)}
+                    placeholder={`Search ${availableServices.length} services`}
+                    aria-label="Search services"
+                  />
+                  {serviceSearch && (
+                    <button onClick={() => setServiceSearch("")} aria-label="Clear search"><X size={14} /></button>
+                  )}
+                </div>
+              )}
+
+              <div className="svcMenu">
                 {availableServices.length === 0 ? (
                   <div className="emptyState">No services available.</div>
-                ) : availableServices.map((sv) => {
-                  const checked = selectedServiceIds.includes(sv.id);
+                ) : searchQuery ? (
+                  searchMatches.length === 0
+                    ? <div className="emptyState">No services match &ldquo;{serviceSearch}&rdquo;.</div>
+                    : <div className="svcRows">{searchMatches.map(renderServiceRow)}</div>
+                ) : serviceGroups.length === 1 ? (
+                  <div className="svcRows">{serviceGroups[0][1].map(renderServiceRow)}</div>
+                ) : serviceGroups.map(([cat, items]) => {
+                  const open = openCats.has(cat);
+                  const picked = items.filter((sv) => selectedServiceIds.includes(sv.id)).length;
+                  const from = Math.min(...items.map((sv) => sv.price || 0));
                   return (
-                    <div key={sv.id} className={`serviceCard ${checked ? "selected" : ""}`} onClick={() => toggleService(sv.id)}>
-                      <div className={`serviceCardCheck ${checked ? "visible" : ""}`}><Check size={11} /></div>
-                      <div className="serviceCardName">{sv.name}</div>
-                      <div className="serviceCardMeta">
-                        <span className="serviceCardDuration"><Clock size={11} /> {sv.durationMin} min</span>
-                        <span className="serviceCardPrice">{fmt(sv.price)}</span>
-                      </div>
+                    <div key={cat} className={`svcGroup ${open ? "open" : ""}`}>
+                      <button className="svcGroupHead" onClick={() => toggleCat(cat)} aria-expanded={open}>
+                        <span className="svcGroupText">
+                          <span className="svcGroupName">{cat}</span>
+                          <span className="svcGroupMeta">{items.length} service{items.length === 1 ? "" : "s"} · from {fmt(from)}</span>
+                        </span>
+                        {picked > 0 && <span className="svcGroupBadge">{picked}</span>}
+                        <ChevronDown size={18} className="svcGroupChev" />
+                      </button>
+                      {open && <div className="svcRows">{items.map(renderServiceRow)}</div>}
                     </div>
                   );
                 })}
