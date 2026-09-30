@@ -3,7 +3,7 @@
 import './onlineBooking.css';
 import { useState, useMemo, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { CheckCircle, Clock, Calendar, User, Scissors, ChevronRight, ChevronLeft, ChevronDown, MessageSquare, Check, Search, X } from "lucide-react";
+import { CheckCircle, Clock, Calendar, User, Scissors, ChevronRight, ChevronLeft, ChevronDown, Check, Search, X, Phone, MapPin } from "lucide-react";
 import {
   getStoredAppointments,
   saveAppointments,
@@ -18,6 +18,10 @@ import { fmtCurrency as fmt } from "@/lib/format";
 import { enqueueWhatsAppConfirmation, normalizePhone } from "@/lib/whatsapp-scheduler";
 import { getDefaultLocationId } from "@/lib/locations";
 import { busySlots, isSlotFree, type BusySlot } from "@/lib/availability";
+import { resolveSalonTheme, type SalonTheme } from "@/lib/salon-theme";
+
+/** How far ahead the date row reaches. */
+const DAYS_AHEAD = 21;
 
 interface BusinessHour {
   day: string;
@@ -92,6 +96,12 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
   const [staffList, setStaffList]       = useState<Staff[]>(() => salonId ? [] : getStoredStaff());
   const [services, setServices]         = useState<Service[]>(() => salonId ? [] : getStoredServices());
   const [remoteSettings, setRemoteSettings] = useState<Record<string, unknown> | null>(null);
+  // True once the salon's data has arrived (or failed) — the theme waits on it
+  // so the page doesn't flash the default colour before the salon's own.
+  const [loaded, setLoaded] = useState(!salonId);
+  const [theme, setTheme] = useState<SalonTheme | null>(null);
+  // When the page was opened — the date row counts forward from this day.
+  const [openedAt] = useState(() => Date.now());
 
   // When accessed with ?salon=xxx, load everything from the DB instead of localStorage
   useEffect(() => {
@@ -105,7 +115,8 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
         setAppointments(data.appointments ?? []);
         setRemoteSettings(data.settings ?? null);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setLoaded(true));
   }, [salonId]);
 
   const [step, setStep]                         = useState<1 | 2 | 3 | "success">(1);
@@ -187,24 +198,42 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
     [salonId, remoteBusy, appointments, today],
   );
 
-  const timeSlots = useMemo(() => {
-    if (!selectedDate || !selectedHours?.open || totalDuration <= 0) return [];
-    const activeStaff = staffList.filter((st) => st.isActive !== false).map((st) => st.id);
-    // Stylists who can do every chosen service; unassigned services are open to anyone.
-    const eligible = activeStaff.filter((id) =>
-      selectedServices.every((sv) => !sv.assignedStaffIds?.length || sv.assignedStaffIds.includes(id)));
+  const activeStaff = staffList.filter((st) => st.isActive !== false).map((st) => st.id);
+  // Stylists who can do every chosen service; unassigned services are open to anyone.
+  const eligibleStaff = activeStaff.filter((id) =>
+    selectedServices.every((sv) => !sv.assignedStaffIds?.length || sv.assignedStaffIds.includes(id)));
+
+  /** Free start times on `date` for the chosen services and stylist. */
+  function slotsFor(date: string): string[] {
+    const hours = getHoursForDate(date);
+    if (!hours?.open || totalDuration <= 0) return [];
     const now = new Date();
     // Today: hide times that have already started, plus a short buffer to get there.
-    const earliest = selectedDate === today ? now.getHours() * 60 + now.getMinutes() + 30 : 0;
-    return generateTimeSlots(selectedHours.from, selectedHours.to, totalDuration).filter((slot) =>
+    const earliest = date === today ? now.getHours() * 60 + now.getMinutes() + 30 : 0;
+    return generateTimeSlots(hours.from, hours.to, totalDuration).filter((slot) =>
       timeToMinutes(slot) >= earliest &&
       isSlotFree(
         busy,
-        { date: selectedDate, start: slot, end: addMinutes(slot, totalDuration) },
-        selectedStaffId, eligible, activeStaff,
+        { date, start: slot, end: addMinutes(slot, totalDuration) },
+        selectedStaffId, eligibleStaff, activeStaff,
       ));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate, selectedHours, totalDuration, busy, selectedStaffId, staffList, selectedServiceIds, today]);
+  }
+  const timeSlots = selectedDate ? slotsFor(selectedDate) : [];
+
+  // The date row: the next three weeks, with closed and fully booked days marked.
+  const days = step === 2 ? Array.from({ length: DAYS_AHEAD }, (_, i) => {
+    const base = new Date(openedAt);
+    const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + i);
+    const value = localYmd(d);
+    const open = getHoursForDate(value)?.open !== false;
+    return {
+      value, open,
+      full: open && slotsFor(value).length === 0,
+      dow: i === 0 ? "Today" : i === 1 ? "Tmrw" : d.toLocaleDateString("en-US", { weekday: "short" }),
+      dom: d.getDate(),
+      month: d.toLocaleDateString("en-US", { month: "short" }),
+    };
+  }) : [];
 
   function toggleService(id: string) {
     setSelectedServiceIds((prev) =>
@@ -357,32 +386,58 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
   const salonLogo = salonId
     ? ((remoteSettings?.salon as { logo?: string })?.logo ?? "")
     : ((settingsStore.salon as { logo?: string }).logo ?? "");
+  const salonInfo = (salonId ? remoteSettings?.salon : settingsStore.salon) as { phone?: string; address?: string } | undefined;
+  const salonAccent = salonId
+    ? (remoteSettings?.appearance as { accent?: string } | undefined)?.accent
+    : (settingsStore.appearance as { accent?: string }).accent;
+
+  // The salon's own colour — the one it picked, else its logo's, else the
+  // house purple — same rule as the client app (lib/salon-theme.ts).
+  useEffect(() => {
+    if (!loaded) return;
+    let cancelled = false;
+    resolveSalonTheme({ chosenAccent: salonAccent, logo: salonLogo })
+      .then((t) => { if (!cancelled) setTheme(t); });
+    return () => { cancelled = true; };
+  }, [loaded, salonAccent, salonLogo]);
 
   return (
-    <div className="pageWrapper">
-      {/* Navbar */}
-      <header className="topNavbar">
-        <div className="brandRow">
-          {salonLogo && (
-            // eslint-disable-next-line @next/next/no-img-element -- salon-uploaded data URL
-            <img className="brandLogoImg" src={salonLogo} alt={`${salonName} logo`} suppressHydrationWarning />
+    <div
+      className="pageWrapper"
+      data-ready={theme ? "" : undefined}
+      style={(theme?.vars ?? {}) as React.CSSProperties}
+    >
+      {/* Salon header, in the salon's colours */}
+      <header className="bkHero">
+        <div className="bkHeroInner">
+          {salonLogo ? (
+            // eslint-disable-next-line @next/next/no-img-element -- salon-uploaded logo
+            <img className="bkLogo" src={salonLogo} alt={`${salonName} logo`} suppressHydrationWarning />
+          ) : (
+            <div className="bkLogo bkLogoFallback"><Scissors size={24} /></div>
           )}
-          <div className="brandLogoArea">
-            <div className="brandLogoText" suppressHydrationWarning>{salonName}</div>
-            <div className="brandPoweredBy">powered by <span className="brandPoweredByName">Salon Central</span></div>
+          <div className="bkHeroText">
+            <div className="bkEyebrow">Book an appointment</div>
+            <h1 className="bkSalonName" suppressHydrationWarning>{salonName}</h1>
+            {(salonInfo?.phone || salonInfo?.address) && (
+              <div className="bkChips">
+                {salonInfo?.phone && (
+                  <a className="bkChip" href={`tel:${salonInfo.phone}`}><Phone size={13} /> Call</a>
+                )}
+                {salonInfo?.address && (
+                  <a
+                    className="bkChip"
+                    href={`https://maps.google.com/?q=${encodeURIComponent(salonInfo.address)}`}
+                    target="_blank" rel="noreferrer"
+                  >
+                    <MapPin size={13} /> Directions
+                  </a>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </header>
-
-      {/* Hero */}
-      <section className="heroSection">
-        <div className="heroOverlay" />
-        <div className="heroCenterContent">
-          <h1 className="heroBrandName">Online Booking</h1>
-          <div className="heroRule"><span className="heroDiamond" /></div>
-          <p className="heroBrandSubtitle">Beauty Bar</p>
-        </div>
-      </section>
 
       {/* Booking card */}
       <section className="bookingSection">
@@ -477,16 +532,16 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
                 })}
               </div>
 
-              {selectedServiceIds.length > 0 && (
-                <div className="selectionSummary">
-                  <span>{selectedServiceIds.length} service{selectedServiceIds.length > 1 ? "s" : ""} · {totalDuration} min</span>
-                  <span className="selectionTotal">{fmt(totalPrice)}</span>
-                </div>
-              )}
-
-              <button className={`btnNext ${selectedServiceIds.length > 0 ? "active" : "disabled"}`} disabled={selectedServiceIds.length === 0} onClick={() => setStep(2)}>
-                Continue <ChevronRight size={16} />
-              </button>
+              <div className="stepNav">
+                <button className={`btnNext ${selectedServiceIds.length > 0 ? "active" : "disabled"}`} disabled={selectedServiceIds.length === 0} onClick={() => setStep(2)}>
+                  {selectedServiceIds.length === 0 ? "Select a service" : (
+                    <>
+                      <span className="btnNextMeta">{selectedServiceIds.length} · {fmt(totalPrice)}</span>
+                      Continue <ChevronRight size={16} />
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           )}
 
@@ -503,16 +558,20 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
 
               <div className="formGroup">
                 <label className="formLabel">Date</label>
-                <input
-                  type="date"
-                  className="cleanInput"
-                  value={selectedDate}
-                  min={today}
-                  onChange={(e) => { setSelectedDate(e.target.value); setSelectedTime(""); }}
-                />
-                {selectedDate && selectedHours && !selectedHours.open && (
-                  <div className="dateWarning">We're closed on {selectedHours.day}. Please pick another date.</div>
-                )}
+                <div className="dayStrip">
+                  {days.map((d) => (
+                    <button
+                      key={d.value}
+                      disabled={!d.open || d.full}
+                      className={`dayCell ${selectedDate === d.value ? "selected" : ""}`}
+                      onClick={() => { setSelectedDate(d.value); setSelectedTime(""); setBookError(""); }}
+                    >
+                      <span className="dayDow">{d.dow}</span>
+                      <span className="dayDom">{d.dom}</span>
+                      <span className="dayMonth">{!d.open ? "Closed" : d.full ? "Full" : d.month}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {bookError && <div className="dateWarning">{bookError}</div>}
@@ -529,6 +588,8 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
                   </div>
                 </div>
               )}
+
+              {!selectedDate && <div className="emptyState">Pick a day above to see available times.</div>}
 
               {selectedDate && dateIsOpen && timeSlots.length === 0 && (
                 <div className="emptyState">Fully booked on this date — please try another day{selectedStaffId ? " or stylist" : ""}.</div>
@@ -616,16 +677,14 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
                 <div className="successRow highlight"><span className="successLabel">Total</span><span className="successValue">{fmt(totalPrice)}</span></div>
               </div>
 
-              <p className="successNote">💜 We'll send you a WhatsApp confirmation shortly. See you soon!</p>
+              <p className="successNote">We&apos;ll send you a WhatsApp confirmation shortly. See you soon!</p>
               <button className="btnBookAnother" onClick={resetAll}>Book Another Appointment</button>
             </div>
           )}
         </div>
       </section>
 
-      <div className="floatingChatBubble" onClick={() => alert("Live support coming soon!")}>
-        <MessageSquare size={22} />
-      </div>
+      <footer className="bkFooter">Powered by <strong>Salon Central</strong></footer>
     </div>
   );
 }
@@ -633,7 +692,7 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
 /** The online booking form — shared by /online-booking and /book/[slug]. */
 export function OnlineBookingView({ salonId }: { salonId?: string }) {
   return (
-    <Suspense fallback={<div style={{ minHeight: "100vh", background: "#0a0a0f" }} />}>
+    <Suspense fallback={<div style={{ minHeight: "100vh", background: "#f6f5f9" }} />}>
       <OnlineBookingInner salonIdOverride={salonId} />
     </Suspense>
   );
