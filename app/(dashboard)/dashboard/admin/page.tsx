@@ -1287,7 +1287,7 @@ function DevicesModal({ row, onClose, onCountChange }: {
                   </div>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: "#1a1a2e", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                      {s.userAgent ? device.label : "Unknown device (logged in before tracking started)"}
+                      {s.userAgent ? device.label : "Unknown device (not used since this update)"}
                       {s.current && <span style={{ fontSize: 10, fontWeight: 800, color: "#059669", background: "#ecfdf5", padding: "2px 7px", borderRadius: 10 }}>This device</span>}
                     </div>
                     <div style={{ fontSize: 11, color: "#9898b0", marginTop: 2 }}>

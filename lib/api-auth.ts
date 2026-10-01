@@ -27,7 +27,7 @@ export async function getSessionUserId(req: NextRequest): Promise<string | null>
   const token = req.cookies.get(COOKIE_NAME)?.value;
   const userId = token ? verifySessionToken(token) : null;
   if (!userId || !token) return null;
-  return (await isSessionValid(tokenId(token))) ? userId : null;
+  return (await isSessionValid(tokenId(token), sessionDeviceFromRequest(req))) ? userId : null;
 }
 
 export interface ResolvedActor {

@@ -456,11 +456,16 @@ export async function revokeDbSession(id: string): Promise<void> {
 // turn every request into a DB write.
 const LAST_SEEN_INTERVAL_MS = 5 * 60 * 1000;
 
-/** Returns true if the session exists AND is not revoked AND has not expired. */
-export async function isSessionValid(id: string): Promise<boolean> {
+/**
+ * Returns true if the session exists AND is not revoked AND has not expired.
+ * Pass `device` to also keep the admin devices view current: last_seen_at is
+ * refreshed, and a session opened before device tracking existed gets its
+ * browser/location filled in from this request.
+ */
+export async function isSessionValid(id: string, device?: SessionDevice): Promise<boolean> {
   await ensureSessionsTable();
   const res = await db.execute({
-    sql: "SELECT revoked, expires_at, last_seen_at FROM sessions WHERE id = ?",
+    sql: "SELECT revoked, expires_at, last_seen_at, user_agent FROM sessions WHERE id = ?",
     args: [id],
   });
   if (!res.rows.length) return false;
@@ -468,12 +473,20 @@ export async function isSessionValid(id: string): Promise<boolean> {
   if ((row.revoked as number) === 1) return false;
   if (new Date(row.expires_at as string) < new Date()) return false;
 
-  const lastSeen = row.last_seen_at ? new Date(row.last_seen_at as string).getTime() : 0;
-  if (Date.now() - lastSeen > LAST_SEEN_INTERVAL_MS) {
+  const now = new Date().toISOString();
+  if (device && !row.user_agent && device.userAgent) {
     db.execute({
-      sql: "UPDATE sessions SET last_seen_at = ? WHERE id = ?",
-      args: [new Date().toISOString(), id],
+      sql: "UPDATE sessions SET last_seen_at = ?, user_agent = ?, ip = ?, city = ?, country = ? WHERE id = ?",
+      args: [now, device.userAgent, device.ip, device.city, device.country, id],
     }).catch(() => {});
+  } else {
+    const lastSeen = row.last_seen_at ? new Date(row.last_seen_at as string).getTime() : 0;
+    if (Date.now() - lastSeen > LAST_SEEN_INTERVAL_MS) {
+      db.execute({
+        sql: "UPDATE sessions SET last_seen_at = ? WHERE id = ?",
+        args: [now, id],
+      }).catch(() => {});
+    }
   }
   return true;
 }
