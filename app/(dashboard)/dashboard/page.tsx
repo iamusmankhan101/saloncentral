@@ -189,7 +189,7 @@ export default function DashboardPage() {
       <MobilePageHeader title="Dashboard" subtitle="Salon Overview" />
 
       {/* Stats Row */}
-      <div className="stats-grid-4" style={{ marginBottom: 4 }}>
+      <div className="stats-grid-4 dash-stats" style={{ marginBottom: 4 }}>
         {/* Stat 1: Today's Revenue */}
         <div style={{
           background: "#fff",

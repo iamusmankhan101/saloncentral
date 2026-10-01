@@ -483,7 +483,7 @@ function DashboardSectionSwitcher({ onSectionChange }: { onSectionChange: (secti
   }
 
   return (
-    <div style={{
+    <div className="section-switcher" style={{
       display: "flex",
       alignItems: "center",
       justifyContent: "space-between",
@@ -512,7 +512,7 @@ function DashboardSectionSwitcher({ onSectionChange }: { onSectionChange: (secti
           <div style={{ fontSize: 10, fontWeight: 850, color: "var(--accent)", textTransform: "uppercase", letterSpacing: "0.09em" }}>
             Active Section
           </div>
-          <div style={{ fontSize: 12, color: "#777792", fontWeight: 650, marginTop: 2 }}>
+          <div className="section-switcher-help" style={{ fontSize: 12, color: "#777792", fontWeight: 650, marginTop: 2 }}>
             Everything, including revenue, filters to this section. Switch to All Sections to see both combined.
           </div>
         </div>
@@ -521,6 +521,7 @@ function DashboardSectionSwitcher({ onSectionChange }: { onSectionChange: (secti
       <select
         value={activeSection}
         onChange={(e) => changeSection(e.target.value)}
+        className="section-switcher-select"
         style={{
           minWidth: 160,
           padding: "9px 34px 9px 12px",

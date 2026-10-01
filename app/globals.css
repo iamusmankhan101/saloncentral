@@ -1239,6 +1239,28 @@ button, a, [role="button"] { touch-action: manipulation; }
   .mobile-only.mobile-tab-bar,
   .mobile-only.mobile-alert-banner { display: flex !important; }
 
+  /* Active Section bar: one compact row — the explanation is desktop-only. */
+  .section-switcher { margin: 8px 14px 0 !important; padding: 8px 10px !important; gap: 10px !important; }
+  .section-switcher > div:first-child > div:first-child { width: 30px !important; height: 30px !important; border-radius: 10px !important; }
+  .section-switcher-help { display: none; }
+  .section-switcher-select { min-width: 0 !important; flex: 0 1 55%; padding: 8px 30px 8px 10px !important; }
+
+  /* Dashboard stat tiles: icon above the figures, like a native app tile, so
+     labels and amounts get the card's full width instead of wrapping. */
+  .dash-stats { gap: 10px !important; }
+  .dash-stats > div {
+    flex-direction: column-reverse !important;
+    align-items: flex-start !important;
+    justify-content: flex-end !important;
+    gap: 10px;
+    padding: 14px !important;
+    border-radius: 16px !important;
+  }
+  .dash-stats > div > div:last-child { width: 34px !important; height: 34px !important; border-radius: 10px !important; }
+  .dash-stats > div > div:nth-child(2) { min-width: 0; width: 100%; }
+  .dash-stats > div > div:nth-child(2) > div:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: 0.03em !important; }
+  .dash-stats > div > div:nth-child(2) > div:nth-child(2) { font-size: 19px !important; margin-top: 4px !important; }
+
   /* Low-stock badge: just an icon + count on phones so it doesn't cover content. */
   .stock-pill { width: 42px; height: 42px; padding: 0 !important; justify-content: center; border-radius: 50% !important; }
   .stock-pill .stock-pill-text { display: none !important; }
