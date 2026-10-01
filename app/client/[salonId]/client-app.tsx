@@ -32,7 +32,7 @@ import {
 } from "@/lib/push-client";
 
 interface SalonSettings {
-  salon?: { name?: string; phone?: string; address?: string; logo?: string; currency?: string };
+  salon?: { name?: string; phone?: string; address?: string; logo?: string; currency?: string; timezone?: string };
   appearance?: { accent?: string };
   hours?: BusinessHour[];
   payments?: PublicPayments;
@@ -405,6 +405,7 @@ function ClientAppInner({ salonId }: { salonId: string }) {
           formatMoney={(n) => money(n, currency)}
           payments={data.settings?.payments}
           salonPhone={salon.phone}
+          timezone={salon.timezone}
           onClose={() => setBookingFor(null)}
         />
       )}

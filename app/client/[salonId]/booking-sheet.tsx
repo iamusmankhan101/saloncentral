@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import type { Appointment, Client, Service } from "@/lib/types";
 import { normalizePhone } from "@/lib/whatsapp-scheduler";
+import { salonNow } from "@/lib/appointment-time";
 import { isSlotFree, type BusySlot } from "@/lib/availability";
 import { fileToResizedDataUrl } from "@/lib/image";
 import ServiceGroups from "./service-groups";
@@ -60,7 +61,7 @@ const longDate = (s: string) =>
 type Step = "services" | "when" | "details" | "done";
 
 export default function BookingSheet({
-  salonId, salonName, services, staff, hours, initialServiceId, formatMoney, payments, salonPhone, onClose,
+  salonId, salonName, services, staff, hours, initialServiceId, formatMoney, payments, salonPhone, timezone, onClose,
 }: {
   salonId: string;
   salonName: string;
@@ -71,6 +72,8 @@ export default function BookingSheet({
   formatMoney: (n: number) => string;
   payments?: PublicPayments;
   salonPhone?: string;
+  /** Salon's IANA timezone — "today" and past times follow the salon, not the customer's device. */
+  timezone?: string;
   onClose: () => void;
 }) {
   const payMethods = availableMethods(payments);
@@ -158,9 +161,9 @@ export default function BookingSheet({
     const h = hoursFor(d);
     if (!h?.open) return [];
     const need = Math.max(totalDuration, 30);
-    const now = new Date();
+    const now = salonNow(timezone);
     // Today: nothing that has already started, plus a short buffer to get there.
-    const earliest = d === ymd(now) ? now.getHours() * 60 + now.getMinutes() + 30 : 0;
+    const earliest = d === now.date ? now.minutes + 30 : 0;
     const out: string[] = [];
     for (let t = toMin(h.from); t + need <= toMin(h.to); t += 30) {
       if (t < earliest) continue;
@@ -175,7 +178,7 @@ export default function BookingSheet({
 
   const days = useMemo(() => {
     const out: { value: string; dow: string; dom: number; open: boolean; full: boolean }[] = [];
-    const base = new Date();
+    const base = parseYmd(salonNow(timezone).date);
     for (let i = 0; i < DAYS_AHEAD; i++) {
       const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + i);
       const value = ymd(d);
@@ -189,7 +192,7 @@ export default function BookingSheet({
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hours, busy, staffKey, totalDuration, allStaffIds]);
+  }, [hours, busy, staffKey, totalDuration, allStaffIds, timezone]);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const slots = useMemo(() => (date ? freeSlotsFor(date) : []), [date, busy, staffKey, totalDuration, allStaffIds, hours]);
@@ -442,7 +445,7 @@ export default function BookingSheet({
                 <span className="bk-label">Phone (WhatsApp)</span>
                 <input
                   type="tel" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
-                  placeholder="e.g. 0300 1234567" autoComplete="tel"
+                  placeholder="e.g. 0300 1234567 or +971 50 123 4567" autoComplete="tel"
                 />
               </label>
               <section className="bk-sec">

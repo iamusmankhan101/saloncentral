@@ -14,6 +14,7 @@ import {
 } from "@/lib/storage";
 import type { Appointment, Client, Staff, Service } from "@/lib/types";
 import { settingsStore } from "@/lib/settings-store";
+import { salonNow } from "@/lib/appointment-time";
 import { fmtCurrency as fmt } from "@/lib/format";
 import { enqueueWhatsAppConfirmation, normalizePhone } from "@/lib/whatsapp-scheduler";
 import { getDefaultLocationId } from "@/lib/locations";
@@ -184,7 +185,9 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
   const totalPrice         = selectedServices.reduce((sum, s) => sum + s.price, 0);
   const selectedHours      = getHoursForDate(selectedDate);
   const dateIsOpen         = !selectedDate || !selectedHours || selectedHours.open;
-  const today              = localYmd(new Date());
+  // The salon's clock, not the visitor's — a customer abroad must see the salon's today.
+  const timezone           = ((salonId ? remoteSettings?.salon : settingsStore.salon) as { timezone?: string } | undefined)?.timezone;
+  const today              = salonNow(timezone).date;
 
   // On the salon's own device the appointments are already here in full.
   const busy = useMemo(
@@ -201,9 +204,8 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
   function slotsFor(date: string): string[] {
     const hours = getHoursForDate(date);
     if (!hours?.open || totalDuration <= 0) return [];
-    const now = new Date();
     // Today: hide times that have already started, plus a short buffer to get there.
-    const earliest = date === today ? now.getHours() * 60 + now.getMinutes() + 30 : 0;
+    const earliest = date === today ? salonNow(timezone).minutes + 30 : 0;
     return generateTimeSlots(hours.from, hours.to, totalDuration).filter((slot) =>
       timeToMinutes(slot) >= earliest &&
       isSlotFree(
@@ -216,7 +218,8 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
 
   // The date row: the next three weeks, with closed and fully booked days marked.
   const days = step === 2 ? Array.from({ length: DAYS_AHEAD }, (_, i) => {
-    const base = new Date(openedAt);
+    const [by, bm, bd] = salonNow(timezone, openedAt).date.split("-").map(Number);
+    const base = new Date(by, bm - 1, bd);
     const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + i);
     const value = localYmd(d);
     const open = getHoursForDate(value)?.open !== false;
@@ -639,7 +642,7 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
 
               <div className="formGroup">
                 <label className="formLabel">Phone Number *</label>
-                <input type="tel" className="cleanInput" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="e.g. 0300-1234567" />
+                <input type="tel" className="cleanInput" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="e.g. 0300-1234567 or +971 50 123 4567" />
               </div>
 
               <div className="formGroup">

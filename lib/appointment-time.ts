@@ -91,6 +91,19 @@ function localDateStrInTimezone(instantMs: number, timezone: string, dayOffset: 
   return `${y}-${m}-${d}`;
 }
 
+/**
+ * The salon's own "today" (YYYY-MM-DD) and minutes since midnight. Booking
+ * pages use this instead of the visitor's clock, so a customer in another
+ * country sees the salon's today and can't pick a time that has already
+ * passed at the salon. An unknown timezone falls back to the default.
+ */
+export function salonNow(timezone = DEFAULT_TIMEZONE, nowMs = Date.now()): { date: string; minutes: number } {
+  let tz = timezone;
+  try { new Intl.DateTimeFormat("en-US", { timeZone: tz }); } catch { tz = DEFAULT_TIMEZONE; }
+  const p = partsInTimezone(nowMs, tz);
+  return { date: localDateStrInTimezone(nowMs, tz, 0), minutes: p.hour * 60 + p.minute };
+}
+
 function weekdayNameForDateStr(dateStr: string): string {
   const [y, m, d] = dateStr.split("-").map(Number);
   // Noon UTC sidesteps any DST-adjacent edge case when reading back the day of week.

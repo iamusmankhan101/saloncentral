@@ -14,6 +14,8 @@ import { appointmentStartHasPassed, appointmentStartMs, timezoneFromSettings } f
  */
 export function normalizePhone(raw: string, countryCode = "92"): string {
   let digits = raw.replace(/\D/g, "");
+  // International "00" prefix is the same as "+" (e.g. 00971501234567 → 971501234567)
+  if (digits.startsWith("00")) return digits.slice(2);
   // Leading 0 → replace with country code (e.g. 03001234567 → 923001234567)
   if (digits.startsWith("0")) digits = countryCode + digits.slice(1);
   // 10-digit Pakistani mobile starting with 3 (no leading 0, no country code)
