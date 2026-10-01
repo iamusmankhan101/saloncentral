@@ -54,16 +54,11 @@ const PAYMENT_STATUSES = [
   { key: "paid", label: "Paid" },
   { key: "pending", label: "Pending / unpaid" },
 ] as const;
-const BILL_EXPENSE_CATEGORIES = new Set<ExpenseCategory>(["rent", "water_bill", "electricity_bill", "committee"]);
 const MAX_BILL_IMAGE_BYTES = 2 * 1024 * 1024;
 const VIEWABLE_BILL_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
 function expensePaymentStatus(expense: Expense): "paid" | "pending" {
   return expense.paymentStatus === "pending" ? "pending" : "paid";
-}
-
-function isBillExpenseCategory(category: ExpenseCategory) {
-  return BILL_EXPENSE_CATEGORIES.has(category);
 }
 
 function toDateStr(d: Date) { return d.toLocaleDateString("en-CA"); }
@@ -423,9 +418,7 @@ export default function CashFlowPage() {
     const description = form.description.trim()
       || EXPENSE_CATEGORIES.find(category => category.key === form.category)?.label
       || "Expense";
-    const billImagePatch = isBillExpenseCategory(form.category)
-      ? { billImageDataUrl: form.billImageDataUrl, billImageName: form.billImageName }
-      : { billImageDataUrl: undefined, billImageName: undefined };
+    const billImagePatch = { billImageDataUrl: form.billImageDataUrl, billImageName: form.billImageName };
 
     // Locked to the active dashboard section when one is restricted (e.g.
     // Women's) — an expense added from that view can only belong to it.
@@ -1167,14 +1160,7 @@ export default function CashFlowPage() {
               </div>
               <div>
                 <label style={labelSt}>Category</label>
-                <select value={form.category} onChange={e => {
-                  const category = e.target.value as ExpenseCategory;
-                  setForm(f => ({
-                    ...f,
-                    category,
-                    ...(isBillExpenseCategory(category) ? {} : { billImageDataUrl: undefined, billImageName: undefined }),
-                  }));
-                }} style={inputSt}>
+                <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value as ExpenseCategory }))} style={inputSt}>
                   {EXPENSE_CATEGORIES.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
                 </select>
               </div>
@@ -1215,26 +1201,24 @@ export default function CashFlowPage() {
                 <label style={labelSt}>Notes</label>
                 <input type="text" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional" style={inputSt} />
               </div>
-              {isBillExpenseCategory(form.category) && (
-                <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", padding: 10, borderRadius: 10, border: "1px dashed #d8d4e8", background: "#faf9fd" }}>
-                  <label style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 12px", borderRadius: 8, border: "1px solid #e8e8f0", background: "#fff", color: "#6b46c1", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
-                    <Upload size={14} /> Upload bill image
-                    <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={handleBillImageChange} style={{ display: "none" }} />
-                  </label>
-                  {form.billImageDataUrl ? (
-                    <>
-                      <a href={form.billImageDataUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12, fontWeight: 700, color: "#059669", textDecoration: "none" }}>
-                        {form.billImageName || "Bill image"}
-                      </a>
-                      <button type="button" onClick={() => setForm(f => ({ ...f, billImageDataUrl: undefined, billImageName: undefined }))} style={{ border: "none", background: "transparent", color: "#dc2626", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
-                        Remove
-                      </button>
-                    </>
-                  ) : (
-                    <span style={{ fontSize: 12, color: "#9898b0", fontWeight: 600 }}>Optional for bill records</span>
-                  )}
-                </div>
-              )}
+              <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", padding: 10, borderRadius: 10, border: "1px dashed #d8d4e8", background: "#faf9fd" }}>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 12px", borderRadius: 8, border: "1px solid #e8e8f0", background: "#fff", color: "#6b46c1", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
+                  <Upload size={14} /> Upload bill image
+                  <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={handleBillImageChange} style={{ display: "none" }} />
+                </label>
+                {form.billImageDataUrl ? (
+                  <>
+                    <a href={form.billImageDataUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12, fontWeight: 700, color: "#059669", textDecoration: "none" }}>
+                      {form.billImageName || "Bill image"}
+                    </a>
+                    <button type="button" onClick={() => setForm(f => ({ ...f, billImageDataUrl: undefined, billImageName: undefined }))} style={{ border: "none", background: "transparent", color: "#dc2626", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
+                      Remove
+                    </button>
+                  </>
+                ) : (
+                  <span style={{ fontSize: 12, color: "#9898b0", fontWeight: 600 }}>Optional — receipt or bill photo</span>
+                )}
+              </div>
             </div>
             <div style={{ display: "flex", gap: 12, marginTop: 14, alignItems: "center" }}>
               {formError && <div role="alert" style={{ color: "#dc2626", fontSize: 12, fontWeight: 700, marginRight: "auto" }}>{formError}</div>}
