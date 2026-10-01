@@ -7,7 +7,7 @@
  */
 
 import { NextRequest } from "next/server";
-import { getAllUsers, updateUserApprovalStatus, updateAccountFreeze, type ApprovalStatus } from "@/lib/auth-db";
+import { getAllUsers, updateUserApprovalStatus, updateAccountFreeze, countActiveSessionsByUser, type ApprovalStatus } from "@/lib/auth-db";
 import { requireAdmin } from "@/lib/api-auth";
 import { getBillingAdminSummaries } from "@/lib/billing-db";
 
@@ -19,7 +19,10 @@ export async function GET(req: NextRequest) {
   try {
     const users = await getAllUsers();
     const ownerIds = users.filter((user) => user.role === "owner").map((user) => user.id);
-    const billingSummaries = await getBillingAdminSummaries(ownerIds);
+    const [billingSummaries, deviceCounts] = await Promise.all([
+      getBillingAdminSummaries(ownerIds),
+      countActiveSessionsByUser(),
+    ]);
     const enrichedUsers = users.map((user) => {
       const billing = user.role === "owner" ? billingSummaries.get(user.id) : null;
       return {
@@ -29,6 +32,7 @@ export async function GET(req: NextRequest) {
         startedDate: billing?.trialStart ?? null,
         invoiceDueDate: billing?.invoiceDueDate ?? null,
         invoiceId: billing?.invoiceId ?? null,
+        activeDevices: deviceCounts.get(user.id) ?? 0,
       };
     });
     return Response.json({ ok: true, users: enrichedUsers });

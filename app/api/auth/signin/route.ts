@@ -9,6 +9,7 @@ import { createSessionToken, COOKIE_NAME, cookieOptions, tokenId } from "@/lib/s
 import { createDbSession } from "@/lib/auth-db";
 import { clientIp, rateLimit, rateLimitClear } from "@/lib/rate-limit";
 import { logSigninEvent } from "@/lib/signin-log";
+import { sessionDeviceFromRequest } from "@/lib/api-auth";
 
 const BLOCK_MS = 30 * 60 * 1000; // 30-minute lockout
 
@@ -96,7 +97,7 @@ export async function POST(req: NextRequest) {
     // Persist session in DB so it can be immediately revoked on signout
     const token = createSessionToken(user.id);
     const expiresAt = new Date(Date.now() + cookieOptions.maxAge * 1000);
-    await createDbSession(tokenId(token), user.id, expiresAt);
+    await createDbSession(tokenId(token), user.id, expiresAt, sessionDeviceFromRequest(req));
 
     // Set HTTP-only cookie — not readable by JavaScript
     res.cookies.set(COOKIE_NAME, token, cookieOptions);

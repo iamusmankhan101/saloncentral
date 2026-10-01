@@ -10,7 +10,8 @@
 
 import { NextRequest } from "next/server";
 import { COOKIE_NAME, tokenId, verifySessionToken } from "./session";
-import { getUserById, isSessionValid } from "./auth-db";
+import { getUserById, isSessionValid, type SessionDevice } from "./auth-db";
+import { clientIp } from "./rate-limit";
 
 /** Longest password accepted when setting one — bounds the PBKDF2 work per request. */
 export const MAX_PASSWORD_LENGTH = 128;
@@ -91,4 +92,16 @@ export async function requireAdmin(req: NextRequest): Promise<boolean> {
   const actorId = await getSessionUserId(req);
   const actor = actorId ? await getUserById(actorId) : null;
   return actor?.role === "admin";
+}
+
+/** Browser, IP and rough location of the request — stored with a new session for the admin devices view. */
+export function sessionDeviceFromRequest(req: NextRequest): SessionDevice {
+  const city = req.headers.get("x-vercel-ip-city");
+  const ip = clientIp(req);
+  return {
+    userAgent: req.headers.get("user-agent")?.slice(0, 300) ?? null,
+    ip: ip === "unknown" ? null : ip,
+    city: city ? decodeURIComponent(city) : null,
+    country: req.headers.get("x-vercel-ip-country"),
+  };
 }

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { createDbSession, getUserById, hashPassword, revokeAllSessionsForUser, verifyPassword } from "@/lib/auth-db";
 import { createSessionToken, COOKIE_NAME, cookieOptions, tokenId } from "@/lib/session";
-import { getSessionUserId, MAX_PASSWORD_LENGTH } from "@/lib/api-auth";
+import { getSessionUserId, MAX_PASSWORD_LENGTH, sessionDeviceFromRequest } from "@/lib/api-auth";
 import { rateLimit, rateLimitClear } from "@/lib/rate-limit";
 
 export async function POST(req: NextRequest) {
@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
     // this browser a fresh session so the person changing it stays signed in.
     await revokeAllSessionsForUser(userId);
     const token = createSessionToken(userId);
-    await createDbSession(tokenId(token), userId, new Date(Date.now() + cookieOptions.maxAge * 1000));
+    await createDbSession(tokenId(token), userId, new Date(Date.now() + cookieOptions.maxAge * 1000), sessionDeviceFromRequest(req));
 
     rateLimitClear("change-password", userId);
     const res = NextResponse.json({ ok: true });

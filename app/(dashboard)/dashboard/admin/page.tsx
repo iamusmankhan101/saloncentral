@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle, XCircle, Clock, ImageIcon, ChevronDown, ChevronUp, Shield, Store, Pencil, Save, Ban, Trash2, AlertTriangle, X, ReceiptText, Users as UsersIcon, BadgeCheck, Landmark, Archive, Database, RotateCcw, Lock, LockOpen, Snowflake, LayoutDashboard, Banknote, LogOut, RefreshCw, FileText, ShoppingCart } from "lucide-react";
+import { CheckCircle, XCircle, Clock, ImageIcon, ChevronDown, ChevronUp, Shield, Store, Pencil, Save, Ban, Trash2, AlertTriangle, X, ReceiptText, Users as UsersIcon, BadgeCheck, Landmark, Archive, Database, RotateCcw, Lock, LockOpen, Snowflake, LayoutDashboard, Banknote, LogOut, RefreshCw, FileText, ShoppingCart, Monitor, Smartphone, Tablet } from "lucide-react";
 import { getCurrentUser, signOut } from "@/lib/auth";
 import PointlyConsole from "@/components/pointly-admin/console";
 import {
@@ -60,10 +60,22 @@ interface AccountUserRow {
   startedDate: string | null;
   invoiceDueDate: string | null;
   invoiceId: string | null;
+  activeDevices: number;
   createdAt: string;
 }
 
-const USERS_GRID_COLUMNS = "minmax(240px,1.4fr) minmax(160px,1fr) minmax(140px,0.9fr) 96px 116px 120px 130px 200px 120px 200px";
+interface DeviceSessionRow {
+  id: string;
+  createdAt: string | null;
+  lastSeenAt: string | null;
+  userAgent: string | null;
+  ip: string | null;
+  city: string | null;
+  country: string | null;
+  current: boolean;
+}
+
+const USERS_GRID_COLUMNS = "minmax(240px,1.4fr) minmax(160px,1fr) minmax(140px,0.9fr) 96px 116px 120px 110px 130px 200px 120px 200px";
 const BILLING_TERMS = [1, 3, 6, 12] as const;
 type BillingTermMonths = number;
 
@@ -1157,6 +1169,159 @@ function FreezeAccountModal({ row, onClose, onFrozen }: {
   );
 }
 
+/** Rough "Chrome on Windows"-style label from a user-agent string. */
+function describeDevice(ua: string | null): { label: string; kind: "phone" | "tablet" | "computer" } {
+  if (!ua) return { label: "Unknown device", kind: "computer" };
+  const os =
+    /iPhone/.test(ua) ? "iPhone" :
+    /iPad/.test(ua) ? "iPad" :
+    /Android/.test(ua) ? "Android" :
+    /Windows/.test(ua) ? "Windows" :
+    /Mac OS X|Macintosh/.test(ua) ? "Mac" :
+    /CrOS/.test(ua) ? "Chromebook" :
+    /Linux/.test(ua) ? "Linux" : "Unknown OS";
+  const browser =
+    /Edg\//.test(ua) ? "Edge" :
+    /OPR\/|Opera/.test(ua) ? "Opera" :
+    /SamsungBrowser/.test(ua) ? "Samsung Internet" :
+    /Firefox|FxiOS/.test(ua) ? "Firefox" :
+    /Chrome|CriOS/.test(ua) ? "Chrome" :
+    /Safari/.test(ua) ? "Safari" : "Browser";
+  const kind = /iPad|Tablet/.test(ua) || (/Android/.test(ua) && !/Mobile/.test(ua)) ? "tablet"
+    : /iPhone|Mobile|Android/.test(ua) ? "phone" : "computer";
+  return { label: `${browser} on ${os}`, kind };
+}
+
+function fmtAgo(iso: string | null) {
+  if (!iso) return "—";
+  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 5) return "Active now";
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
+
+function DevicesModal({ row, onClose, onCountChange }: {
+  row: AccountUserRow;
+  onClose: () => void;
+  onCountChange: (userId: string, count: number) => void;
+}) {
+  const [sessions, setSessions] = useState<DeviceSessionRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/admin/sessions?userId=${encodeURIComponent(row.id)}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (!data.ok) throw new Error(data.error || "Failed to load devices.");
+        setSessions(data.sessions);
+        onCountChange(row.id, data.sessions.length);
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load devices."))
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [row.id]);
+
+  async function signOut(sessionId: string | "all") {
+    if (busyId) return;
+    if (sessionId === "all" && !confirm(`Sign ${row.ownerName} out of all ${sessions.length} devices?`)) return;
+    setBusyId(sessionId);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/sessions", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sessionId === "all" ? { userId: row.id, all: true } : { userId: row.id, sessionId }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || "Failed to sign out device.");
+      const next = sessionId === "all" ? [] : sessions.filter((s) => s.id !== sessionId);
+      setSessions(next);
+      onCountChange(row.id, next.length);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to sign out device.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 20, width: 560, maxWidth: "100%", maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "24px 24px 16px" }}>
+          <div style={{ width: 44, height: 44, borderRadius: 12, background: "#f5f3ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <Monitor size={20} color="#7C3AED" />
+          </div>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontWeight: 800, fontSize: 17, color: "#1a1a2e" }}>
+              {loading ? "Logged-in devices" : `Logged in on ${sessions.length} device${sessions.length === 1 ? "" : "s"}`}
+            </div>
+            <div style={{ fontSize: 12, color: "#9898b0", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {row.ownerName} · {row.email}
+            </div>
+          </div>
+          <button onClick={onClose} title="Close" style={{ border: "none", background: "none", cursor: "pointer", color: "#9898b0", padding: 4 }}><X size={18} /></button>
+        </div>
+
+        <div style={{ overflowY: "auto", padding: "0 24px", flex: 1 }}>
+          {error && (
+            <div style={{ padding: "10px 14px", borderRadius: 9, background: "#fef2f2", border: "1px solid #fecaca", fontSize: 12, color: "#dc2626", fontWeight: 700, marginBottom: 12 }}>{error}</div>
+          )}
+          {loading ? (
+            <div style={{ padding: 32, textAlign: "center", fontSize: 13, color: "#9898b0" }}>Loading devices…</div>
+          ) : sessions.length === 0 ? (
+            <div style={{ padding: 32, textAlign: "center", fontSize: 13, color: "#9898b0" }}>Not logged in on any device.</div>
+          ) : (
+            sessions.map((s) => {
+              const device = describeDevice(s.userAgent);
+              const Icon = device.kind === "phone" ? Smartphone : device.kind === "tablet" ? Tablet : Monitor;
+              const place = [s.city, s.country].filter(Boolean).join(", ");
+              return (
+                <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderTop: "1px solid #f4f4f8" }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 10, background: "#f4f4f9", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <Icon size={17} color="#6b6b8a" />
+                  </div>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#1a1a2e", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      {s.userAgent ? device.label : "Unknown device (logged in before tracking started)"}
+                      {s.current && <span style={{ fontSize: 10, fontWeight: 800, color: "#059669", background: "#ecfdf5", padding: "2px 7px", borderRadius: 10 }}>This device</span>}
+                    </div>
+                    <div style={{ fontSize: 11, color: "#9898b0", marginTop: 2 }}>
+                      {[place, s.ip].filter(Boolean).join(" · ") || "Location unknown"}
+                    </div>
+                    <div style={{ fontSize: 11, color: "#9898b0", marginTop: 1 }}>
+                      Last active: {fmtAgo(s.lastSeenAt ?? s.createdAt)}{s.createdAt ? ` · Logged in ${fmtDate(s.createdAt)}` : ""}
+                    </div>
+                  </div>
+                  <button onClick={() => signOut(s.id)} disabled={!!busyId}
+                    title="Sign this device out"
+                    style={{ padding: "7px 10px", borderRadius: 8, border: "1px solid #fecaca", background: "#fff", color: "#dc2626", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", gap: 4, cursor: busyId ? "not-allowed" : "pointer", flexShrink: 0 }}>
+                    <LogOut size={12} /> {busyId === s.id ? "Signing out…" : "Sign out"}
+                  </button>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        <div style={{ display: "flex", gap: 10, padding: "16px 24px 24px" }}>
+          <button onClick={onClose} style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid #e8e8f0", background: "#fff", fontSize: 13, fontWeight: 600, color: "#6b6b8a", cursor: "pointer" }}>Close</button>
+          {sessions.length > 1 && (
+            <button onClick={() => signOut("all")} disabled={!!busyId}
+              style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "none", background: "#dc2626", fontSize: 13, fontWeight: 700, color: "#fff", cursor: busyId ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              <LogOut size={14} /> {busyId === "all" ? "Signing out…" : "Sign out all devices"}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const ADMIN_CARD: React.CSSProperties = {
   background: "#fff", border: "1px solid #ececf4", borderRadius: 16,
   boxShadow: "0 6px 18px rgba(30,20,10,0.04)", minWidth: 0,
@@ -1349,6 +1514,7 @@ function UsersPanel() {
   const [roleFilter, setRoleFilter] = useState<AccountUserRow["role"] | "all">("all");
   const [updatingApproval, setUpdatingApproval] = useState<string | null>(null);
   const [freezeTarget, setFreezeTarget] = useState<AccountUserRow | null>(null);
+  const [devicesTarget, setDevicesTarget] = useState<AccountUserRow | null>(null);
   const [dueDrafts, setDueDrafts] = useState<Record<string, string>>({});
   const [savingDueId, setSavingDueId] = useState<string | null>(null);
   const [dueError, setDueError] = useState<string | null>(null);
@@ -1492,6 +1658,13 @@ function UsersPanel() {
           }}
         />
       )}
+      {devicesTarget && (
+        <DevicesModal
+          row={devicesTarget}
+          onClose={() => setDevicesTarget(null)}
+          onCountChange={(userId, count) => setRows((prev) => prev.map((r) => (r.id === userId ? { ...r, activeDevices: count } : r)))}
+        />
+      )}
       {dueError && (
         <div style={{ padding: "10px 14px", borderRadius: 9, background: "#fef2f2", border: "1px solid #fecaca", fontSize: 12, color: "#dc2626", fontWeight: 700 }}>
           {dueError}
@@ -1520,9 +1693,9 @@ function UsersPanel() {
       </div>
 
       <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #ebebf0", overflowX: "auto", overflowY: "hidden" }}>
-        <div style={{ minWidth: 1620 }}>
+        <div style={{ minWidth: 1730 }}>
           <div style={{ display: "grid", gridTemplateColumns: USERS_GRID_COLUMNS, padding: "10px 20px", background: "#fafafa", borderBottom: "1px solid #f0f0f8" }}>
-          {["NAME / EMAIL", "SALON", "PHONE", "ROLE", "APPROVAL", "STATUS", "PLAN", "STARTED", "INVOICE DUE", "ACTIONS"].map((h) => (
+          {["NAME / EMAIL", "SALON", "PHONE", "ROLE", "APPROVAL", "STATUS", "DEVICES", "PLAN", "STARTED", "INVOICE DUE", "ACTIONS"].map((h) => (
             <div key={h} style={{ fontSize: 10, fontWeight: 800, color: "#b0b0c8", letterSpacing: "0.08em" }}>{h}</div>
           ))}
           </div>
@@ -1571,6 +1744,19 @@ function UsersPanel() {
                     {row.accountFrozen ? <Lock size={12} /> : <BadgeCheck size={12} />}
                     {row.accountFrozen ? "Frozen" : "Active"}
                   </span>
+                </div>
+                <div>
+                  <button onClick={() => setDevicesTarget(row)}
+                    title="See which devices this account is logged in on"
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 16, cursor: "pointer",
+                      border: `1px solid ${row.activeDevices > 0 ? "#ddd6fe" : "#ebebf0"}`,
+                      background: row.activeDevices > 0 ? "#f5f3ff" : "#fff",
+                      color: row.activeDevices > 0 ? "#7C3AED" : "#9898b0",
+                      fontSize: 11, fontWeight: 800,
+                    }}>
+                    <Monitor size={12} /> {row.activeDevices}
+                  </button>
                 </div>
                 <div style={{ fontSize: 12, color: "#6b6b8a", fontWeight: 700 }}>{row.planName ?? "—"}</div>
                 <div>

@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { findOrCreateGoogleUser } from "@/lib/auth-db";
 import { createSessionToken, COOKIE_NAME, cookieOptions, tokenId } from "@/lib/session";
 import { createDbSession } from "@/lib/auth-db";
+import { sessionDeviceFromRequest } from "@/lib/api-auth";
 
 const CLIENT_ID     = process.env.GOOGLE_CLIENT_ID     ?? "";
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET ?? "";
@@ -115,7 +116,7 @@ export async function GET(req: NextRequest) {
   // Issue session (identical to email/password login path)
   const token     = createSessionToken(user.id);
   const expiresAt = new Date(Date.now() + cookieOptions.maxAge * 1000);
-  await createDbSession(tokenId(token), user.id, expiresAt);
+  await createDbSession(tokenId(token), user.id, expiresAt, sessionDeviceFromRequest(req));
 
   // Redirect to a thin client bridge that syncs localStorage before hitting the dashboard
   const dest = new URL("/auth/google/complete", req.url);

@@ -400,27 +400,46 @@ export async function updateUser(
 
 let sessionsTableReady: Promise<void> | null = null;
 
-async function ensureSessionsTable(): Promise<void> {
-  sessionsTableReady ||= db.execute(`
+async function ensureSessionsTableUncached(): Promise<void> {
+  await db.execute(`
     CREATE TABLE IF NOT EXISTS sessions (
       id         TEXT PRIMARY KEY,
       user_id    TEXT NOT NULL,
       expires_at TEXT NOT NULL,
       revoked    INTEGER NOT NULL DEFAULT 0
     )
-  `).then(() => undefined).catch((error) => {
+  `);
+  // Device details for the admin "logged-in devices" view. Sessions created
+  // before these columns existed simply show as an unknown device.
+  for (const col of ["created_at TEXT", "last_seen_at TEXT", "user_agent TEXT", "ip TEXT", "city TEXT", "country TEXT"]) {
+    await db.execute(`ALTER TABLE sessions ADD COLUMN ${col}`).catch(() => {});
+  }
+  await db.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)").catch(() => {});
+}
+
+async function ensureSessionsTable(): Promise<void> {
+  sessionsTableReady ||= ensureSessionsTableUncached().catch((error) => {
     sessionsTableReady = null;
     throw error;
   });
   return sessionsTableReady;
 }
 
+export interface SessionDevice {
+  userAgent: string | null;
+  ip: string | null;
+  city: string | null;
+  country: string | null;
+}
+
 /** Persist a new session. `id` should be SHA-256(token) — never the raw token. */
-export async function createDbSession(id: string, userId: string, expiresAt: Date): Promise<void> {
+export async function createDbSession(id: string, userId: string, expiresAt: Date, device?: SessionDevice): Promise<void> {
   await ensureSessionsTable();
+  const now = new Date().toISOString();
   await db.execute({
-    sql: "INSERT OR REPLACE INTO sessions (id, user_id, expires_at, revoked) VALUES (?, ?, ?, 0)",
-    args: [id, userId, expiresAt.toISOString()],
+    sql: `INSERT OR REPLACE INTO sessions (id, user_id, expires_at, revoked, created_at, last_seen_at, user_agent, ip, city, country)
+          VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
+    args: [id, userId, expiresAt.toISOString(), now, now, device?.userAgent ?? null, device?.ip ?? null, device?.city ?? null, device?.country ?? null],
   });
 }
 
@@ -433,18 +452,83 @@ export async function revokeDbSession(id: string): Promise<void> {
   });
 }
 
+// last_seen_at is refreshed at most this often, so normal API traffic doesn't
+// turn every request into a DB write.
+const LAST_SEEN_INTERVAL_MS = 5 * 60 * 1000;
+
 /** Returns true if the session exists AND is not revoked AND has not expired. */
 export async function isSessionValid(id: string): Promise<boolean> {
   await ensureSessionsTable();
   const res = await db.execute({
-    sql: "SELECT revoked, expires_at FROM sessions WHERE id = ?",
+    sql: "SELECT revoked, expires_at, last_seen_at FROM sessions WHERE id = ?",
     args: [id],
   });
   if (!res.rows.length) return false;
   const row = res.rows[0];
   if ((row.revoked as number) === 1) return false;
   if (new Date(row.expires_at as string) < new Date()) return false;
+
+  const lastSeen = row.last_seen_at ? new Date(row.last_seen_at as string).getTime() : 0;
+  if (Date.now() - lastSeen > LAST_SEEN_INTERVAL_MS) {
+    db.execute({
+      sql: "UPDATE sessions SET last_seen_at = ? WHERE id = ?",
+      args: [new Date().toISOString(), id],
+    }).catch(() => {});
+  }
   return true;
+}
+
+export interface ActiveSession {
+  id: string;
+  userId: string;
+  createdAt: string | null;
+  lastSeenAt: string | null;
+  expiresAt: string;
+  userAgent: string | null;
+  ip: string | null;
+  city: string | null;
+  country: string | null;
+}
+
+/** Signed-in (not revoked, not expired) sessions for one account, most recently active first. */
+export async function listActiveSessions(userId: string): Promise<ActiveSession[]> {
+  await ensureSessionsTable();
+  const res = await db.execute({
+    sql: `SELECT id, user_id, created_at, last_seen_at, expires_at, user_agent, ip, city, country
+          FROM sessions WHERE user_id = ? AND revoked = 0 AND expires_at > ?
+          ORDER BY COALESCE(last_seen_at, created_at, '') DESC`,
+    args: [userId, new Date().toISOString()],
+  });
+  return res.rows.map((r) => ({
+    id: r.id as string,
+    userId: r.user_id as string,
+    createdAt: (r.created_at as string) ?? null,
+    lastSeenAt: (r.last_seen_at as string) ?? null,
+    expiresAt: r.expires_at as string,
+    userAgent: (r.user_agent as string) ?? null,
+    ip: (r.ip as string) ?? null,
+    city: (r.city as string) ?? null,
+    country: (r.country as string) ?? null,
+  }));
+}
+
+/** Number of signed-in devices per account, for every account that has at least one. */
+export async function countActiveSessionsByUser(): Promise<Map<string, number>> {
+  await ensureSessionsTable();
+  const res = await db.execute({
+    sql: "SELECT user_id, COUNT(*) AS n FROM sessions WHERE revoked = 0 AND expires_at > ? GROUP BY user_id",
+    args: [new Date().toISOString()],
+  });
+  return new Map(res.rows.map((r) => [r.user_id as string, Number(r.n)]));
+}
+
+/** Revoke one session, but only if it belongs to `userId` (guards against a mismatched id). */
+export async function revokeUserSession(userId: string, sessionId: string): Promise<void> {
+  await ensureSessionsTable();
+  await db.execute({
+    sql: "UPDATE sessions SET revoked = 1 WHERE id = ? AND user_id = ?",
+    args: [sessionId, userId],
+  });
 }
 
 // ─── Periodic cleanup (call from a cron or on-demand) ────────────────────────
