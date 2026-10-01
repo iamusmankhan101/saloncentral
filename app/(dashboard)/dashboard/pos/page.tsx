@@ -1311,14 +1311,14 @@ export default function POSPage() {
                   );
                 })}
               </div>
-              <div style={{ display: "flex", gap: 6 }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 <input
                   value={guestInput}
                   onChange={e => setGuestInput(e.target.value)}
                   onKeyDown={e => { if (e.key === "Enter" && guestInputMatchesClient) { e.preventDefault(); addGuest(); } }}
                   list="pos-guest-clients"
                   placeholder="Add family member / friend…"
-                  style={{ flex: 1, height: 34, padding: "0 10px", borderRadius: 9, border: "1.5px solid #e8e8f4", fontSize: 12, color: "#1d1d2f", outline: "none", background: "#fafafe", boxSizing: "border-box" }} />
+                  style={{ flex: "1 1 170px", minWidth: 0, height: 34, padding: "0 10px", borderRadius: 9, border: "1.5px solid #e8e8f4", fontSize: 12, color: "#1d1d2f", outline: "none", background: "#fafafe", boxSizing: "border-box" }} />
                 <datalist id="pos-guest-clients">
                   {clients.slice(0, 200).map(c => <option key={c.id} value={c.name} />)}
                 </datalist>
@@ -1328,10 +1328,10 @@ export default function POSPage() {
                     onChange={e => setGuestPhoneInput(e.target.value)}
                     onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addGuest(); } }}
                     placeholder="Phone (optional)"
-                    style={{ width: 110, height: 34, padding: "0 10px", borderRadius: 9, border: "1.5px solid #e8e8f4", fontSize: 12, color: "#1d1d2f", outline: "none", background: "#fafafe", boxSizing: "border-box" }} />
+                    style={{ flex: "1 1 90px", minWidth: 0, height: 34, padding: "0 10px", borderRadius: 9, border: "1.5px solid #e8e8f4", fontSize: 12, color: "#1d1d2f", outline: "none", background: "#fafafe", boxSizing: "border-box" }} />
                 )}
                 <button type="button" onClick={addGuest} disabled={!guestInput.trim()}
-                  style={{ padding: "0 14px", height: 34, borderRadius: 9, border: "none", background: guestInput.trim() ? "#7C3AED" : "#eceaf6", color: guestInput.trim() ? "#fff" : "#b0b0c8", fontSize: 12, fontWeight: 700, cursor: guestInput.trim() ? "pointer" : "not-allowed" }}>
+                  style={{ flexShrink: 0, padding: "0 14px", height: 34, borderRadius: 9, border: "none", background: guestInput.trim() ? "#7C3AED" : "#eceaf6", color: guestInput.trim() ? "#fff" : "#b0b0c8", fontSize: 12, fontWeight: 700, cursor: guestInput.trim() ? "pointer" : "not-allowed" }}>
                   Add
                 </button>
               </div>
