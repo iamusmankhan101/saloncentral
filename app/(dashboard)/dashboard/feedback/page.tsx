@@ -64,7 +64,7 @@ export default function FeedbackPage() {
   }, []);
 
   return (
-    <div className="dash-page dashboard-polish desktop-only" style={{ minHeight: "100vh", background: "#ffffff", padding: "28px 32px 48px", display: "flex", flexDirection: "column", gap: 20 }}>
+    <div className="dash-page dashboard-polish" style={{ minHeight: "100vh", background: "#ffffff", padding: "28px 32px 48px", display: "flex", flexDirection: "column", gap: 20 }}>
       <PageTitle icon={<Star size={24} />} title="Client Feedback" subtitle="Ratings and reviews collected after visits" />
 
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>

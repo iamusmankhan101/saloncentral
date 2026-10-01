@@ -605,13 +605,13 @@ export default function SettingsPage() {
   const [active, setActive] = useState("salon");
 
   return (
-    <div className="dash-page dashboard-polish desktop-only" style={{ background: "#ffffff", minHeight: "100vh", padding: "32px 32px 48px", display: "flex", flexDirection: "column", gap: 24 }}>
+    <div className="dash-page dashboard-polish" style={{ background: "#ffffff", minHeight: "100vh", padding: "32px 32px 48px", display: "flex", flexDirection: "column", gap: 24 }}>
       <div className="page-header" style={{ marginBottom: 4 }}>
         <PageTitle icon={<Shield size={24} />} title="Settings" subtitle="Manage your salon preferences" />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "240px 1fr", gap: 24, alignItems: "start" }}>
-        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid rgba(226,223,235,0.8)", boxShadow: "0 4px 16px rgba(0,0,0,0.02)", overflow: "hidden", padding: "8px 0" }}>
+      <div className="settings-layout" style={{ display: "grid", gridTemplateColumns: "240px 1fr", gap: 24, alignItems: "start" }}>
+        <div className="settings-nav" style={{ background: "#fff", borderRadius: 16, border: "1px solid rgba(226,223,235,0.8)", boxShadow: "0 4px 16px rgba(0,0,0,0.02)", overflow: "hidden", padding: "8px 0" }}>
           {SECTIONS.map(({ id, label, icon: Icon }) => {
             const isActive = active === id;
             return (
@@ -626,7 +626,7 @@ export default function SettingsPage() {
           })}
         </div>
 
-        <div style={{ background: "#fff", borderRadius: 18, border: "1px solid rgba(226,223,235,.95)", boxShadow: "0 8px 28px rgba(38,25,75,.04)", padding: "30px 32px" }}>
+        <div className="settings-content" style={{ background: "#fff", borderRadius: 18, border: "1px solid rgba(226,223,235,.95)", boxShadow: "0 8px 28px rgba(38,25,75,.04)", padding: "30px 32px" }}>
           {SECTIONS.map(({ id, label }) => (
             <div key={id} style={{ display: active === id ? "block" : "none" }}>
               <div style={{ fontWeight: 800, fontSize: 18, color: "#1a1a2e", marginBottom: 24 }}>{label}</div>

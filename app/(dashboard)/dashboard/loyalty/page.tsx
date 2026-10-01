@@ -779,7 +779,7 @@ export default function LoyaltyPage() {
   ];
 
   return (
-    <div className="dash-page dashboard-polish desktop-only" style={{ minHeight: "100vh", background: "#ffffff", padding: "28px 32px 48px", display: "flex", flexDirection: "column", gap: 20 }}>
+    <div className="dash-page dashboard-polish" style={{ minHeight: "100vh", background: "#ffffff", padding: "28px 32px 48px", display: "flex", flexDirection: "column", gap: 20 }}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <PageTitle icon={<Gift size={24} />} title="Loyalty Program" subtitle={activeSection === "all" ? "Reward your clients, grow retention" : `Restricted to ${activeSection} only`} />
@@ -805,7 +805,7 @@ export default function LoyaltyPage() {
       </div>
 
       {/* Universal QR */}
-      <div style={{
+      <div className="loyalty-qr" style={{
         display: "grid", gridTemplateColumns: "220px 1fr", gap: 24, alignItems: "center",
         background: "#fff", border: "1px solid rgba(226,223,235,.95)", borderRadius: 18, padding: 20,
         boxShadow: "0 8px 28px rgba(38,25,75,.04)"
@@ -897,7 +897,7 @@ export default function LoyaltyPage() {
             <div style={{ fontSize: 13, color: "#9898b0", fontWeight: 500 }}>Points are awarded when appointments are marked completed</div>
           </div>
         ) : (
-          <div className="table-scroll-inner">
+          <div className="table-scroll-inner loyalty-table-inner">
             {/* Table header */}
             <div style={{
               display: "grid", gridTemplateColumns: "40px 1fr 120px 100px 100px 80px 36px",

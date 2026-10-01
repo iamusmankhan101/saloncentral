@@ -1089,7 +1089,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
       <OfflineStatus />
 
       {/* Bottom-right persistent alert badges (stacked) */}
-      <div style={{ position: "fixed", bottom: 90, right: 16, zIndex: 9998, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
+      <div style={{ position: "fixed", bottom: 90, right: 16, zIndex: 90, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
 
         {/* Salon Central subscription invoice reminder */}
         {unpaidInvoice && !invoiceBadgeDismissed && (
@@ -1160,7 +1160,10 @@ export default function DashboardShell({ children }: { children: React.ReactNode
         {(outStockCount > 0 || lowStockCount > 0) && (
           <Link
             href="/dashboard/inventory"
+            className="stock-pill"
+            aria-label={`${outStockCount + lowStockCount} stock items need restocking`}
             style={{
+              position: "relative",
               display: "flex",
               alignItems: "center",
               gap: 8,
@@ -1175,7 +1178,9 @@ export default function DashboardShell({ children }: { children: React.ReactNode
             }}
           >
             <AlertTriangle size={14} color="#fff" style={{ flexShrink: 0 }} />
-            <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
+            {/* Phones show just the icon and this count, so it doesn't cover the page. */}
+            <span className="stock-pill-count">{outStockCount + lowStockCount}</span>
+            <div className="stock-pill-text" style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
               <span style={{ fontSize: 11, fontWeight: 800, color: "#fff", whiteSpace: "nowrap" }}>
                 {outStockCount > 0 && `${outStockCount} Out of Stock`}
                 {outStockCount > 0 && lowStockCount > 0 && "  ·  "}

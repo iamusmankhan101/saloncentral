@@ -966,10 +966,12 @@ export default function CashFlowPage() {
     <div style={{ background: "#ffffff", minHeight: "100vh" }}>
       <MobilePageHeader title="Cash Flow" subtitle={cfg.label} action={{ label: "Add Expense", onClick: openAdd }} />
 
-      <div className="dash-page dashboard-polish desktop-only" style={{ background: "#ffffff", display: "flex", flexDirection: "column", gap: 20, paddingTop: 20, minHeight: "100vh" }}>
+      <div className="dash-page dashboard-polish" style={{ background: "#ffffff", display: "flex", flexDirection: "column", gap: 20, paddingTop: 20, minHeight: "100vh" }}>
 
         {/* ── Header row ──────────────────────────────────────────────── */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+          {/* Phones already show the title in MobilePageHeader above. */}
+          <div className="desktop-only">
           <PageTitle
             icon={<Wallet size={24} />}
             title="Cash Flow"
@@ -978,9 +980,10 @@ export default function CashFlowPage() {
               (rangeStart === filterEnd ? rangeStart : `${rangeStart} → ${filterEnd}`)
             }
           />
-          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          </div>
+          <div className="cf-controls" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             {/* Period tabs */}
-            <div style={{ display: "flex", background: "#fff", border: "1px solid #e3e0eb", borderRadius: 14, padding: 5, gap: 4, boxShadow: "0 2px 8px rgba(0,0,0,0.01)" }}>
+            <div className="cf-periods" style={{ display: "flex", background: "#fff", border: "1px solid #e3e0eb", borderRadius: 14, padding: 5, gap: 4, boxShadow: "0 2px 8px rgba(0,0,0,0.01)" }}>
               {PERIODS.map(p => (
                 <button key={p.key} onClick={() => setPeriod(p.key)} style={{
                   padding: "9px 20px", borderRadius: 10, border: "none", cursor: "pointer",
@@ -1023,7 +1026,7 @@ export default function CashFlowPage() {
             <a href="/templates/cash-flow-import-template.xlsx" download style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 16px", borderRadius: 12, border: "1px solid #e3e0eb", background: "#fff", color: "#6b6b8a", fontSize: 13, fontWeight: 750, textDecoration: "none", transition: "all 0.15s" }} className="hover-bg-light">
               <Download size={15} /> Template
             </a>
-            <button onClick={openAdd} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 20px", borderRadius: 12, border: "none", cursor: "pointer", background: "var(--accent-gradient)", color: "#fff", fontSize: 13, fontWeight: 750, boxShadow: "0 4px 14px var(--accent-glow)", transition: "all 0.18s ease" }} className="hover-scale page-header-btn">
+            <button onClick={openAdd} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 20px", borderRadius: 12, border: "none", cursor: "pointer", background: "var(--accent-gradient)", color: "#fff", fontSize: 13, fontWeight: 750, boxShadow: "0 4px 14px var(--accent-glow)", transition: "all 0.18s ease" }} className="hover-scale page-header-btn cf-add-main">
               <Plus size={16} /> Add Expense
             </button>
           </div>
@@ -1045,7 +1048,7 @@ export default function CashFlowPage() {
         )}
 
         {/* ── Summary strip ───────────────────────────────────────────── */}
-        <div className="stats-grid-3">
+        <div className="stats-grid-3 cf-stats">
           {[
             { label: "Income",    value: fmt(periodIncome),  color: "var(--accent)", bg: "rgba(124, 58, 237, 0.08)", sub: "Appointments & POS",          icon: TrendingUp  },
             { label: "Expenses",  value: fmt(totalExpense),  color: "#ef4444", bg: "#fef2f2", sub: pendingExpense > 0 ? `${fmt(pendingExpense)} pending` : `${periodExpenses.length} entries logged`, icon: TrendingDown },
@@ -1056,7 +1059,7 @@ export default function CashFlowPage() {
                 <Icon size={22} color={color} />
               </div>
               <div>
-                <div style={{ fontSize: 24, fontWeight: 850, color, lineHeight: 1.1 }}>{value}</div>
+                <div className="cf-stat-value" style={{ fontSize: 24, fontWeight: 850, color, lineHeight: 1.1 }}>{value}</div>
                 <div style={{ fontSize: 11, fontWeight: 700, color: "#9898b0", marginTop: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
                 <div style={{ fontSize: 11, color: "#9898b0", marginTop: 2, fontWeight: 500 }}>{sub}</div>
               </div>
@@ -1065,7 +1068,7 @@ export default function CashFlowPage() {
         </div>
 
         {/* ── Cash vs Online split (income, then net of same-method expenses) ── */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div className="cf-split" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           {[
             { label: "Cash",   value: fmt(periodIncomeSplit.cash),   color: "#059669", bg: "#ecfdf5", sub: "Cash-in-hand income",                icon: Banknote   },
             { label: "Online", value: fmt(periodIncomeSplit.online), color: "#2563eb", bg: "#eff6ff", sub: "Card, bank & mobile wallet income",   icon: CreditCard },
@@ -1091,7 +1094,7 @@ export default function CashFlowPage() {
                 <Icon size={22} color={color} />
               </div>
               <div>
-                <div style={{ fontSize: 24, fontWeight: 850, color, lineHeight: 1.1 }}>{value}</div>
+                <div className="cf-stat-value" style={{ fontSize: 24, fontWeight: 850, color, lineHeight: 1.1 }}>{value}</div>
                 <div style={{ fontSize: 11, fontWeight: 700, color: "#9898b0", marginTop: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
                 <div style={{ fontSize: 11, color: "#9898b0", marginTop: 2, fontWeight: 500 }}>{sub}</div>
               </div>
@@ -1231,7 +1234,7 @@ export default function CashFlowPage() {
         )}
 
         {/* ── Income + Expense tables side by side ────────────────────── */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+        <div className="cf-tables" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
 
           {/* Income table */}
           <div style={{ background: "#fff", borderRadius: 18, border: "1px solid rgba(226,223,235,.95)", boxShadow: "0 8px 28px rgba(38,25,75,.04)", overflow: "hidden" }}>
@@ -1303,7 +1306,7 @@ export default function CashFlowPage() {
           </div>
 
           {/* Expense table */}
-          <div style={{ background: "#fff", borderRadius: 18, border: "1px solid rgba(226,223,235,.95)", boxShadow: "0 8px 28px rgba(38,25,75,.04)", overflow: "hidden" }}>
+          <div className="cf-expense-table" style={{ background: "#fff", borderRadius: 18, border: "1px solid rgba(226,223,235,.95)", boxShadow: "0 8px 28px rgba(38,25,75,.04)", overflow: "hidden" }}>
             <div style={{ padding: "18px 20px", borderBottom: "1px solid #f0f0f5", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <div style={{ width: 34, height: 34, borderRadius: 10, background: "#fef2f2", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -1414,7 +1417,7 @@ export default function CashFlowPage() {
 
         </div>{/* /2-col grid */}
 
-      </div>{/* /desktop-only */}
+      </div>
       {previewImage && (
         <div
           role="dialog"

@@ -603,12 +603,13 @@ input, textarea, select { font-family: inherit; }
   aside {
     transform: translateX(-100%);
     transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
-    box-shadow: 0 0 40px rgba(0, 0, 0, 0.5) !important;
   }
 
-  /* Slide in active sidebar */
+  /* Slide in active sidebar. The shadow only while open — on the hidden
+     sidebar it bled 40px onto the left edge of every page. */
   aside.active {
     transform: translateX(0);
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.5) !important;
   }
 
   /* Adjust main container to full width with no margins */
@@ -1180,4 +1181,101 @@ input, textarea, select { font-family: inherit; }
 .chart-bar:hover .chart-tooltip {
   opacity: 1 !important;
   transform: translate(-50%, -4px) !important;
+}
+
+/* ── Native-app feel on phones & tablets ─────────────────────────────────── */
+
+.stock-pill-count { display: none; }
+
+/* No grey flash on tap, no accidental text selection on buttons, and the page
+   doesn't rubber-band the whole app shell when a list hits its end. */
+html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; }
+button, a, [role="button"] { touch-action: manipulation; }
+@media (max-width: 980px) {
+  body { overscroll-behavior-y: none; }
+  button, [role="button"], .pos-tab-btn { -webkit-user-select: none; user-select: none; }
+}
+
+/* Form rows are mostly inline "1fr 1fr" grids: let their cells shrink and keep
+   every field inside its cell, so a field never pokes past a narrow screen. */
+@media (max-width: 980px) {
+  [style*="grid-template-columns"] > * { min-width: 0; }
+  input, select, textarea { max-width: 100%; }
+}
+
+/* iOS Safari zooms the whole page when an input under 16px gets focus. */
+@media (max-width: 980px) and (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea { font-size: 16px !important; }
+}
+
+/* Grid cells default to min-width:auto, so one long no-wrap name (e.g. a stock
+   item) stretched a whole stats row past the screen on tablets. */
+.stats-grid-3 > *, .stats-grid-4 > * { min-width: 0; }
+
+/* Cash Flow's income + expense tables only fit side by side on wide monitors;
+   on laptops the expense columns ran into each other. */
+@media (max-width: 1600px) {
+  .cf-tables { grid-template-columns: minmax(0, 1fr) !important; }
+}
+
+/* POS: tablets (iPad portrait) can't fit three panels either, so they get the
+   phone's one-panel-at-a-time tabs. `.pos-polish .pos-panels` sets the desktop
+   columns with higher specificity, so it must be overridden by name. */
+@media (max-width: 1024px) {
+  .pos-panels,
+  .pos-polish .pos-panels { grid-template-columns: minmax(0, 1fr) !important; gap: 0 !important; }
+  .pos-panel-hide { display: none !important; }
+  .pos-tab-bar    { display: flex !important; }
+}
+
+@media (max-width: 768px) {
+  /* `.mobile-only` forces display:block, which flattened these flex rows (the
+     swipeable stat strip rendered as a tall stack of full-width cards). */
+  .mobile-only.mobile-stat-scroll,
+  .mobile-only.mobile-filter-row,
+  .mobile-only.mobile-search-bar,
+  .mobile-only.mobile-tab-bar,
+  .mobile-only.mobile-alert-banner { display: flex !important; }
+
+  /* Low-stock badge: just an icon + count on phones so it doesn't cover content. */
+  .stock-pill { width: 42px; height: 42px; padding: 0 !important; justify-content: center; border-radius: 50% !important; }
+  .stock-pill .stock-pill-text { display: none !important; }
+  .stock-pill .stock-pill-count {
+    display: flex; align-items: center; justify-content: center;
+    position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 4px;
+    border-radius: 9px; background: #fff; color: #b45309; font-size: 10px; font-weight: 800;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+  }
+
+  /* Cash Flow */
+  .cf-controls { width: 100%; }
+  .cf-periods { width: 100%; overflow-x: auto; flex-wrap: nowrap !important; scrollbar-width: none; }
+  .cf-periods::-webkit-scrollbar { display: none; }
+  .cf-periods > button { flex-shrink: 0; padding: 8px 14px !important; }
+  .cf-controls > button, .cf-controls > a { padding: 8px 12px !important; font-size: 12px !important; }
+  .cf-add-main { display: none !important; }
+  .cf-stats { grid-template-columns: 1fr !important; }
+  .cf-split { gap: 10px !important; }
+  .cf-split > div { padding: 14px !important; gap: 10px !important; align-items: flex-start !important; }
+  .cf-split > div > div:first-child { width: 36px !important; height: 36px !important; }
+  .cf-stat-value { font-size: 18px !important; word-break: break-word; }
+  .cf-tables { grid-template-columns: minmax(0, 1fr) !important; }
+  .cf-expense-table { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+  .cf-expense-table > [style*="80px 110px"] { min-width: 640px; }
+
+  /* Settings: section menu becomes a swipeable row above the form. */
+  .settings-layout { grid-template-columns: minmax(0, 1fr) !important; gap: 12px !important; }
+  .settings-nav { display: flex; overflow-x: auto !important; padding: 6px !important; gap: 4px; scrollbar-width: none; }
+  .settings-nav::-webkit-scrollbar { display: none; }
+  .settings-nav > button { width: auto !important; flex-shrink: 0; padding: 9px 12px !important; border-radius: 10px; white-space: nowrap; }
+  .settings-nav > button > svg { display: none; }
+  .settings-content { padding: 18px 16px !important; }
+  .settings-content [style*="grid-template-columns: 1fr 1fr"] { grid-template-columns: minmax(0, 1fr) !important; }
+
+  /* Loyalty */
+  .loyalty-qr { grid-template-columns: minmax(0, 1fr) !important; justify-items: center; text-align: center; }
+  .loyalty-qr > * { width: 100%; }
+  .loyalty-table-inner > div { min-width: 760px; }
 }
