@@ -94,6 +94,12 @@ export default function ClientProfilePage() {
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesDraft, setNotesDraft] = useState("");
 
+  // The edit form sits low in the side column — below Notes once the columns
+  // stack on phones/tablets — so bring it into view when Edit is tapped.
+  useEffect(() => {
+    if (editing) document.getElementById("client-edit-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [editing]);
+
   useEffect(() => {
     const allClients = getStoredClients();
     const allAppts   = getStoredAppointments();
@@ -236,27 +242,27 @@ export default function ClientProfilePage() {
     <div className="dashboard-polish detail-page-polish" style={{ background: "#f4f5f7", minHeight: "100vh" }}>
 
       {/* Top bar */}
-      <div style={{ background: "#fff", borderBottom: "1px solid #e8e8f0", padding: "13px 28px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 10 }}>
+      <div className="cd-topbar" style={{ background: "#fff", borderBottom: "1px solid #e8e8f0", padding: "13px 28px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, position: "sticky", top: 0, zIndex: 10 }}>
         <button
           onClick={() => router.push("/dashboard/clients")}
           style={{ display: "flex", alignItems: "center", gap: 7, background: "none", border: "none", cursor: "pointer", color: "#6b6b8a", fontSize: 13, fontWeight: 600, padding: 0 }}
         >
-          <ArrowLeft size={15} /> Back to Clients
+          <ArrowLeft size={15} /> <span className="cd-btn-label">Back to Clients</span>
         </button>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className="cd-actions" style={{ display: "flex", gap: 8 }}>
           {!editing && (
             <button
               onClick={() => setEditing(true)}
               style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 9, border: "1px solid #e8e8f0", background: "#fff", fontSize: 13, fontWeight: 600, color: "#6b6b8a", cursor: "pointer" }}
             >
-              <Edit2 size={13} /> Edit Profile
+              <Edit2 size={13} /> <span className="cd-btn-label">Edit Profile</span>
             </button>
           )}
           <button
             onClick={() => exportClientPdf(client, appointments, settingsStore.loyalty as LoyaltySettings, settingsStore.salon.name as string)}
             style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 9, border: "1px solid #e8e8f0", background: "#fff", fontSize: 13, fontWeight: 600, color: "#6b6b8a", cursor: "pointer" }}
           >
-            <FileDown size={13} /> Export PDF
+            <FileDown size={13} /> <span className="cd-btn-label">Export PDF</span>
           </button>
           <button
             onClick={() => router.push("/dashboard/appointments")}
@@ -267,10 +273,10 @@ export default function ClientProfilePage() {
         </div>
       </div>
 
-      <div style={{ padding: "24px 28px", maxWidth: 1200, margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
+      <div className="cd-body" style={{ padding: "24px 28px", maxWidth: 1200, margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
 
         {/* ── Hero card ─────────────────────────────────────────────────────────── */}
-        <div style={{ background: "linear-gradient(135deg, #EDE9FE 0%, #fdf2f8 100%)", borderRadius: 20, padding: "28px 32px", border: "1px solid #e8e0ff" }}>
+        <div className="cd-hero" style={{ background: "linear-gradient(135deg, #EDE9FE 0%, #fdf2f8 100%)", borderRadius: 20, padding: "28px 32px", border: "1px solid #e8e0ff" }}>
           <div style={{ display: "flex", alignItems: "flex-start", gap: 22 }}>
             <div style={{ width: 80, height: 80, borderRadius: "50%", background: "linear-gradient(135deg, #5B21B6, #9333EA)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 30, fontWeight: 700, color: "#fff", flexShrink: 0, overflow: "hidden" }}>
               {client.photo
@@ -278,8 +284,8 @@ export default function ClientProfilePage() {
                 ? <img src={client.photo} alt={client.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 : client.name.charAt(0)}
             </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 24, fontWeight: 800, color: "#1a1a2e", marginBottom: 8 }}>{client.name}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="cd-name" style={{ fontSize: 24, fontWeight: 800, color: "#1a1a2e", marginBottom: 8 }}>{client.name}</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
                 {client.tags.map((tag) => {
                   const tc = TAG_COLORS[tag] ?? { color: "#6b7280", bg: "#f9fafb" };
@@ -300,7 +306,7 @@ export default function ClientProfilePage() {
         </div>
 
         {/* ── Stats row ─────────────────────────────────────────────────────────── */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
+        <div className="cd-stats" style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
           {[
             { label: "Total Visits",  value: totalVisits,                      color: "#7C3AED", bg: "#f5f3ff",  icon: <CheckCircle2 size={18} color="#7C3AED" /> },
             { label: "Total Spend",   value: fmt(totalSpend),                  color: "#059669", bg: "#ecfdf5",  icon: <TrendingUp size={18} color="#059669" /> },
@@ -319,7 +325,7 @@ export default function ClientProfilePage() {
         </div>
 
         {/* ── Two-column layout ─────────────────────────────────────────────────── */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 20, alignItems: "start" }}>
+        <div className="cd-cols" style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 20, alignItems: "start" }}>
 
           {/* LEFT column */}
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -425,7 +431,7 @@ export default function ClientProfilePage() {
                                 style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 20, border: "none", cursor: "pointer", background: photoCount > 0 ? "#ede9fe" : "#f3f4f6", whiteSpace: "nowrap" }}
                               >
                                 <Camera size={12} color={photoCount > 0 ? "#7C3AED" : "#9ca3af"} />
-                                <span style={{ fontSize: 11, fontWeight: 700, color: photoCount > 0 ? "#7C3AED" : "#9ca3af" }}>
+                                <span className={photoCount > 0 ? undefined : "cd-photo-label"} style={{ fontSize: 11, fontWeight: 700, color: photoCount > 0 ? "#7C3AED" : "#9ca3af" }}>
                                   {photoCount > 0 ? `${photoCount} photo${photoCount > 1 ? "s" : ""}` : "Add photos"}
                                 </span>
                               </button>
@@ -651,7 +657,7 @@ export default function ClientProfilePage() {
 
             {/* Edit form */}
             {editing ? (
-              <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #7C3AED44", overflow: "hidden" }}>
+              <div id="client-edit-form" style={{ background: "#fff", borderRadius: 16, border: "1px solid #7C3AED44", overflow: "hidden", scrollMarginTop: 72 }}>
                 <div style={{ padding: "16px 20px", borderBottom: "1px solid #f0f0f8", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <div style={{ fontSize: 14, fontWeight: 800, color: "#1a1a2e" }}>Edit Profile</div>
                   <button onClick={() => setEditing(false)} style={{ background: "none", border: "none", cursor: "pointer", display: "flex" }}><X size={16} color="#9898b0" /></button>
@@ -669,7 +675,7 @@ export default function ClientProfilePage() {
                         style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #e8e8f0", fontSize: 13, color: "#1a1a2e", outline: "none", boxSizing: "border-box" }} />
                     </div>
                   ))}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                  <div className="client-form-3" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
                     {([
                       { label: "Source", key: "source", opts: ["whatsapp","walk-in","web","manual"] },
                       { label: "Tag",    key: "tag",    opts: ["", ...Object.keys(TAG_COLORS)] },

@@ -2345,8 +2345,8 @@ export default function AppointmentsPage() {
 
       {/* Search + filter bar */}
       <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, background: "#fff", border: "1px solid #e3e0eb", borderRadius: 12, padding: "10px 16px", boxShadow: "0 2px 8px rgba(0,0,0,0.01)", transition: "border-color 0.15s" }}>
-          <Search size={15} color="#b0b0c8" />
+        <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 10, background: "#fff", border: "1px solid #e3e0eb", borderRadius: 12, padding: "10px 16px", boxShadow: "0 2px 8px rgba(0,0,0,0.01)", transition: "border-color 0.15s" }}>
+          <Search size={15} color="#b0b0c8" style={{ flexShrink: 0 }} />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -2390,7 +2390,7 @@ export default function AppointmentsPage() {
 
       {/* Filter panel */}
       {showFilters && (
-        <div style={{
+        <div className="appt-filter-panel" style={{
           background: "#fff",
           border: "1px solid rgba(226,223,235,.95)",
           borderRadius: 14,

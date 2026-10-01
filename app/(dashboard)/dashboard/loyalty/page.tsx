@@ -899,7 +899,7 @@ export default function LoyaltyPage() {
         ) : (
           <div className="table-scroll-inner loyalty-table-inner">
             {/* Table header */}
-            <div style={{
+            <div className="loyalty-row" style={{
               display: "grid", gridTemplateColumns: "40px 1fr 120px 100px 100px 80px 36px",
               padding: "12px 24px", background: "#faf9fd",
               fontSize: 10, fontWeight: 800, color: "#8e89a3", textTransform: "uppercase", letterSpacing: "0.08em",
@@ -915,7 +915,7 @@ export default function LoyaltyPage() {
               <div
                 key={e.client.id}
                 onClick={() => setSelected(e.client)}
-                className="hover-bg-row"
+                className="hover-bg-row loyalty-row"
                 style={{
                   display: "grid", gridTemplateColumns: "40px 1fr 120px 100px 100px 80px 36px",
                   padding: "16px 24px", gap: 12, alignItems: "center",

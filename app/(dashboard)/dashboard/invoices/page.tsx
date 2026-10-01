@@ -553,7 +553,7 @@ export default function InvoicesPage() {
           </div>
 
           <div className="table-scroll-inner">
-            <div style={{ background: "#fff" }}>
+            <div className="invoice-table-inner" style={{ background: "#fff" }}>
 
               {/* Column headers */}
               <div style={{ display: "grid", gridTemplateColumns: "150px 1fr 150px 110px 120px 80px 110px 100px 100px", padding: "12px 24px", borderBottom: "1px solid #f0f0f5", background: "#faf9fd", alignItems: "center" }}>

@@ -934,13 +934,13 @@ export default function POSPage() {
       {/* ══ TOP BAR ══ */}
       <div className="pos-topbar" style={{ background: "#fff", borderBottom: "1px solid #eaeaf4", display: "flex", alignItems: "center", padding: "0 24px", height: 64, gap: 16, flexShrink: 0 }}>
         {/* Brand */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginRight: 8 }}>
-          <div style={{ width: 38, height: 38, borderRadius: 11, background: "linear-gradient(135deg,#5B21B6,#9333EA)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 3px 10px rgba(91,33,182,0.3)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginRight: 8, minWidth: 0 }}>
+          <div style={{ flexShrink: 0, width: 38, height: 38, borderRadius: 11, background: "linear-gradient(135deg,#5B21B6,#9333EA)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 3px 10px rgba(91,33,182,0.3)" }}>
             <ReceiptText size={18} color="#fff" />
           </div>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 900, color: "#1d1d2f", lineHeight: 1 }}>Point of Sale</div>
-            <div style={{ fontSize: 11, color: "#9999b0", marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 16, fontWeight: 900, color: "#1d1d2f", lineHeight: 1, whiteSpace: "nowrap" }}>Point of Sale</div>
+            <div style={{ fontSize: 11, color: "#9999b0", marginTop: 2, display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap", overflow: "hidden" }}>
               <Clock size={10} />
               {now.toLocaleDateString("en-PK", { weekday: "short", day: "numeric", month: "short" })}
               &nbsp;·&nbsp;
@@ -953,7 +953,7 @@ export default function POSPage() {
 
         {/* Cart badge pill */}
         {totalQty > 0 && !completed && (
-          <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 20, padding: "5px 14px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 20, padding: "5px 14px", flexShrink: 0, whiteSpace: "nowrap" }}>
             <ShoppingCart size={13} color="#7C3AED" />
             <span style={{ fontSize: 12, fontWeight: 800, color: "#7C3AED" }}>{totalQty} item{totalQty > 1 ? "s" : ""}</span>
             <span style={{ fontSize: 12, fontWeight: 700, color: "#9333EA" }}>· {pkr(total)}</span>

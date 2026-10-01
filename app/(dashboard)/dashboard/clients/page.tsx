@@ -479,7 +479,7 @@ function ClientPanel({ client, onClose, appointments, locations, onUpdate, onDel
                       style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #e8e8f0", fontSize: 13, color: "#1a1a2e", outline: "none" }} />
                   </div>
                 ))}
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
+                <div className="client-form-3" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                     <label style={{ fontSize: 10, fontWeight: 700, color: "#b0b0c8", textTransform: "uppercase", letterSpacing: "0.06em" }}>Source</label>
                     <select value={editForm.source} onChange={(e) => setE("source", e.target.value)} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #e8e8f0", fontSize: 13, color: "#1a1a2e", outline: "none", background: "#fff" }}>
@@ -706,7 +706,7 @@ function AddClientModal({ onClose, onAdd, locations, allowLocationSelection, cli
                 style={{ padding: "9px 12px", borderRadius: 8, border: "1px solid #e8e8f0", fontSize: 13, color: "#1a1a2e", outline: "none" }} />
             </div>
           ))}
-          <div style={{ display: "grid", gridTemplateColumns: `repeat(${allowLocationSelection ? 4 : 3}, minmax(0, 1fr))`, gap: 12 }}>
+          <div className="client-form-3" style={{ display: "grid", gridTemplateColumns: `repeat(${allowLocationSelection ? 4 : 3}, minmax(0, 1fr))`, gap: 12 }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
               <label style={{ fontSize: 11, fontWeight: 700, color: "#9898b0", textTransform: "uppercase", letterSpacing: "0.06em" }}>Source</label>
               <select value={form.source} onChange={(e) => set("source", e.target.value)} style={{ padding: "9px 12px", borderRadius: 8, border: "1px solid #e8e8f0", fontSize: 13, color: "#1a1a2e", outline: "none", background: "#fff" }}>
