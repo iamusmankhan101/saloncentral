@@ -1261,6 +1261,11 @@ button, a, [role="button"] { touch-action: manipulation; }
   .dash-stats > div > div:nth-child(2) > div:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: 0.03em !important; }
   .dash-stats > div > div:nth-child(2) > div:nth-child(2) { font-size: 19px !important; margin-top: 4px !important; }
 
+  /* Calendar status legend: one swipeable row instead of three wrapped rows. */
+  .cal-legend { flex-wrap: nowrap !important; overflow-x: auto; scrollbar-width: none; margin: 0 -14px !important; padding: 0 14px; }
+  .cal-legend::-webkit-scrollbar { display: none; }
+  .cal-legend > div { flex-shrink: 0; }
+
   /* Low-stock badge: just an icon + count on phones so it doesn't cover content. */
   .stock-pill { width: 42px; height: 42px; padding: 0 !important; justify-content: center; border-radius: 50% !important; }
   .stock-pill .stock-pill-text { display: none !important; }

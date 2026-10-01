@@ -349,10 +349,10 @@ export default function CalendarPage() {
       />
 
       {/* ── Header ── */}
-      <div className="dashboard-topbar page-header" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div className="dashboard-topbar page-header" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <PageTitle icon={<CalendarDays size={24} />} title="Calendar" subtitle={`${view === "day" ? dayLabel : `${weekStart} – ${weekEnd}`}${activeSection === "all" ? "" : ` · ${activeSection} only`}`} />
 
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap", gap: 10, marginLeft: "auto" }}>
           {/* Staff filter — narrows the day view down to a single team member */}
           {view === "day" && (
             <select
@@ -361,7 +361,7 @@ export default function CalendarPage() {
               className="desktop-only"
               style={{
                 padding: "8px 12px", borderRadius: 10, border: "1.5px solid #e3e0eb",
-                background: "#fff", fontSize: 13, fontWeight: 700, color: "#6b6b8a", cursor: "pointer",
+                background: "#fff", fontSize: 13, fontWeight: 700, color: "#6b6b8a", cursor: "pointer", maxWidth: 200,
               }}
             >
               <option value="all">All Staff</option>
@@ -602,10 +602,10 @@ export default function CalendarPage() {
       )}
 
       {/* ── Mobile: single-day agenda view ── */}
-      <div className="mobile-only" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div className="mobile-only mobile-only-flex" style={{ flexDirection: "column", gap: 14 }}>
 
-        {/* Day picker strip */}
-        <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 2, WebkitOverflowScrolling: "touch" }}>
+        {/* Day picker strip — the 7 days share the width so none is cut off */}
+        <div style={{ display: "flex", gap: 6 }}>
           {mobileWeek.map((d, i) => {
             const ds      = toStr(d);
             const isSel   = ds === mobileDay;
@@ -615,8 +615,8 @@ export default function CalendarPage() {
                 key={ds}
                 onClick={() => setMobileDay(ds)}
                 style={{
-                  flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
-                  padding: "8px 13px", borderRadius: 12, minWidth: 46,
+                  flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+                  padding: "8px 0", borderRadius: 12,
                   border: isSel ? "none" : "1px solid #e3e0eb",
                   background: isSel ? "var(--accent-gradient)" : "#fff",
                   cursor: "pointer",
@@ -656,6 +656,10 @@ export default function CalendarPage() {
                   onClick={() => setSelected(a)}
                   style={{ display: "flex", gap: 12, padding: "14px 16px", borderBottom: isLast ? "none" : "1px solid #f8f8fc", cursor: "pointer" }}
                 >
+                  <div style={{ width: 58, flexShrink: 0, textAlign: "right", paddingTop: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: "#1a1a2e", whiteSpace: "nowrap" }}>{fmtTime(a.startTime)}</div>
+                    <div style={{ fontSize: 11, color: "#9898b0", marginTop: 2, whiteSpace: "nowrap" }}>{fmtTime(a.endTime)}</div>
+                  </div>
                   <div style={{ width: 4, borderRadius: 2, background: accent, flexShrink: 0 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
@@ -666,9 +670,9 @@ export default function CalendarPage() {
                       </span>
                     </div>
                     <div style={{ fontSize: 11, color: "#9898b0", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.serviceNames.join(", ")}</div>
-                    <div style={{ fontSize: 11, color: "#9898b0", marginTop: 4, display: "flex", alignItems: "center", gap: 4, fontWeight: 500 }}>
-                      <Clock size={10} />
-                      <span>{fmtTime(a.startTime)} – {fmtTime(a.endTime)} · {a.staffName.split(" ")[0]}</span>
+                    <div style={{ fontSize: 11, color: "#9898b0", marginTop: 4, display: "flex", alignItems: "center", gap: 6, fontWeight: 600 }}>
+                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: accent, flexShrink: 0 }} />
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.staffName}</span>
                     </div>
                   </div>
                 </div>
@@ -679,7 +683,7 @@ export default function CalendarPage() {
       </div>
 
       {/* ── Legend ── */}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+      <div className="cal-legend" style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
         {Object.entries(STATUS).map(([k, cfg]) => (
           <div key={k} style={{
             display: "flex", alignItems: "center", gap: 6,
