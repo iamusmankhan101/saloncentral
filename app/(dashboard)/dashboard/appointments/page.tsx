@@ -31,6 +31,7 @@ const STATUS: Record<AppointmentStatus, { label: string; color: string; bg: stri
 const ALL_STATUSES = Object.keys(STATUS) as AppointmentStatus[];
 
 import { fmtCurrency as fmt } from "@/lib/format";
+import { TimeSelect } from "@/components/time-select";
 
 function fmtDate(s: string) {
   const [y, m, d] = s.split("-").map(Number);
@@ -1661,7 +1662,7 @@ function CreateModal({ onClose, onAdd, clients, staffList, allServices }: { onCl
               <input type="date" value={day.date} onChange={(e) => set("date", e.target.value)} style={selectStyle} />
             </FormField>
             <FormField label="Start Time">
-              <input type="time" value={day.startTime} onChange={(e) => set("startTime", e.target.value)} style={selectStyle} />
+              <TimeSelect value={day.startTime} onChange={(v) => set("startTime", v)} style={selectStyle} />
             </FormField>
           </div>
 
