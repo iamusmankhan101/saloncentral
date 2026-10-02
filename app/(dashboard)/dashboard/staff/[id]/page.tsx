@@ -623,7 +623,7 @@ export default function StaffProfilePage() {
         </div>
 
         {/* ── Revenue breakdown + Top services ─────────────────────────────── */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>
+        <div className="sd-two" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>
 
           {/* Revenue by period */}
           <Section title="Revenue Breakdown" icon={BarChart2}>
@@ -660,7 +660,7 @@ export default function StaffProfilePage() {
             <div style={{ fontSize: 13, color: "#9898b0", fontStyle: "italic" }}>No appointments recorded yet.</div>
           ) : (
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 540 }}>
+              <table className="sd-appt-table" style={{ width: "100%", borderCollapse: "collapse", minWidth: 540 }}>
                 <thead>
                   <tr style={{ background: "#fafafd" }}>
                     {["Date", "Client", "Services", "Status", "Amount"].map((h) => (
@@ -695,7 +695,7 @@ export default function StaffProfilePage() {
         </Section>
 
         {/* ── Upcoming + Top clients + Assigned services (3-col on desktop) ── */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 22 }}>
+        <div className="sd-three" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 22 }}>
 
           {/* Upcoming appointments */}
           <Section title="Upcoming" icon={Calendar}>

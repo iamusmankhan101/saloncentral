@@ -1220,6 +1220,12 @@ button, a, [role="button"] { touch-action: manipulation; }
   .cf-tables { grid-template-columns: minmax(0, 1fr) !important; }
 }
 
+/* Staff profile: Upcoming / Top Clients / Assigned Services need a desktop
+   to sit three across; tablets stack them. */
+@media (max-width: 1024px) {
+  .sd-three { grid-template-columns: minmax(0, 1fr) !important; }
+}
+
 /* Client profile: the side column and 5-across stats need a desktop. */
 @media (max-width: 1024px) {
   .cd-cols  { grid-template-columns: minmax(0, 1fr) !important; }
@@ -1318,6 +1324,15 @@ button, a, [role="button"] { touch-action: manipulation; }
   .appt-filter-panel > * { min-width: 0; }
   .appt-filter-panel select, .appt-filter-panel input { width: 100% !important; }
   .appt-filter-panel > :nth-last-child(1):nth-child(odd) { grid-column: 1 / -1; }
+
+  /* Attendance: date arrows + Mark All Present as a full-width row. */
+  .att-controls { width: 100%; flex-wrap: wrap; }
+  .att-controls > div { flex: 1; }
+  .att-controls > button:last-child { flex: 1 1 100%; justify-content: center; }
+
+  /* Staff profile: side-by-side sections stack. */
+  .sd-two, .sd-three { grid-template-columns: minmax(0, 1fr) !important; gap: 14px !important; }
+  .sd-appt-table { min-width: 620px !important; }
 
   /* Low-stock badge: just an icon + count on phones so it doesn't cover content. */
   .stock-pill { width: 42px; height: 42px; padding: 0 !important; justify-content: center; border-radius: 50% !important; }

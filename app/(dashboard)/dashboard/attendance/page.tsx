@@ -147,13 +147,17 @@ export default function AttendancePage() {
         subtitle={activeSection === "all" ? `${staffList.length} active staff` : `Restricted to ${activeSection} only`}
       />
 
-      <div className="dashboard-topbar page-header" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-        <PageTitle
-          icon={<ClipboardCheck size={24} />}
-          title="Attendance"
-          subtitle={activeSection === "all" ? `${staffList.length} active staff` : `Restricted to ${activeSection} only`}
-        />
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      {/* Not dashboard-topbar (hidden on phones) — the date controls must stay
+          reachable there; only the duplicate title is desktop-only. */}
+      <div className="page-header" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+        <div className="desktop-only">
+          <PageTitle
+            icon={<ClipboardCheck size={24} />}
+            title="Attendance"
+            subtitle={activeSection === "all" ? `${staffList.length} active staff` : `Restricted to ${activeSection} only`}
+          />
+        </div>
+        <div className="att-controls" style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <button type="button" onClick={() => setSelectedDate((d) => shiftDate(d, -1))} style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid #e3e0eb", background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <ChevronLeft size={15} />
           </button>
