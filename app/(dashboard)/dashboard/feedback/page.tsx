@@ -67,14 +67,14 @@ export default function FeedbackPage() {
     <div className="dash-page dashboard-polish" style={{ minHeight: "100vh", background: "#ffffff", padding: "28px 32px 48px", display: "flex", flexDirection: "column", gap: 20 }}>
       <PageTitle icon={<Star size={24} />} title="Client Feedback" subtitle="Ratings and reviews collected after visits" />
 
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+      <div className="fb-stats" style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
         <StatCard icon={<Star size={20} />} label="Average Rating" value={summary && summary.submitted > 0 ? summary.averageRating.toFixed(1) : "—"} color="#f59e0b" />
         <StatCard icon={<ThumbsUp size={20} />} label="Reviews Collected" value={String(summary?.submitted ?? 0)} color="#059669" />
         <StatCard icon={<Users size={20} />} label="Requests Sent" value={String(summary?.requested ?? 0)} color="#7C3AED" />
         <StatCard icon={<MessageCircle size={20} />} label="Response Rate" value={`${summary?.responseRate ?? 0}%`} color="#0284c7" />
       </div>
 
-      <div style={{ background: "#fff", border: "1px solid rgba(226,223,235,0.8)", borderRadius: 16, overflow: "hidden" }}>
+      <div style={{ background: "#fff", border: "1px solid rgba(226,223,235,0.8)", borderRadius: 16, overflowX: "auto" }}>
         {loading ? (
           <div style={{ padding: 40, textAlign: "center", color: "#9898b0", fontSize: 13 }}>Loading…</div>
         ) : items.length === 0 ? (
@@ -82,7 +82,7 @@ export default function FeedbackPage() {
             No feedback requests yet. Feedback links are sent automatically inside the follow-up WhatsApp message once an appointment is marked completed.
           </div>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <table style={{ width: "100%", minWidth: 640, borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ textAlign: "left", color: "#9898b0", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em" }}>
                 <th style={{ padding: "14px 20px" }}>Client</th>

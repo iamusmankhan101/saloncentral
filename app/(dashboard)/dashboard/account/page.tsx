@@ -337,7 +337,7 @@ function SalonProfile() {
       {/* Logo upload */}
       <div style={{ marginBottom: 28, padding: "20px 22px", background: "#fafafd", border: "1px solid #eeeeF6", borderRadius: 14 }}>
         <div style={{ fontSize: 13, fontWeight: 800, color: "#242438", marginBottom: 14 }}>Salon Logo</div>
-        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+        <div className="acc-logo-row" style={{ display: "flex", alignItems: "center", gap: 20 }}>
           {/* Preview */}
           {form.logo ? (
             <img src={form.logo} alt="logo" style={{ height: 80, maxWidth: 160, objectFit: "contain", flexShrink: 0, borderRadius: 4 }} />

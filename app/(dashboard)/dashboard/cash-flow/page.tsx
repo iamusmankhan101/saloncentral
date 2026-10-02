@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { getStoredAppointments, getStoredInventory } from "@/lib/storage";
 import { getSalonInvoices } from "@/lib/salon-invoices";
-import { getExpenses, saveExpenses, addExpense, updateExpense, applyExpenseStock, expenseItemsTotal, type Expense, type ExpenseCategory, type ExpenseItem } from "@/lib/expenses";
+import { getExpenses, saveExpenses, addExpense, updateExpense, applyExpenseStock, expenseItemsTotal, linkExpenseItemsToInventory, type Expense, type ExpenseCategory, type ExpenseItem } from "@/lib/expenses";
 import { getManualCashIncome, saveManualCashIncome, type ManualCashIncome } from "@/lib/cash-flow-income";
 import type { Appointment, InventoryItem } from "@/lib/types";
 import MobilePageHeader from "@/components/mobile-page-header";
@@ -472,14 +472,17 @@ export default function CashFlowPage() {
 
     try {
       let dbSaved: boolean;
-      const itemsPatch = { items: items.length ? items : undefined };
+      // Products Inventory doesn't have yet are created there (zero stock),
+      // then get this purchase's quantity like any other linked product.
+      const linkedItems = linkExpenseItemsToInventory(items, expenseSection);
+      const itemsPatch = { items: linkedItems.length ? linkedItems : undefined };
       if (editId) {
         const previousItems = getExpenses().find(e => e.id === editId)?.items;
         dbSaved = await updateExpense(editId, { date: form.date, category: form.category, description, amount: amt, paymentMethod: form.paymentMethod, paymentStatus: form.paymentStatus, ...billImagePatch, notes: form.notes.trim() || undefined, section: expenseSection, ...itemsPatch });
-        applyExpenseStock(previousItems, items);
+        applyExpenseStock(previousItems, linkedItems);
       } else {
         ({ dbSaved } = await addExpense({ date: form.date, category: form.category, description, amount: amt, paymentMethod: form.paymentMethod, paymentStatus: form.paymentStatus, ...billImagePatch, notes: form.notes.trim() || undefined, section: expenseSection, ...itemsPatch }));
-        applyExpenseStock([], items);
+        applyExpenseStock([], linkedItems);
       }
       setExpenseSyncFailed(!dbSaved);
       setExpenses(getExpenses().filter(e => !cashFlowScoped || e.section === activeSection));
@@ -1282,10 +1285,10 @@ export default function CashFlowPage() {
                           {row.name.trim() && (
                             <div style={{ fontSize: 11, fontWeight: 600, marginTop: 4, color: "#6b6b8a" }}>
                               {row.qty || 0} × PKR {(parseFloat(row.unitPrice) || 0).toLocaleString("en-PK")} = PKR {lineTotal.toLocaleString("en-PK")}
-                              <span style={{ color: linked ? "#059669" : "#9898b0" }}>
+                              <span style={{ color: linked ? "#059669" : "#7C3AED" }}>
                                 {linked
                                   ? ` · In Inventory: stock ${linked.currentStock} → ${linked.currentStock + (parseFloat(row.qty) || 0)} ${linked.unit}`
-                                  : " · Not in Inventory — recorded on this expense only"}
+                                  : ` · New — will be added to Inventory with ${parseFloat(row.qty) || 0} in stock`}
                               </span>
                             </div>
                           )}

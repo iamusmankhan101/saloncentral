@@ -1334,6 +1334,16 @@ button, a, [role="button"] { touch-action: manipulation; }
   .sd-two, .sd-three { grid-template-columns: minmax(0, 1fr) !important; gap: 14px !important; }
   .sd-appt-table { min-width: 620px !important; }
 
+  /* Feedback stats: 2 × 2 tiles. */
+  .fb-stats { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px !important; }
+  .fb-stats > * { min-width: 0 !important; padding: 14px !important; }
+  .fb-stats > * { gap: 10px !important; }
+  .fb-stats > * > div:first-child { width: 36px !important; height: 36px !important; }
+
+  /* Salon logo: preview + upload button, help text full-width below. */
+  .acc-logo-row { flex-wrap: wrap; gap: 14px !important; }
+  .acc-logo-row > :last-child { flex: 1 1 100%; }
+
   /* Low-stock badge: just an icon + count on phones so it doesn't cover content. */
   .stock-pill { width: 42px; height: 42px; padding: 0 !important; justify-content: center; border-radius: 50% !important; }
   .stock-pill .stock-pill-text { display: none !important; }

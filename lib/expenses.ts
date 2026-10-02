@@ -1,6 +1,7 @@
 import { locationUserKey } from "./locations";
 import { persistEntity } from "./turso-sync";
 import { getStoredInventory, saveInventory } from "./storage";
+import type { InventoryItem } from "./types";
 
 export type ExpenseCategory =
   | "rent"
@@ -75,6 +76,37 @@ export function deleteExpense(id: string): void {
 
 export async function updateExpense(id: string, patch: Partial<Omit<Expense, "id" | "createdAt">>): Promise<boolean> {
   return saveExpenses(getExpenses().map(e => e.id === id ? { ...e, ...patch } : e));
+}
+
+/**
+ * Links every product to an Inventory item, creating one (with zero stock) for
+ * any name Inventory doesn't have yet. Stock is then added by
+ * applyExpenseStock like any other linked product, so editing or deleting the
+ * expense later adjusts the new item too. Returns the linked items.
+ */
+export function linkExpenseItemsToInventory(items: ExpenseItem[], section?: string): ExpenseItem[] {
+  if (!items.some((item) => !item.inventoryItemId)) return items;
+  const inventory = getStoredInventory();
+  const byName = new Map(inventory.map((inv) => [inv.name.trim().toLowerCase(), inv.id]));
+  const created: InventoryItem[] = [];
+  const today = new Date().toLocaleDateString("en-CA");
+  const linked = items.map((item) => {
+    if (item.inventoryItemId) return item;
+    const key = item.name.trim().toLowerCase();
+    let id = byName.get(key);
+    if (!id) {
+      id = `i_${Date.now()}_${created.length}`;
+      byName.set(key, id);
+      created.push({
+        id, name: item.name.trim(), brand: "", category: "consumables", unit: "pcs",
+        currentStock: 0, minStock: 0, costPrice: item.unitPrice, lastRestocked: today,
+        notes: "Added from an expense", ...(section ? { section } : {}),
+      });
+    }
+    return { ...item, inventoryItemId: id };
+  });
+  if (created.length) saveInventory([...inventory, ...created]);
+  return linked;
 }
 
 export function expenseItemsTotal(items: ExpenseItem[] | undefined): number {
