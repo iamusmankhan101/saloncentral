@@ -382,3 +382,26 @@ html:has(.pageWrapper), body:has(.pageWrapper) { background: #f6f5f9; }
   .stepContent, .successScreen { animation: none; }
   .pageWrapper * { transition: none !important; }
 }
+
+/* ── Payment choice (mirrors the client app's booking sheet) ── */
+.payOptions { display: flex; flex-direction: column; gap: 8px; }
+.payOpt {
+  display: flex; align-items: center; gap: 12px; width: 100%; padding: 11px 13px;
+  border: 1.5px solid #e8e6f2; border-radius: 14px; background: #fff; cursor: pointer; text-align: left; font: inherit;
+}
+.payOptOn { border-color: var(--bk-accent, #7C3AED); background: #faf8ff; }
+.payOptText { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.payOptLabel { font-size: 14px; font-weight: 700; color: #1a1a2e; }
+.payOptSub { font-size: 12px; color: #8b8ba3; margin-top: 1px; }
+.payRadio { width: 20px; height: 20px; border-radius: 50%; border: 2px solid #d4d0e4; flex-shrink: 0; box-sizing: border-box; }
+.payOptOn .payRadio { border: 6px solid var(--bk-accent, #7C3AED); }
+.payDone { width: 100%; text-align: left; margin: 0 0 16px; border: 1px solid #ede9fe; box-sizing: border-box; }
+.payProof { margin-top: 12px; }
+.payProofBtn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 12px;
+  border-radius: 12px; border: 1.5px dashed var(--bk-accent, #7C3AED); background: #faf8ff; color: var(--bk-accent, #7C3AED);
+  font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+}
+.payProofOk { display: flex; align-items: center; gap: 8px; color: #059669; font-size: 13px; font-weight: 700; }
+.paySpin { animation: paySpin 0.9s linear infinite; }
+@keyframes paySpin { to { transform: rotate(360deg); } }

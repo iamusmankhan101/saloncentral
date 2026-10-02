@@ -1,9 +1,11 @@
 "use client";
 
 import './onlineBooking.css';
-import { useState, useMemo, useEffect, useCallback, Suspense } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { CheckCircle, Clock, Calendar, User, Scissors, ChevronRight, ChevronLeft, ChevronDown, Check, Search, X, Phone, MapPin } from "lucide-react";
+import { CheckCircle, Clock, Calendar, User, Scissors, ChevronRight, ChevronLeft, ChevronDown, Check, Search, X, Phone, MapPin, ImageUp, Loader2 } from "lucide-react";
+import { availableMethods, MethodDetails, MethodIcon, PaymentStyles, type PayMethod, type PublicPayments } from "@/app/client/[salonId]/payment-options";
+import { fileToResizedDataUrl } from "@/lib/image";
 import {
   getStoredAppointments,
   saveAppointments,
@@ -129,6 +131,9 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
   const [name, setName]                         = useState("");
   const [phone, setPhone]                       = useState("");
   const [notes, setNotes]                       = useState("");
+  const [payMethod, setPayMethod]               = useState<PayMethod | "">("");
+  /** Id of the saved booking — the payment screenshot is attached to it. */
+  const [bookedId, setBookedId]                 = useState("");
   const [booking, setBooking]                   = useState(false);
   const [bookError, setBookError]               = useState("");
   const [serviceSearch, setServiceSearch]       = useState("");
@@ -280,7 +285,8 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
       status:       "booked",
       totalAmount:  totalPrice,
       source:       "web",
-      notes:        notes || undefined,
+      // Written into the notes so the desk sees how the customer means to pay.
+      notes:        [notes.trim(), `Payment: ${chosenPay.label}`].filter(Boolean).join("\n"),
       createdAt:    new Date().toISOString(),
     };
 
@@ -354,6 +360,7 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
       localStorage.setItem("werzio_new_booking_notify", JSON.stringify(alertPayload));
     }
 
+    setBookedId(appt.id);
     setStep("success");
   }
 
@@ -384,7 +391,7 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
   function resetAll() {
     setSelectedServiceIds([]); setSelectedStaffId("");
     setSelectedDate(""); setSelectedTime("");
-    setName(""); setPhone(""); setNotes("");
+    setName(""); setPhone(""); setNotes(""); setPayMethod(""); setBookedId("");
     setBooking(false); setBookError("");
     setStep(1);
   }
@@ -396,6 +403,19 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
     ? ((remoteSettings?.salon as { logo?: string })?.logo ?? "")
     : ((settingsStore.salon as { logo?: string }).logo ?? "");
   const salonInfo = (salonId ? remoteSettings?.salon : settingsStore.salon) as { phone?: string; address?: string } | undefined;
+  // Same payment options as the client app. A customer's link gets the
+  // server's public subset; the salon's own device reads its settings, keeping
+  // only the methods switched on.
+  const payMethods = useMemo(() => {
+    if (salonId) return availableMethods(remoteSettings?.payments as PublicPayments | undefined);
+    const raw = (settingsStore.payments ?? {}) as Record<string, unknown> & { payAtCounter?: boolean };
+    const on = (k: string) => {
+      const m = raw[k] as ({ enabled?: boolean } & Record<string, string>) | undefined;
+      return m?.enabled ? (m as { number?: string; title?: string; bankName?: string; accountNumber?: string; iban?: string }) : undefined;
+    };
+    return availableMethods({ payAtCounter: raw.payAtCounter !== false, jazzcash: on("jazzcash"), easypaisa: on("easypaisa"), bank: on("bank") });
+  }, [salonId, remoteSettings]);
+  const chosenPay = payMethods.find((m) => m.id === payMethod) ?? payMethods[0];
   const salonAccent = salonId
     ? (remoteSettings?.appearance as { accent?: string } | undefined)?.accent
     : (settingsStore.appearance as { accent?: string }).accent;
@@ -646,6 +666,23 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
               </div>
 
               <div className="formGroup">
+                <label className="formLabel">How will you pay?</label>
+                <div className="payOptions">
+                  {payMethods.map((m) => (
+                    <button key={m.id} type="button" className={`payOpt${chosenPay.id === m.id ? " payOptOn" : ""}`}
+                      onClick={() => setPayMethod(m.id)} aria-pressed={chosenPay.id === m.id}>
+                      <MethodIcon id={m.id} size={32} />
+                      <span className="payOptText">
+                        <span className="payOptLabel">{m.label}</span>
+                        <span className="payOptSub">{m.sub}</span>
+                      </span>
+                      <span className="payRadio" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="formGroup">
                 <label className="formLabel">Notes (optional)</label>
                 <textarea className="cleanTextarea" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any special requests…" rows={3} />
               </div>
@@ -683,8 +720,17 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
                 <div className="successRow"><span className="successLabel">Date</span><span className="successValue">{fmtDate(selectedDate)}</span></div>
                 <div className="successRow"><span className="successLabel">Time</span><span className="successValue">{fmtTime12(selectedTime)}</span></div>
                 <div className="successRow"><span className="successLabel">Duration</span><span className="successValue">{totalDuration} min</span></div>
+                <div className="successRow"><span className="successLabel">Payment</span><span className="successValue">{chosenPay.label}</span></div>
                 <div className="successRow highlight"><span className="successLabel">Total</span><span className="successValue">{fmt(totalPrice)}</span></div>
               </div>
+
+              {chosenPay.id !== "counter" && (
+                <section className="po-card payDone">
+                  <div className="po-card-title">Send {fmt(totalPrice)} via {chosenPay.label}</div>
+                  <MethodDetails method={chosenPay} />
+                  {salonId && bookedId && <ProofUpload salonId={salonId} appointmentId={bookedId} method={chosenPay.id} />}
+                </section>
+              )}
 
               <p className="successNote">We&apos;ll send you a WhatsApp confirmation shortly. See you soon!</p>
               <button className="btnBookAnother" onClick={resetAll}>Book Another Appointment</button>
@@ -694,6 +740,7 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
       </section>
 
       <footer className="bkFooter">Powered by <strong>Salon Central</strong></footer>
+      <PaymentStyles />
     </div>
   );
 }
@@ -704,5 +751,47 @@ export function OnlineBookingView({ salonId }: { salonId?: string }) {
     <Suspense fallback={<div style={{ minHeight: "100vh", background: "#f6f5f9" }} />}>
       <OnlineBookingInner salonIdOverride={salonId} />
     </Suspense>
+  );
+}
+
+/** Lets the customer send their transfer screenshot — same endpoint as the client app. */
+function ProofUpload({ salonId, appointmentId, method }: { salonId: string; appointmentId: string; method: string }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [state, setState] = useState<"idle" | "uploading" | "done" | "error">("idle");
+  const [message, setMessage] = useState("");
+
+  async function onFile(file: File | undefined) {
+    if (!file) return;
+    setState("uploading");
+    setMessage("");
+    try {
+      const dataUrl = await fileToResizedDataUrl(file, 1400, 0.8);
+      const res = await fetch("/api/public/payment-proof", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ salonId, appointmentId, method, dataUrl }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) throw new Error(data.error || "Upload failed. Please try again.");
+      setState("done");
+    } catch (err) {
+      setState("error");
+      setMessage(err instanceof Error ? err.message : "Upload failed. Please try again.");
+    }
+    if (inputRef.current) inputRef.current.value = "";
+  }
+
+  return (
+    <div className="payProof">
+      <input ref={inputRef} type="file" accept="image/*" hidden onChange={(e) => onFile(e.target.files?.[0])} />
+      {state === "done" ? (
+        <div className="payProofOk"><CheckCircle size={16} /> Screenshot sent to the salon</div>
+      ) : (
+        <button type="button" className="payProofBtn" disabled={state === "uploading"} onClick={() => inputRef.current?.click()}>
+          {state === "uploading" ? <><Loader2 size={16} className="paySpin" /> Uploading…</> : <><ImageUp size={16} /> {state === "error" ? "Try again" : "Upload payment screenshot"}</>}
+        </button>
+      )}
+      {message && <div className="dateWarning">{message}</div>}
+    </div>
   );
 }
