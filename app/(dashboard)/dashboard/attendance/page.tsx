@@ -12,7 +12,9 @@ import {
 import { getStoredStaff as readStaff, saveStaff } from "@/lib/storage";
 import PageTitle from "@/components/page-title";
 import MobilePageHeader from "@/components/mobile-page-header";
-import { ClipboardCheck, ChevronLeft, ChevronRight, CheckCheck, LogIn, LogOut, Clock } from "lucide-react";
+import { ClipboardCheck, ChevronLeft, ChevronRight, CheckCheck, LogIn, LogOut, Clock, QrCode } from "lucide-react";
+import QrCheckinSetup from "@/components/qr-checkin-setup";
+import { subscribeToStoredData } from "@/lib/storage";
 
 const STATUS_META: Record<AttendanceStatus, { label: string; color: string; bg: string }> = {
   present:    { label: "Present",  color: "#059669", bg: "#ecfdf5" },
@@ -65,12 +67,16 @@ export default function AttendancePage() {
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [selectedDate, setSelectedDate] = useState(() => todayStr());
+  const [showQrSetup, setShowQrSetup] = useState(false);
   const activeSection = getActiveSection();
 
   useEffect(() => {
     // Strict-locked to the active dashboard section, same rule as Staff.
     setStaffList(getStoredStaff().filter((s) => s.isActive && inSection(s, activeSection)));
     setRecords(getAttendance());
+    // QR check-ins are written on the server by staff phones — pick them up
+    // when a sync brings them in, without needing a page reload.
+    return subscribeToStoredData(() => setRecords(getAttendance()));
   }, []);
 
   function refresh() { setRecords(getAttendance()); }
@@ -142,6 +148,8 @@ export default function AttendancePage() {
 
   return (
     <div className="dash-page dashboard-polish" style={{ background: "#ffffff", minHeight: "100vh", display: "flex", flexDirection: "column", gap: 20 }}>
+      {showQrSetup && <QrCheckinSetup onClose={() => setShowQrSetup(false)} />}
+
       <MobilePageHeader
         title="Attendance"
         subtitle={activeSection === "all" ? `${staffList.length} active staff` : `Restricted to ${activeSection} only`}
@@ -170,6 +178,9 @@ export default function AttendancePage() {
           </button>
           <button type="button" onClick={markAllPresent} disabled={staffList.length === 0} style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 10, border: "none", background: "var(--accent-gradient)", color: "#fff", fontSize: 12, fontWeight: 750, cursor: staffList.length === 0 ? "not-allowed" : "pointer", opacity: staffList.length === 0 ? 0.5 : 1 }}>
             <CheckCheck size={14} /> Mark All Present
+          </button>
+          <button type="button" onClick={() => setShowQrSetup(true)} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "9px 14px", borderRadius: 10, border: "1px solid #ddd6fe", background: "#fff", color: "#6d28d9", fontSize: 13, fontWeight: 750, cursor: "pointer" }}>
+            <QrCode size={14} /> QR Check-in
           </button>
         </div>
       </div>
@@ -266,6 +277,9 @@ export default function AttendancePage() {
                         </button>
                       )}
                     </div>
+                    {record?.method === "qr" && record.checkIn && (
+                      <div style={{ fontSize: 10.5, fontWeight: 700, color: "#7C3AED" }}>Checked in by QR scan</div>
+                    )}
                     <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#9898b0" }}>
                       <Clock size={11} />
                       {worked == null ? (

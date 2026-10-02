@@ -24,7 +24,8 @@ const securityHeaders = [
   // ── Disable browser features the app doesn't use ─────────────────────────
   {
     key: "Permissions-Policy",
-    value: "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+    // geolocation=(self): QR attendance check-in confirms the phone is at the salon.
+    value: "camera=(), microphone=(), geolocation=(self), payment=(), usb=()",
   },
 
   // ── Prevent cross-site scripting via DNS prefetch ─────────────────────────

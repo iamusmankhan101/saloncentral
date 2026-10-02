@@ -20,6 +20,16 @@ function report(event: string, email?: string, detail?: string) {
   }
 }
 
+/**
+ * Where to go after signing in, from ?next= — only this site's own paths (the
+ * QR attendance page sends staff here and back), never another site.
+ */
+function safeNextPath(): string | null {
+  if (typeof window === "undefined") return null;
+  const next = new URLSearchParams(window.location.search).get("next");
+  return next && next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\") ? next : null;
+}
+
 export default function SignInPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -44,10 +54,12 @@ export default function SignInPage() {
   }, []);
 
   useEffect(() => {
-    if (getCurrentUser()) router.replace("/dashboard");
+    if (getCurrentUser()) router.replace(safeNextPath() ?? "/dashboard");
 
     queueMicrotask(() => {
       const params = new URLSearchParams(window.location.search);
+      // Arriving from the attendance QR — that's always a staff login.
+      if (safeNextPath()?.startsWith("/checkin/")) setPortal("staff");
       if (params.get("verified") === "true") setVerifiedMessage(true);
 
       const oauthErr = params.get("error");
@@ -109,7 +121,7 @@ export default function SignInPage() {
         // silently reuse that stale result; a full document load (same as a
         // manual refresh, which is why that "fixes" it) re-runs middleware
         // against the cookie that was just set.
-        window.location.href = "/dashboard";
+        window.location.href = safeNextPath() ?? "/dashboard";
       })
       .catch(err => {
         console.error("[sign-in] Error:", err);

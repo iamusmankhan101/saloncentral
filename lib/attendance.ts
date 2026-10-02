@@ -14,6 +14,8 @@ export interface AttendanceRecord {
   /** Clock-out time, "HH:MM" 24h local. A value at or before checkIn is read as a shift running past midnight. */
   checkOut?: string;
   notes?: string;
+  /** "qr" when the staff member checked in themselves by scanning the reception code. */
+  method?: "qr";
   createdAt: string;
   updatedAt: string;
 }

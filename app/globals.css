@@ -1350,7 +1350,7 @@ button, a, [role="button"] { touch-action: manipulation; }
   /* Attendance: date arrows + Mark All Present as a full-width row. */
   .att-controls { width: 100%; flex-wrap: wrap; }
   .att-controls > div { flex: 1; }
-  .att-controls > button:last-child { flex: 1 1 100%; justify-content: center; }
+  .att-controls > button:nth-last-child(-n+2) { flex: 1 1 40%; justify-content: center; }
 
   /* Staff profile: side-by-side sections stack. */
   .sd-two, .sd-three { grid-template-columns: minmax(0, 1fr) !important; gap: 14px !important; }
