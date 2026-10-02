@@ -75,7 +75,7 @@ export default function InvoiceViewer({ invoice, onClose, bankDetails = DEFAULT_
         <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 760, display: "flex", flexDirection: "column", gap: 12 }}>
 
           {/* Toolbar */}
-          <div className="iv-no-print" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div className="iv-no-print iv-toolbar" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
             <span style={{ fontSize: 14, fontWeight: 700, color: "#fff", opacity: 0.9 }}>{invoice.number}</span>
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => window.print()}
@@ -91,13 +91,13 @@ export default function InvoiceViewer({ invoice, onClose, bankDetails = DEFAULT_
 
           {/* Invoice Sheet */}
           <div className="iv-sheet" style={{ background: "#fff", borderRadius: 4, boxShadow: "0 24px 80px rgba(0,0,0,0.3)", fontFamily: "'Helvetica Neue', Arial, sans-serif" }}>
-            <div style={{ padding: "52px 56px" }}>
+            <div className="iv-body" style={{ padding: "52px 56px" }}>
 
               {/* ── HEADER: Salon Central left, INVOICE right ── */}
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 48 }}>
+              <div className="iv-head" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 48 }}>
                 {/* Left: Salon Central branding */}
                 <div>
-                  <div style={{ marginBottom: 18 }}>
+                  <div className="iv-logo" style={{ marginBottom: 18 }}>
                     <SalonCentralWordmark />
                   </div>
                   <div style={{ fontSize: 12, color: "#555", lineHeight: 2 }}>
@@ -106,7 +106,7 @@ export default function InvoiceViewer({ invoice, onClose, bankDetails = DEFAULT_
                 </div>
 
                 {/* Right: INVOICE label + number + status */}
-                <div style={{ textAlign: "right" }}>
+                <div className="iv-title" style={{ textAlign: "right" }}>
                   <div style={{ fontSize: 38, fontWeight: 900, color: "#111", letterSpacing: "-1px", lineHeight: 1 }}>INVOICE</div>
                   <div style={{ fontSize: 14, color: "#7C3AED", fontWeight: 700, marginTop: 8 }}>{invoice.number}</div>
                   <div style={{ marginTop: 12, display: "inline-block", padding: "4px 16px", border: `1.5px solid ${st.color}`, borderRadius: 20, fontSize: 11, fontWeight: 800, color: st.color, letterSpacing: "0.08em" }}>
@@ -116,7 +116,7 @@ export default function InvoiceViewer({ invoice, onClose, bankDetails = DEFAULT_
               </div>
 
               {/* ── DATE ROW ── */}
-              <div style={{ display: "grid", gridTemplateColumns: invoice.periodStart && invoice.periodEnd ? "1.4fr 1fr 1fr 1fr" : "1fr 1fr 1fr", gap: 0, marginBottom: 40, borderTop: "1px solid #ddd", borderBottom: "1px solid #ddd", padding: "16px 0" }}>
+              <div className="iv-dates" style={{ display: "grid", gridTemplateColumns: invoice.periodStart && invoice.periodEnd ? "1.4fr 1fr 1fr 1fr" : "1fr 1fr 1fr", gap: 0, marginBottom: 40, borderTop: "1px solid #ddd", borderBottom: "1px solid #ddd", padding: "16px 0" }}>
                 {[
                   ...(invoice.periodStart && invoice.periodEnd
                     ? [{ label: "Billing Period", value: `${fmtShortDate(invoice.periodStart)} – ${fmtShortDate(invoice.periodEnd)}` }]
@@ -133,7 +133,7 @@ export default function InvoiceViewer({ invoice, onClose, bankDetails = DEFAULT_
               </div>
 
               {/* ── BILLED FROM / TO ── */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 40, marginBottom: 40 }}>
+              <div className="iv-parties" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 40, marginBottom: 40 }}>
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 800, color: "#888", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>Billed From</div>
                   <div style={{ fontSize: 13, fontWeight: 700, color: "#111", marginBottom: 4 }}>{billedFrom.name}</div>
@@ -154,7 +154,7 @@ export default function InvoiceViewer({ invoice, onClose, bankDetails = DEFAULT_
               </div>
 
               {/* ── ITEMS TABLE ── */}
-              <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 28 }}>
+              <table className="iv-items" style={{ width: "100%", borderCollapse: "collapse", marginBottom: 28 }}>
                 <thead>
                   <tr style={{ background: "#f0f0f0", borderTop: "1px solid #ccc", borderBottom: "1px solid #ccc" }}>
                     {["Description", "Qty", "Unit Price", "Total"].map((h, i) => (
@@ -183,7 +183,7 @@ export default function InvoiceViewer({ invoice, onClose, bankDetails = DEFAULT_
 
               {/* ── TOTALS ── */}
               <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 40 }}>
-                <div style={{ width: 280 }}>
+                <div className="iv-totals" style={{ width: 280, maxWidth: "100%" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", fontSize: 13, color: "#555", borderBottom: "1px solid #e8e8e8" }}>
                     <span style={{ fontWeight: 600 }}>Subtotal</span><span style={{ fontWeight: 700, color: "#111" }}>{fmt(invoice.subtotal)}</span>
                   </div>
@@ -227,7 +227,7 @@ export default function InvoiceViewer({ invoice, onClose, bankDetails = DEFAULT_
               </div>
 
               {/* ── FOOTER ── */}
-              <div style={{ borderTop: "1px solid #e0e0e0", paddingTop: 16, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div className="iv-footer" style={{ borderTop: "1px solid #e0e0e0", paddingTop: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
                 <div style={{ fontSize: 12, color: "#555" }}>
                   Thank you for choosing <strong style={{ color: "#111" }}>Salon Central</strong> — powering your salon's success.
                 </div>
