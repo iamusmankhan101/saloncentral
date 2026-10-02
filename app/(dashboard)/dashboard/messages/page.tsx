@@ -691,7 +691,7 @@ function MessagesPageContent() {
   }, []);
 
   const ws = settingsStore.wasender as {
-    enabled?: boolean; provider?: "wasender" | "botsailor" | "zaptick" | "chakra"; apiKey: string; botSailorApiToken?: string; botSailorPhoneNumberId?: string; zaptickApiKey?: string; chakraAccessToken?: string; chakraPluginId?: string; chakraWhatsappPhoneNumberId?: string; ownerPhone: string;
+    enabled?: boolean; provider?: "wasender" | "botsailor" | "zaptick" | "chakra" | "ycloud"; apiKey: string; botSailorApiToken?: string; botSailorPhoneNumberId?: string; zaptickApiKey?: string; chakraAccessToken?: string; chakraPluginId?: string; chakraWhatsappPhoneNumberId?: string; ownerPhone: string;
     autoReminder: boolean; autoConfirmation: boolean; autoFollowup: boolean;
     autoCancellation: boolean; autoLowStock: boolean;
   };

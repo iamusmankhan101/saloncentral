@@ -14,7 +14,7 @@ type Json = Record<string, unknown>;
 
 /** Provider-specific fields an admin manages. `provider` itself is admin-managed too but is shown (not secret). */
 export function isProviderField(key: string): boolean {
-  return key === "apiKey" || key.startsWith("botSailor") || key.startsWith("zaptick") || key.startsWith("chakra");
+  return key === "apiKey" || key.startsWith("botSailor") || key.startsWith("zaptick") || key.startsWith("chakra") || key.startsWith("ycloud");
 }
 
 /** The credential that matters for the selected provider. */
@@ -24,6 +24,7 @@ export function activeCredential(ws: Json | null | undefined): string {
   const v = provider === "botsailor" ? ws.botSailorApiToken
     : provider === "zaptick" ? ws.zaptickApiKey
     : provider === "chakra" ? ws.chakraAccessToken
+    : provider === "ycloud" ? ws.ycloudApiKey
     : ws.apiKey;
   return typeof v === "string" ? v.trim() : "";
 }

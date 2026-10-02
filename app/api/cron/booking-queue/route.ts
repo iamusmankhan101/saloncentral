@@ -23,7 +23,7 @@
 
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { activeWhatsAppCredential, isFakePlaceholderPhone, sendWhatsAppMessage, type WhatsAppProviderConfig } from "@/lib/whatsapp-provider";
+import { activeWhatsAppCredential, isFakePlaceholderPhone, sendWhatsAppMessage, type WhatsAppProviderConfig, ycloudConfigOf } from "@/lib/whatsapp-provider";
 import { sendSalonInvoiceWhatsApp } from "@/lib/whatsapp-invoice-send";
 import type { SalonInvoice } from "@/lib/salon-invoices";
 import { checkWhatsAppSafety, recordWhatsAppSafetySend, type WhatsAppMessageIntent, type WhatsAppSafetyConfig } from "@/lib/whatsapp-safety";
@@ -426,6 +426,7 @@ function providerFromSettings(settings: Record<string, unknown> | null): WhatsAp
     botSailorPhoneNumberId: wasender.botSailorPhoneNumberId as string | undefined,
     zaptickApiKey: wasender.zaptickApiKey as string | undefined,
     chakraAccessToken: wasender.chakraAccessToken as string | undefined,
+    ...ycloudConfigOf(wasender),
     chakraPluginId: wasender.chakraPluginId as string | undefined,
     chakraWhatsappPhoneNumberId: wasender.chakraWhatsappPhoneNumberId as string | undefined,
     chakraTemplateReminder: wasender.chakraTemplateReminder as string | undefined,

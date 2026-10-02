@@ -568,7 +568,7 @@ function ReminderModal({ alertItems, onClose }: { alertItems: InventoryItem[]; o
   const [sending, setSending] = useState(false);
   const [apiResult, setApiResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
-  const ws = settingsStore.wasender as { provider?: "wasender" | "botsailor" | "zaptick" | "chakra"; apiKey: string; botSailorApiToken?: string; botSailorPhoneNumberId?: string; zaptickApiKey?: string; chakraAccessToken?: string; ownerPhone: string };
+  const ws = settingsStore.wasender as { provider?: "wasender" | "botsailor" | "zaptick" | "chakra" | "ycloud"; apiKey: string; botSailorApiToken?: string; botSailorPhoneNumberId?: string; zaptickApiKey?: string; chakraAccessToken?: string; ownerPhone: string };
   const salonName = settingsStore.salon.name as string;
 
   const message = [

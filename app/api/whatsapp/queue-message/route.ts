@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { followupsTimedFromInvoice } from "@/lib/salon-overrides";
 import { resolveActor } from "@/lib/api-auth";
 import { db } from "@/lib/db";
-import { activeWhatsAppCredential, isFakePlaceholderPhone, type WhatsAppProviderConfig } from "@/lib/whatsapp-provider";
+import { activeWhatsAppCredential, isFakePlaceholderPhone, type WhatsAppProviderConfig, ycloudConfigOf } from "@/lib/whatsapp-provider";
 import { appointmentStartHasPassed, appointmentStartMs, isWithinSalonHours, nextSalonOpenMs, timezoneFromSettings, type SalonHoursDay } from "@/lib/appointment-time";
 
 type QueueKind = "groupalert" | "followup" | "cancellation" | "reminder" | "birthday" | "winback" | "lowstock" | "manual";
@@ -303,6 +303,7 @@ export async function POST(req: NextRequest) {
       botSailorPhoneNumberId: settings?.wasender?.botSailorPhoneNumberId,
       zaptickApiKey: settings?.wasender?.zaptickApiKey,
       chakraAccessToken: settings?.wasender?.chakraAccessToken,
+      ...ycloudConfigOf(settings?.wasender),
     };
     if (!activeWhatsAppCredential(providerConfig)) {
       return Response.json({ ok: true, queued: false, skipped: true, reason: "missing-provider-credentials" });

@@ -12,7 +12,7 @@
 
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { activeWhatsAppCredential, isFakePlaceholderPhone, type WhatsAppProviderConfig } from "@/lib/whatsapp-provider";
+import { activeWhatsAppCredential, isFakePlaceholderPhone, type WhatsAppProviderConfig, ycloudConfigOf } from "@/lib/whatsapp-provider";
 import { appointmentStartMs, isWithinSalonHours, nextSalonOpenMs, timezoneFromSettings, type SalonHoursDay } from "@/lib/appointment-time";
 
 const MINUTE_MS = 60 * 1000;
@@ -217,6 +217,7 @@ async function runReminderCron() {
         botSailorPhoneNumberId: s?.wasender?.botSailorPhoneNumberId,
         zaptickApiKey: s?.wasender?.zaptickApiKey,
         chakraAccessToken: s?.wasender?.chakraAccessToken,
+        ...ycloudConfigOf(s?.wasender),
       };
       const autoReminder = s?.wasender?.autoReminder;
       const notificationsEnabled = s?.notifications?.apptReminder !== false;

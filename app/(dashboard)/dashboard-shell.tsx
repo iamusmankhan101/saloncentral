@@ -769,7 +769,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
   // WhatsApp connection status check
   useEffect(() => {
     if (!isReady || isAdmin) return;
-    const config = settingsStore.wasender as { provider?: "wasender" | "botsailor" | "zaptick" | "chakra"; apiKey: string; botSailorApiToken?: string; botSailorPhoneNumberId?: string; zaptickApiKey?: string; chakraAccessToken?: string; chakraPluginId?: string; chakraWhatsappPhoneNumberId?: string };
+    const config = settingsStore.wasender as { provider?: "wasender" | "botsailor" | "zaptick" | "chakra" | "ycloud"; apiKey: string; botSailorApiToken?: string; botSailorPhoneNumberId?: string; zaptickApiKey?: string; chakraAccessToken?: string; chakraPluginId?: string; chakraWhatsappPhoneNumberId?: string };
     // Keys are admin-managed and stay on the server; it checks with its own.
     if (!whatsAppConnected(config)) return;
 

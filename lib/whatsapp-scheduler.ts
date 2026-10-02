@@ -21,7 +21,7 @@ import { appointmentStartHasPassed, appointmentStartMs, timezoneFromSettings } f
 export function whatsAppConnected(ws: { connected?: boolean; provider?: string; apiKey?: string; botSailorApiToken?: string; zaptickApiKey?: string; chakraAccessToken?: string } | null | undefined): boolean {
   if (!ws) return false;
   if (ws.connected) return true;
-  return !!(ws.provider === "botsailor" ? ws.botSailorApiToken : ws.provider === "zaptick" ? ws.zaptickApiKey : ws.provider === "chakra" ? ws.chakraAccessToken : ws.apiKey);
+  return !!(ws.provider === "botsailor" ? ws.botSailorApiToken : ws.provider === "zaptick" ? ws.zaptickApiKey : ws.provider === "chakra" ? ws.chakraAccessToken : ws.provider === "ycloud" ? (ws as { ycloudApiKey?: string }).ycloudApiKey : ws.apiKey);
 }
 
 export function normalizePhone(raw: string, countryCode = "92"): string {
@@ -478,6 +478,7 @@ export async function sendGroupBookingAlert(appt: {
 
   if (ws.provider === "botsailor") { console.warn("⚠️ New Booking group alert skipped — BotSailor doesn't support sending to groups."); return; }
   if (ws.provider === "chakra") { console.warn("⚠️ New Booking group alert skipped — ChakraHQ (Meta Cloud API) doesn't support sending to groups."); return; }
+  if (ws.provider === "ycloud") { console.warn("⚠️ New Booking group alert skipped — YCloud (Meta Cloud API) doesn't support sending to groups."); return; }
   if (!ws.autoGroupBooking) { console.warn("⚠️ New Booking group alert disabled — enable \"New Booking Group Alert\" in Account → WhatsApp Settings"); return; }
   const hasCredentials = whatsAppConnected(ws);
   if (!hasCredentials) { console.warn("⚠️ New Booking group alert skipped — no WhatsApp provider credentials set"); return; }
@@ -749,7 +750,7 @@ async function callSendApi(
 ): Promise<boolean> {
   if (!phone.trim()) return false;
   const providerConfig = settingsStore.wasender as WhatsAppSafetyConfig & {
-    provider?: "wasender" | "botsailor" | "zaptick" | "chakra";
+    provider?: "wasender" | "botsailor" | "zaptick" | "chakra" | "ycloud";
     apiKey: string;
     botSailorApiToken?: string;
     botSailorPhoneNumberId?: string;

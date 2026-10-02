@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { resolveActor } from "@/lib/api-auth";
 import { db } from "@/lib/db";
-import { activeWhatsAppCredential, isFakePlaceholderPhone, type WhatsAppProviderConfig } from "@/lib/whatsapp-provider";
+import { activeWhatsAppCredential, isFakePlaceholderPhone, type WhatsAppProviderConfig, ycloudConfigOf } from "@/lib/whatsapp-provider";
 import { appointmentStartHasPassed, timezoneFromSettings } from "@/lib/appointment-time";
 
 const MINUTE_MS = 60 * 1000;
@@ -183,6 +183,7 @@ export async function POST(req: NextRequest) {
       botSailorPhoneNumberId: settings?.wasender?.botSailorPhoneNumberId,
       zaptickApiKey: settings?.wasender?.zaptickApiKey,
       chakraAccessToken: settings?.wasender?.chakraAccessToken,
+      ...ycloudConfigOf(settings?.wasender),
     };
     if (!activeWhatsAppCredential(providerConfig)) {
       return Response.json({ ok: true, queued: false, skipped: true, reason: "missing-provider-credentials" });

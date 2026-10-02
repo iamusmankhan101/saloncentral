@@ -9,7 +9,7 @@
 
 import { NextRequest } from "next/server";
 import { resolveActor } from "@/lib/api-auth";
-import { activeWhatsAppCredential, type WhatsAppProviderConfig } from "@/lib/whatsapp-provider";
+import { activeWhatsAppCredential, type WhatsAppProviderConfig, ycloudConfigOf } from "@/lib/whatsapp-provider";
 import { ensureWinbackTables, enqueueWinbackForUser, loadSalonSettings } from "@/lib/winback-queue";
 
 export async function POST(req: NextRequest) {
@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
       botSailorPhoneNumberId: wasender?.botSailorPhoneNumberId as string | undefined,
       zaptickApiKey: wasender?.zaptickApiKey as string | undefined,
       chakraAccessToken: wasender?.chakraAccessToken as string | undefined,
+      ...ycloudConfigOf(wasender),
     };
     if (!activeWhatsAppCredential(providerConfig)) {
       return Response.json({ ok: false, error: "WhatsApp is not connected. Add your provider credentials in Account settings first." }, { status: 400 });

@@ -714,7 +714,7 @@ function Security() {
 
 interface WhatsAppSettings {
   enabled: boolean;
-  provider: "wasender" | "botsailor" | "zaptick" | "chakra";
+  provider: "wasender" | "botsailor" | "zaptick" | "chakra" | "ycloud";
   apiKey: string;
   botSailorApiToken: string;
   botSailorPhoneNumberId: string;
@@ -1476,7 +1476,7 @@ function WhatsAppSection() {
             </div>
           }
         />}
-        {(form.provider === "botsailor" || form.provider === "chakra") && (
+        {(form.provider === "botsailor" || form.provider === "chakra" || form.provider === "ycloud") && (
           <div style={{ border: "1px solid #e0e7ff", borderRadius: 12, padding: "13px 16px", background: "#f5f7ff", color: "#5b5b78", fontSize: 11, lineHeight: 1.6 }}>
             Your WhatsApp connection sends to individual phone numbers only, so booking-group alerts aren&apos;t available. Contact Salon Central support if you need them.
           </div>

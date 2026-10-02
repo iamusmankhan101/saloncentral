@@ -9,7 +9,7 @@
 
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { activeWhatsAppCredential, sendWhatsAppMessage, type WhatsAppProviderConfig } from "@/lib/whatsapp-provider";
+import { activeWhatsAppCredential, sendWhatsAppMessage, type WhatsAppProviderConfig, ycloudConfigOf } from "@/lib/whatsapp-provider";
 
 function authorized(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
@@ -101,6 +101,7 @@ async function runLowStockCron() {
         botSailorPhoneNumberId: s?.wasender?.botSailorPhoneNumberId,
         zaptickApiKey: s?.wasender?.zaptickApiKey,
         chakraAccessToken: s?.wasender?.chakraAccessToken,
+        ...ycloudConfigOf(s?.wasender),
       };
       const ownerPhone   = s?.wasender?.ownerPhone;
       const autoLowStock = s?.wasender?.autoLowStock;

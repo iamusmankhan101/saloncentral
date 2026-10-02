@@ -11,7 +11,7 @@
 
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { activeWhatsAppCredential, type WhatsAppProviderConfig } from "@/lib/whatsapp-provider";
+import { activeWhatsAppCredential, type WhatsAppProviderConfig, ycloudConfigOf } from "@/lib/whatsapp-provider";
 import { ensureWinbackTables, enqueueWinbackForUser } from "@/lib/winback-queue";
 
 function authorized(req: NextRequest): boolean {
@@ -43,6 +43,7 @@ async function runWinbackCron() {
         botSailorPhoneNumberId: settings?.wasender?.botSailorPhoneNumberId,
         zaptickApiKey: settings?.wasender?.zaptickApiKey,
         chakraAccessToken: settings?.wasender?.chakraAccessToken,
+        ...ycloudConfigOf(settings?.wasender),
       };
       if (!activeWhatsAppCredential(providerConfig)) continue;
 

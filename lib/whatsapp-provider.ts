@@ -1,4 +1,4 @@
-export type WhatsAppProvider = "wasender" | "botsailor" | "zaptick" | "chakra";
+export type WhatsAppProvider = "wasender" | "botsailor" | "zaptick" | "chakra" | "ycloud";
 
 export interface WhatsAppProviderConfig {
   provider?: WhatsAppProvider;
@@ -21,6 +21,42 @@ export interface WhatsAppProviderConfig {
   chakraTemplateCancellation?: string;
   chakraTemplateBirthday?: string;
   chakraTemplateWinback?: string;
+  /** YCloud (official Meta partner) API key — Developers → API Keys. */
+  ycloudApiKey?: string;
+  /** The salon's WhatsApp business number registered in YCloud, e.g. +923001234567. */
+  ycloudFromNumber?: string;
+  /** Language code the templates were approved in, e.g. "en" or "en_US". */
+  ycloudTemplateLanguage?: string;
+  /** Used for any message type without its own template below (manual sends, alerts, receipts). */
+  ycloudTemplateDefault?: string;
+  ycloudTemplateReminder?: string;
+  ycloudTemplateConfirmation?: string;
+  ycloudTemplateFollowup?: string;
+  ycloudTemplateCancellation?: string;
+  ycloudTemplateBirthday?: string;
+  ycloudTemplateWinback?: string;
+}
+
+/** Every YCloud field of a stored `wasender` settings object, for building a provider config. */
+export function ycloudConfigOf(ws: unknown): Partial<WhatsAppProviderConfig> {
+  const src = (ws && typeof ws === "object" ? ws : {}) as Record<string, unknown>;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(src)) if (k.startsWith("ycloud") && typeof v === "string") out[k] = v;
+  return out as Partial<WhatsAppProviderConfig>;
+}
+
+/**
+ * Meta rejects a template parameter containing a newline, a tab or more than
+ * four spaces in a row (error 132018), and caps body parameters at 1024
+ * characters. The app's composed messages are multi-line, so flatten them.
+ */
+export function templateParamText(text: string): string {
+  const flat = text
+    .replace(/\s*\n+\s*/g, " · ")
+    .replace(/\t/g, " ")
+    .replace(/ {4,}/g, "   ")
+    .trim();
+  return flat.length > 1024 ? `${flat.slice(0, 1021)}...` : flat;
 }
 
 export interface WhatsAppSendResult {
@@ -35,6 +71,7 @@ export function activeWhatsAppCredential(config: WhatsAppProviderConfig): string
   if (config.provider === "botsailor") return config.botSailorApiToken || "";
   if (config.provider === "zaptick") return config.zaptickApiKey || "";
   if (config.provider === "chakra") return config.chakraAccessToken || "";
+  if (config.provider === "ycloud") return config.ycloudApiKey || "";
   return config.apiKey || "";
 }
 
@@ -126,6 +163,66 @@ export async function sendWhatsAppMessage(
         status: 500, 
         errorReason: err instanceof Error ? err.message : "Failed to connect to Zaptick API" 
       };
+    }
+  }
+
+  // ─── YCloud Provider ────────────────────────────────────────────────────────
+  // YCloud is an official Meta partner (Cloud API), so business-initiated
+  // messages must use an approved template. Each template is expected to have
+  // one body variable ({{1}}) that receives the app's composed message, the
+  // same convention as ChakraHQ. With no template configured at all it falls
+  // back to plain text, which Meta only delivers inside the 24h window after
+  // the customer last messaged the salon.
+  // Docs: https://docs.ycloud.com/reference/whatsapp_message-send-directly
+  if (provider === "ycloud") {
+    const apiKey = config.ycloudApiKey || "";
+    const from = (config.ycloudFromNumber || "").replace(/[^\d+]/g, "");
+    if (!apiKey || !from) {
+      return { ok: false, status: 500, errorReason: "YCloud API key and business WhatsApp number are required." };
+    }
+    if (phone.endsWith("@g.us")) {
+      return { ok: false, status: 400, errorReason: "YCloud (Meta Cloud API) does not support WhatsApp group recipients." };
+    }
+
+    const messageType = options?.messageType;
+    const byType: Record<string, string | undefined> = {
+      reminder: config.ycloudTemplateReminder, confirmation: config.ycloudTemplateConfirmation,
+      followup: config.ycloudTemplateFollowup, cancellation: config.ycloudTemplateCancellation,
+      birthday: config.ycloudTemplateBirthday, winback: config.ycloudTemplateWinback,
+    };
+    const templateName = ((messageType && byType[messageType]) || config.ycloudTemplateDefault || "").trim();
+    const to = `+${phone.replace(/\D/g, "")}`;
+    const fromE164 = from.startsWith("+") ? from : `+${from}`;
+    const body = templateName
+      ? {
+          from: fromE164, to, type: "template",
+          template: {
+            name: templateName,
+            language: { code: (config.ycloudTemplateLanguage || "en").trim() },
+            components: [{ type: "body", parameters: [{ type: "text", text: templateParamText(text) }] }],
+          },
+        }
+      : { from: fromE164, to, type: "text", text: { body: text.slice(0, 4096) } };
+
+    try {
+      const response = await fetch("https://api.ycloud.com/v2/whatsapp/messages/sendDirectly", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-API-Key": apiKey, Accept: "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(15000),
+      });
+      const data = await response.json().catch(() => ({})) as {
+        status?: string; errorCode?: string; errorMessage?: string;
+        error?: { message?: string; code?: string; whatsappApiError?: { message?: string } }; message?: string;
+      };
+      // sendDirectly returns the message with status accepted/sent/delivered/read, or failed.
+      const ok = response.ok && data.status !== "failed";
+      const errorReason = ok ? undefined
+        : (data.errorMessage || data.error?.whatsappApiError?.message || data.error?.message || data.message || `HTTP ${response.status}`)
+          + (!templateName ? " (no YCloud template is set, so this was sent as plain text, which only works within 24h of the customer's last message)" : "");
+      return { ok, status: response.status, data, errorReason };
+    } catch (err) {
+      return { ok: false, status: 500, errorReason: err instanceof Error ? err.message : "Failed to connect to YCloud API" };
     }
   }
 
@@ -291,6 +388,39 @@ export async function checkWhatsAppProvider(config: WhatsAppProviderConfig) {
     }
   }
   
+  // ─── YCloud Provider Status ─────────────────────────────────────────────────
+  // Lists the account's WhatsApp numbers: proves the key works and that the
+  // salon's sending number is registered and connected.
+  if (provider === "ycloud") {
+    const apiKey = config.ycloudApiKey || "";
+    if (!apiKey) return { connected: false, status: "NOT_CONFIGURED", message: "YCloud API key is required." };
+    const fromDigits = (config.ycloudFromNumber || "").replace(/\D/g, "");
+    if (!fromDigits) return { connected: false, status: "NOT_CONFIGURED", message: "The salon's WhatsApp business number is required." };
+    try {
+      const response = await fetch("https://api.ycloud.com/v2/whatsapp/phoneNumbers?limit=100", {
+        headers: { "X-API-Key": apiKey, Accept: "application/json" },
+        cache: "no-store",
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!response.ok) {
+        return { connected: false, status: "DISCONNECTED", message: response.status === 401 || response.status === 403 ? "YCloud API key was rejected." : `YCloud check failed (HTTP ${response.status}).` };
+      }
+      const data = await response.json().catch(() => ({})) as { items?: { phoneNumber?: string; status?: string; qualityRating?: string; verifiedName?: string }[] };
+      const match = (data.items ?? []).find((p) => (p.phoneNumber || "").replace(/\D/g, "") === fromDigits);
+      if (!match) return { connected: false, status: "DISCONNECTED", message: "That WhatsApp number isn't in this YCloud account." };
+      const connected = (match.status || "").toUpperCase() === "CONNECTED";
+      return {
+        connected,
+        status: (match.status || "UNKNOWN").toUpperCase(),
+        message: connected
+          ? `YCloud number active${match.verifiedName ? ` (${match.verifiedName})` : ""}${match.qualityRating ? `, quality ${match.qualityRating}` : ""}.`
+          : `YCloud number status: ${match.status || "unknown"}.`,
+      };
+    } catch (err) {
+      return { connected: false, status: "ERROR", message: err instanceof Error ? err.message : "Failed to check YCloud status." };
+    }
+  }
+
   // ─── ChakraHQ Provider Status ───────────────────────────────────────────────
   if (provider === "chakra") {
     const accessToken = config.chakraAccessToken || "";

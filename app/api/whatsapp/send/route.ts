@@ -1,18 +1,20 @@
 import { NextRequest } from "next/server";
-import { sendWhatsAppMessage, type WhatsAppProvider } from "@/lib/whatsapp-provider";
+import { sendWhatsAppMessage, ycloudConfigOf, type WhatsAppProvider } from "@/lib/whatsapp-provider";
 import { checkWhatsAppSafety, recordWhatsAppSafetySend, type WhatsAppMessageIntent, type WhatsAppSafetyConfig } from "@/lib/whatsapp-safety";
 import { resolveActor } from "@/lib/api-auth";
 import { loadWhatsAppConfig } from "@/lib/whatsapp-config-server";
+import { isProviderField } from "@/lib/whatsapp-credentials";
 
-/** The salon's stored provider fields, with blanks for unset ones so nothing from the request survives. */
-async function providerSetup(userId: string): Promise<Record<string, unknown>> {
+/**
+ * The salon's stored provider setup, and blanks for every provider field the
+ * request carried — so nothing key-like from the browser survives.
+ */
+async function providerSetup(userId: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
   const ws = await loadWhatsAppConfig(userId);
-  const keys = [
-    "provider", "apiKey", "botSailorApiToken", "botSailorPhoneNumberId", "zaptickApiKey",
-    "chakraAccessToken", "chakraPluginId", "chakraWhatsappPhoneNumberId",
-    "chakraTemplateReminder", "chakraTemplateConfirmation", "chakraTemplateFollowup", "chakraTemplateCancellation", "chakraTemplateBirthday",
-  ];
-  return Object.fromEntries(keys.map((k) => [k, typeof ws[k] === "string" && ws[k] ? ws[k] : undefined]));
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(body)) if (isProviderField(k) || k === "provider") out[k] = undefined;
+  for (const [k, v] of Object.entries(ws)) if ((isProviderField(k) || k === "provider") && typeof v === "string" && v) out[k] = v;
+  return out;
 }
 
 export async function POST(request: NextRequest) {
@@ -25,7 +27,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   // The provider setup is admin-managed: always the salon's stored one,
   // whatever the request carries.
-  Object.assign(body, await providerSetup(actor.userId));
+  Object.assign(body, await providerSetup(actor.userId, body));
   const {
     provider, apiKey, botSailorApiToken, botSailorPhoneNumberId, zaptickApiKey,
     chakraAccessToken, chakraPluginId, chakraWhatsappPhoneNumberId,
@@ -76,6 +78,7 @@ export async function POST(request: NextRequest) {
         provider, apiKey, botSailorApiToken, botSailorPhoneNumberId, zaptickApiKey,
         chakraAccessToken, chakraPluginId, chakraWhatsappPhoneNumberId,
         chakraTemplateReminder, chakraTemplateConfirmation, chakraTemplateFollowup, chakraTemplateCancellation, chakraTemplateBirthday,
+        ...ycloudConfigOf(body),
       },
       phone,
       text,

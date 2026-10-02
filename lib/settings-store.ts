@@ -41,7 +41,7 @@ const defaults = {
   // branches. "all" means every page shows both sections combined.
   activeSection: "all",
   wasender: {
-    provider: "wasender" as "wasender" | "botsailor" | "zaptick" | "chakra",
+    provider: "wasender" as "wasender" | "botsailor" | "zaptick" | "chakra" | "ycloud",
     apiKey: "",
     botSailorApiToken: "",
     botSailorPhoneNumberId: "",

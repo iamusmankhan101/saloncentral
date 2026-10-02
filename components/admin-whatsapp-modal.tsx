@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { X, Check, AlertCircle, Loader2 } from "lucide-react";
 
 type Setup = Record<string, string>;
-type Provider = "wasender" | "botsailor" | "zaptick" | "chakra";
+type Provider = "wasender" | "botsailor" | "zaptick" | "chakra" | "ycloud";
 
 const TEMPLATE_KINDS: [string, string][] = [
   ["Reminder", "Reminder"], ["Confirmation", "Confirmation"], ["Followup", "Follow-up"],
@@ -20,6 +20,9 @@ const FIELDS: Record<Provider, [key: string, label: string, secret?: boolean][]>
   zaptick: [["zaptickApiKey", "Zaptick API Key", true]],
   chakra: [["chakraAccessToken", "ChakraHQ Access Token", true], ["chakraPluginId", "Plugin ID"], ["chakraWhatsappPhoneNumberId", "WhatsApp Phone Number ID"],
     ...TEMPLATE_KINDS.map(([k, l]) => [`chakraTemplate${k}`, `${l} template`] as [string, string])],
+  ycloud: [["ycloudApiKey", "YCloud API Key", true], ["ycloudFromNumber", "Salon's WhatsApp number (e.g. +923001234567)"],
+    ["ycloudTemplateLanguage", "Template language (e.g. en)"], ["ycloudTemplateDefault", "Default template (used when no specific one)"],
+    ...TEMPLATE_KINDS.map(([k, l]) => [`ycloudTemplate${k}`, `${l} template`] as [string, string])],
 };
 
 export default function AdminWhatsAppModal({ userId, salonName, onClose }: { userId: string; salonName: string; onClose: () => void }) {
@@ -87,8 +90,15 @@ export default function AdminWhatsAppModal({ userId, salonName, onClose }: { use
                 <option value="botsailor">BotSailor</option>
                 <option value="zaptick">Zaptick.io</option>
                 <option value="chakra">ChakraHQ</option>
+                <option value="ycloud">YCloud (official, no markup)</option>
               </select>
             </label>
+            {provider === "ycloud" && (
+              <div style={{ fontSize: 12, color: "#4a4a6a", background: "#f5f3ff", border: "1px solid #ede9fe", borderRadius: 10, padding: "10px 12px", lineHeight: 1.55 }}>
+                In YCloud, create <strong>Utility</strong> templates with one variable, e.g. <code>{"Update from your salon: {{1}} Thank you!"}</code> (the app fills in the whole message; Meta rejects a variable at the very start or end), get them approved, and enter their names here.
+                One <strong>Default template</strong> is enough to start; per-type ones are optional. Without any template, messages only reach customers who messaged the salon in the last 24 hours.
+              </div>
+            )}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
               {FIELDS[provider].map(([key, text, secret]) => (
                 <label key={key} style={{ gridColumn: secret ? "1 / -1" : undefined }}>

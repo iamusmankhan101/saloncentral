@@ -12,7 +12,7 @@
 
 import { db } from "./db";
 import { backupExistingSalonData } from "./data-backup";
-import { activeWhatsAppCredential, isFakePlaceholderPhone, type WhatsAppProviderConfig } from "./whatsapp-provider";
+import { activeWhatsAppCredential, isFakePlaceholderPhone, type WhatsAppProviderConfig, ycloudConfigOf } from "./whatsapp-provider";
 import { appointmentStartHasPassed, timezoneFromSettings } from "./appointment-time";
 import type { Client, Appointment } from "./types";
 
@@ -146,6 +146,7 @@ export async function createBooking(
       botSailorTemplateBirthday: settings?.wasender?.botSailorTemplateBirthday,
       zaptickApiKey: settings?.wasender?.zaptickApiKey,
       chakraAccessToken: settings?.wasender?.chakraAccessToken,
+      ...ycloudConfigOf(settings?.wasender),
       chakraPluginId: settings?.wasender?.chakraPluginId,
       chakraWhatsappPhoneNumberId: settings?.wasender?.chakraWhatsappPhoneNumberId,
       chakraTemplateReminder: settings?.wasender?.chakraTemplateReminder,

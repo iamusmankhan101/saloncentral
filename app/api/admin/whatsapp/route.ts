@@ -11,11 +11,11 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/api-auth";
 import { backupExistingSalonData } from "@/lib/data-backup";
-import { checkWhatsAppProvider, type WhatsAppProvider } from "@/lib/whatsapp-provider";
+import { checkWhatsAppProvider, ycloudConfigOf, type WhatsAppProvider } from "@/lib/whatsapp-provider";
 import { activeCredential, isProviderField, providerSetupOf } from "@/lib/whatsapp-credentials";
 
 type Json = Record<string, unknown>;
-const PROVIDERS = new Set(["wasender", "botsailor", "zaptick", "chakra"]);
+const PROVIDERS = new Set(["wasender", "botsailor", "zaptick", "chakra", "ycloud"]);
 
 async function loadSettings(userId: string): Promise<Json | null> {
   const res = await db.execute({ sql: "SELECT data FROM salon_data WHERE entity = ?", args: [`${userId}_settings`] });
@@ -51,6 +51,7 @@ export async function POST(req: NextRequest) {
         apiKey: str("apiKey"), botSailorApiToken: str("botSailorApiToken"), botSailorPhoneNumberId: str("botSailorPhoneNumberId"),
         zaptickApiKey: str("zaptickApiKey"), chakraAccessToken: str("chakraAccessToken"),
         chakraPluginId: str("chakraPluginId"), chakraWhatsappPhoneNumberId: str("chakraWhatsappPhoneNumberId"),
+        ...ycloudConfigOf(ws),
       });
       return Response.json({ ok: result.connected, ...result });
     } catch (err) {
