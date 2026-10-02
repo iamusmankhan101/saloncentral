@@ -6,7 +6,7 @@ import type { Staff } from "@/lib/types";
 import { getActiveSection, inSection } from "@/lib/sections";
 import {
   getAttendance, setAttendanceStatus, setAttendanceTimes, getAttendanceSummary,
-  hoursWorked, nowTimeString, standardHoursFor, isWeeklyOff, leaveAllowanceFor, dayWeightFor,
+  hoursWorked, nowTimeString, standardHoursFor, isWeeklyOff, leaveAllowanceFor, dayWeightFor, expectedStartFor,
   type AttendanceRecord, type AttendanceStatus,
 } from "@/lib/attendance";
 import { getStoredStaff as readStaff, saveStaff } from "@/lib/storage";
@@ -14,6 +14,8 @@ import PageTitle from "@/components/page-title";
 import MobilePageHeader from "@/components/mobile-page-header";
 import { ClipboardCheck, ChevronLeft, ChevronRight, CheckCheck, LogIn, LogOut, Clock, QrCode } from "lucide-react";
 import QrCheckinSetup from "@/components/qr-checkin-setup";
+import { settingsStore } from "@/lib/settings-store";
+import { DEFAULT_LATE_AFTER_MINUTES, time12, toMinutes, type QrCheckinSettings } from "@/lib/attendance-checkin";
 import { subscribeToStoredData } from "@/lib/storage";
 
 const STATUS_META: Record<AttendanceStatus, { label: string; color: string; bg: string }> = {
@@ -116,7 +118,16 @@ export default function AttendancePage() {
   // a past date would record a time that never happened; those days are edited
   // with the time inputs instead.
   function stampNow(staffId: string, field: "checkIn" | "checkOut") {
-    setAttendanceTimes(staffId, selectedDate, { [field]: nowTimeString() });
+    const now = nowTimeString();
+    const unmarked = !records.some((r) => r.staffId === staffId && r.date === selectedDate);
+    setAttendanceTimes(staffId, selectedDate, { [field]: now });
+    // Clocking in an unmarked person after their shift start (plus the same
+    // grace QR check-in uses) marks them Late, like a QR scan would.
+    if (field === "checkIn" && unmarked) {
+      const start = expectedStartFor(staffList.find((s) => s.id === staffId), selectedDate);
+      const grace = (settingsStore.attendance as { qrCheckin?: QrCheckinSettings } | undefined)?.qrCheckin?.lateAfterMinutes ?? DEFAULT_LATE_AFTER_MINUTES;
+      if (start && toMinutes(now) > toMinutes(start) + grace) setAttendanceStatus(staffId, selectedDate, "late");
+    }
     refresh();
   }
 
@@ -210,6 +221,9 @@ export default function AttendancePage() {
                     <div style={{ fontSize: 13, fontWeight: 800, color: "#1a1a2e", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</div>
                     <div style={{ fontSize: 11, color: "#9898b0", textTransform: "capitalize" }}>
                       {s.role.replace(/-/g, " ")}
+                      {s.shiftStart && s.shiftEnd && (
+                        <span style={{ textTransform: "none" }}> · Shift {time12(s.shiftStart)} – {time12(s.shiftEnd)}</span>
+                      )}
                       {isWeeklyOff(s, selectedDate) && (
                         <span style={{ textTransform: "none", color: STATUS_META["week-off"].color, fontWeight: 700 }}> · rostered off</span>
                       )}

@@ -67,6 +67,14 @@ export interface Staff {
   /** A full working day for this person, in hours. Overrides the salon-wide standard (Settings → Attendance) for part-timers and split shifts. */
   standardHoursPerDay?: number;
   /**
+   * This person's own working hours, "HH:MM" 24h — e.g. "11:00"–"20:00". Both
+   * or neither. Decides when a check-in counts as Late, and (when no
+   * standardHoursPerDay is set) how long their full day is. Unset follows the
+   * salon's opening hours.
+   */
+  shiftStart?: string;
+  shiftEnd?: string;
+  /**
    * Weekdays this person is off each week, as JS `getDay()` numbers (0 = Sunday).
    * Overrides the salon-wide roster in Settings → Attendance, for the stylist who
    * takes Monday instead of the weekend. An empty array means no weekly off at

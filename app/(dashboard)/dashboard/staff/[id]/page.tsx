@@ -19,6 +19,7 @@ import { weeklyOffDaysFor } from "@/lib/attendance";
 import { revenueInPeriod, invoiceBelongsTo, ALL_TIME_START, ALL_TIME_END } from "@/lib/payouts";
 import { upsellInPeriod, upsellIncentive } from "@/lib/upsell";
 import { getSalonInvoices, type SalonInvoice } from "@/lib/salon-invoices";
+import ShiftFields from "@/components/shift-fields";
 
 /** Sentinel select value that reveals the free-text role field — never stored. */
 const WEEKDAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -91,6 +92,8 @@ function EditModal({
     paidLeavesPerMonth: staff.paidLeavesPerMonth != null ? String(staff.paidLeavesPerMonth) : "",
     upsellCommissionRate: staff.upsellCommissionRate != null ? String(staff.upsellCommissionRate) : "",
     standardHoursPerDay: staff.standardHoursPerDay != null ? String(staff.standardHoursPerDay) : "",
+    shiftStart: staff.shiftStart ?? "",
+    shiftEnd: staff.shiftEnd ?? "",
   });
   // null = follow the salon roster; an array (empty included) = this person's own.
   const [offDays, setOffDays] = useState<number[] | null>(staff.weeklyOffDays ?? null);
@@ -137,6 +140,8 @@ function EditModal({
       baseSalary: (form.payType === "salary" || form.payType === "both") && form.baseSalary ? Number(form.baseSalary) : undefined,
       paidLeavesPerMonth: form.paidLeavesPerMonth !== "" && Number(form.paidLeavesPerMonth) >= 0 ? Number(form.paidLeavesPerMonth) : undefined,
       standardHoursPerDay: Number(form.standardHoursPerDay) > 0 ? Number(form.standardHoursPerDay) : undefined,
+      shiftStart: form.shiftStart && form.shiftEnd ? form.shiftStart : undefined,
+      shiftEnd: form.shiftStart && form.shiftEnd ? form.shiftEnd : undefined,
       upsellCommissionRate: form.upsellCommissionRate !== "" && Number(form.upsellCommissionRate) > 0 ? Number(form.upsellCommissionRate) : undefined,
       weeklyOffDays: offDays ?? undefined,
     };
@@ -263,10 +268,12 @@ function EditModal({
               )}
             </div>
           </div>
+          <ShiftFields start={form.shiftStart} end={form.shiftEnd}
+            onChange={(a, b) => setForm((f) => ({ ...f, shiftStart: a, shiftEnd: b }))} inputStyle={inp} />
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <label style={{ fontSize: 11, fontWeight: 700, color: "#9898b0", textTransform: "uppercase", letterSpacing: "0.06em" }}>Standard Hours / Day</label>
             <input type="number" min="0" step="0.5" style={inp} value={form.standardHoursPerDay} onChange={(e) => set("standardHoursPerDay", e.target.value)} placeholder="e.g. 8" />
-            <div style={{ fontSize: 11, color: "#b0b0c8" }}>A full working day for this person. Leave blank to use the salon standard from Settings → Business Hours.</div>
+            <div style={{ fontSize: 11, color: "#b0b0c8" }}>A full working day for this person. Leave blank to use their shift length, or the salon standard from Settings → Business Hours.</div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <label style={{ fontSize: 11, fontWeight: 700, color: "#9898b0", textTransform: "uppercase", letterSpacing: "0.06em" }}>Assigned Services</label>

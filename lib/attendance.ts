@@ -161,14 +161,36 @@ export function hoursWorked(record: Pick<AttendanceRecord, "checkIn" | "checkOut
   return span / 60;
 }
 
+/** Length of a staff member's own shift in hours, or null when they have none. A shift past midnight wraps. */
+export function shiftHours(staff?: { shiftStart?: string; shiftEnd?: string } | null): number | null {
+  if (!staff?.shiftStart || !staff?.shiftEnd) return null;
+  const hours = hoursWorked({ checkIn: staff.shiftStart, checkOut: staff.shiftEnd });
+  return hours && hours > 0 ? hours : null;
+}
+
+/**
+ * When `staff` should be in by on `date`: their own shift start, else the
+ * salon's opening time that weekday. Null on a day the salon is closed and
+ * they have no shift of their own.
+ */
+export function expectedStartFor(staff: { shiftStart?: string } | null | undefined, date: string): string | null {
+  if (staff?.shiftStart) return staff.shiftStart;
+  const hours = settingsStore.hours as { day: string; open: boolean; from: string }[] | undefined;
+  const weekday = new Date(`${date}T12:00:00`).toLocaleDateString("en-US", { weekday: "long" });
+  const today = Array.isArray(hours) ? hours.find((h) => h.day === weekday) : undefined;
+  return today?.open && today.from ? today.from : null;
+}
+
 /**
  * A full working day for this staff member: their own override if set, else the
  * salon-wide standard from Settings, else 8. Anything non-positive falls through
  * to the default rather than dividing pro-rated pay by zero.
  */
-export function standardHoursFor(staff?: { standardHoursPerDay?: number } | null): number {
+export function standardHoursFor(staff?: { standardHoursPerDay?: number; shiftStart?: string; shiftEnd?: string } | null): number {
   const own = Number(staff?.standardHoursPerDay);
   if (Number.isFinite(own) && own > 0) return own;
+  const shift = shiftHours(staff);
+  if (shift) return shift;
   const salon = Number((settingsStore.attendance as { standardHoursPerDay?: number } | undefined)?.standardHoursPerDay);
   if (Number.isFinite(salon) && salon > 0) return salon;
   return DEFAULT_STANDARD_HOURS;

@@ -63,10 +63,10 @@ async function loadStaff(req: NextRequest, salonId: string) {
   if (!user?.staffId) {
     return { signedIn: true as const, error: "This login isn't linked to a staff member. Ask the salon owner to create your staff login in Account → Roles & Permissions." };
   }
-  const staffList = (await loadJson(storageKey(salonId, actor.locationId, "staff"))) as { id: string; name?: string; isActive?: boolean }[] | null;
+  const staffList = (await loadJson(storageKey(salonId, actor.locationId, "staff"))) as { id: string; name?: string; isActive?: boolean; shiftStart?: string }[] | null;
   const staff = Array.isArray(staffList) ? staffList.find((s) => s.id === user.staffId) : undefined;
   if (!staff || staff.isActive === false) return { signedIn: true as const, error: "Your staff profile is missing or inactive at this salon." };
-  return { signedIn: true as const, staffId: user.staffId, staffName: staff.name || user.ownerName, locationId: actor.locationId };
+  return { signedIn: true as const, staffId: user.staffId, staffName: staff.name || user.ownerName, locationId: actor.locationId, shiftStart: staff.shiftStart };
 }
 
 function todayRecord(list: AttendanceRecord[], staffId: string, date: string) {
@@ -137,14 +137,16 @@ export async function POST(req: NextRequest) {
   let action: "in" | "out";
   let record: AttendanceRecord & { _updatedAt?: string; method?: string };
   if (!existing?.checkIn) {
-    // Late when past opening time + grace. A status the salon already set for
+    // Late when past the person's own shift start (else the salon's opening
+    // time that day) + grace. A status the salon already set for
     // a working day (e.g. Half-day) is kept; Absent/Leave/Week Off are
     // overridden because the person evidently came in.
     const hours = salon.settings.hours as { day: string; open: boolean; from: string }[] | undefined;
     const weekday = WEEKDAYS[new Date(`${date}T12:00:00Z`).getUTCDay()];
     const today = Array.isArray(hours) ? hours.find((h) => h.day === weekday) : undefined;
     const lateAfter = salon.qr.lateAfterMinutes ?? DEFAULT_LATE_AFTER_MINUTES;
-    const isLate = !!today?.open && !!today.from && minutes > toMinutes(today.from) + lateAfter;
+    const expectedStart = who.shiftStart || (today?.open && today.from ? today.from : "");
+    const isLate = !!expectedStart && minutes > toMinutes(expectedStart) + lateAfter;
     const keep = existing && ["present", "late", "half-day"].includes(existing.status);
     const status = keep ? existing!.status : isLate ? "late" : "present";
     record = existing

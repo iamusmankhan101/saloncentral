@@ -26,6 +26,7 @@ import { fmtCurrency as fmt } from "@/lib/format";
 import { revenueInPeriod, ALL_TIME_START, ALL_TIME_END } from "@/lib/payouts";
 import { upsellInPeriod, upsellIncentive } from "@/lib/upsell";
 import { getSalonInvoices, type SalonInvoice } from "@/lib/salon-invoices";
+import ShiftFields from "@/components/shift-fields";
 
 /**
  * Appointment count and revenue for one staff member's card.
@@ -112,6 +113,8 @@ function staffToRows(list: Staff[], servicesList: Service[]) {
       "Base Salary": staff.baseSalary ?? "",
       "Paid Leaves / Month": staff.paidLeavesPerMonth ?? "",
       "Standard Hours / Day": staff.standardHoursPerDay ?? "",
+      "Shift Start": staff.shiftStart ?? "",
+      "Shift End": staff.shiftEnd ?? "",
       "Specialties": staff.specialties.join(", "),
       "Assigned Services": assignedServices.join(", "),
       "Color": staff.color,
@@ -153,6 +156,8 @@ function StaffFormModal({ onClose, onSave, staff, servicesList, staffList }: { o
     paidLeavesPerMonth: staff?.paidLeavesPerMonth != null ? String(staff.paidLeavesPerMonth) : "",
     upsellCommissionRate: staff?.upsellCommissionRate != null ? String(staff.upsellCommissionRate) : "",
     standardHoursPerDay: staff?.standardHoursPerDay != null ? String(staff.standardHoursPerDay) : "",
+    shiftStart: staff?.shiftStart ?? "",
+    shiftEnd: staff?.shiftEnd ?? "",
   });
   const sectionOptions = getSectionOptions(staffList);
   // The role being edited is already the selected option, so don't list it twice.
@@ -203,6 +208,8 @@ function StaffFormModal({ onClose, onSave, staff, servicesList, staffList }: { o
       baseSalary: (form.payType === "salary" || form.payType === "both") && form.baseSalary ? Number(form.baseSalary) : undefined,
       paidLeavesPerMonth: form.paidLeavesPerMonth !== "" && Number(form.paidLeavesPerMonth) >= 0 ? Number(form.paidLeavesPerMonth) : undefined,
       standardHoursPerDay: Number(form.standardHoursPerDay) > 0 ? Number(form.standardHoursPerDay) : undefined,
+      shiftStart: form.shiftStart && form.shiftEnd ? form.shiftStart : undefined,
+      shiftEnd: form.shiftStart && form.shiftEnd ? form.shiftEnd : undefined,
       // Set on the Staff record's own page; preserved here so editing from the
       // list doesn't silently put the person back on the salon-wide roster.
       upsellCommissionRate: form.upsellCommissionRate !== "" && Number(form.upsellCommissionRate) > 0 ? Number(form.upsellCommissionRate) : undefined,
@@ -320,11 +327,15 @@ function StaffFormModal({ onClose, onSave, staff, servicesList, staffList }: { o
             <div style={{ fontSize: 11, color: "#b0b0c8" }}>Leave days marked in Attendance, up to this many per pay period, are paid in full; further leaves reduce salary. Leave blank to use the salon default from Settings → Business Hours.</div>
           </div>
 
+          <ShiftFields start={form.shiftStart} end={form.shiftEnd}
+            onChange={(a, b) => setForm((f) => ({ ...f, shiftStart: a, shiftEnd: b }))}
+            inputStyle={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #e8e8f0", fontSize: 13, color: "#1a1a2e", outline: "none", background: "#fff" }} />
+
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <label style={{ fontSize: 11, fontWeight: 700, color: "#9898b0", textTransform: "uppercase", letterSpacing: "0.06em" }}>Standard Hours / Day</label>
             <input type="number" min="0" step="0.5" value={form.standardHoursPerDay} onChange={(e) => set("standardHoursPerDay", e.target.value)} placeholder="e.g. 8"
               style={{ padding: "9px 12px", borderRadius: 8, border: "1px solid #e8e8f0", fontSize: 13, color: "#1a1a2e", outline: "none" }} />
-            <div style={{ fontSize: 11, color: "#b0b0c8" }}>A full working day for this person. Leave blank to use the salon standard from Settings → Business Hours.</div>
+            <div style={{ fontSize: 11, color: "#b0b0c8" }}>A full working day for this person. Leave blank to use their shift length, or the salon standard from Settings → Business Hours.</div>
           </div>
 
           <div style={{ padding: "10px 12px", borderRadius: 10, background: "#f5f3ff", color: "#6d28d9", fontSize: 12, lineHeight: 1.55, fontWeight: 650 }}>
@@ -412,6 +423,16 @@ function StaffImportModal({ existing, servicesList, onClose, onImport }: {
         const baseSalary = Number(row["Base Salary"] ?? row["Salary"] ?? "");
         const paidLeavesPerMonth = Number(row["Paid Leaves / Month"] ?? row["Paid Leaves"] ?? "");
         const standardHoursPerDay = Number(row["Standard Hours / Day"] ?? row["Standard Hours"] ?? "");
+        // Excel may hand back "11:00", "11:00 AM" or a day fraction (0.4583…).
+        const toHHMM = (v: unknown): string => {
+          if (typeof v === "number" && v >= 0 && v < 1) { const m = Math.round(v * 1440); return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`; }
+          const t = /^(\d{1,2}):(\d{2})\s*(am|pm)?$/i.exec(String(v ?? "").trim());
+          if (!t) return "";
+          let h = Number(t[1]) % 12 + (t[3] && t[3].toLowerCase() === "pm" ? 12 : 0);
+          if (!t[3]) h = Number(t[1]);
+          return h < 24 && Number(t[2]) < 60 ? `${String(h).padStart(2, "0")}:${t[2]}` : "";
+        };
+        const shiftStart = toHHMM(row["Shift Start"]), shiftEnd = toHHMM(row["Shift End"]);
         const assignedServiceNames = splitList(row["Assigned Services"] ?? row["Services"]);
         const specialties = splitList(row["Specialties"]).length ? splitList(row["Specialties"]) : assignedServiceNames;
 
@@ -435,6 +456,8 @@ function StaffImportModal({ existing, servicesList, onClose, onImport }: {
             baseSalary: (payType === "salary" || payType === "both") && Number.isFinite(baseSalary) ? baseSalary : undefined,
             paidLeavesPerMonth: (payType === "salary" || payType === "both") && Number.isFinite(paidLeavesPerMonth) ? paidLeavesPerMonth : undefined,
             standardHoursPerDay: Number.isFinite(standardHoursPerDay) && standardHoursPerDay > 0 ? standardHoursPerDay : undefined,
+            shiftStart: shiftStart && shiftEnd ? shiftStart : undefined,
+            shiftEnd: shiftStart && shiftEnd ? shiftEnd : undefined,
           },
         });
       }
