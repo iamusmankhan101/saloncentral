@@ -2,6 +2,18 @@ import { NextRequest } from "next/server";
 import { sendWhatsAppMessage, type WhatsAppProvider } from "@/lib/whatsapp-provider";
 import { checkWhatsAppSafety, recordWhatsAppSafetySend, type WhatsAppMessageIntent, type WhatsAppSafetyConfig } from "@/lib/whatsapp-safety";
 import { resolveActor } from "@/lib/api-auth";
+import { loadWhatsAppConfig } from "@/lib/whatsapp-config-server";
+
+/** The salon's stored provider fields, with blanks for unset ones so nothing from the request survives. */
+async function providerSetup(userId: string): Promise<Record<string, unknown>> {
+  const ws = await loadWhatsAppConfig(userId);
+  const keys = [
+    "provider", "apiKey", "botSailorApiToken", "botSailorPhoneNumberId", "zaptickApiKey",
+    "chakraAccessToken", "chakraPluginId", "chakraWhatsappPhoneNumberId",
+    "chakraTemplateReminder", "chakraTemplateConfirmation", "chakraTemplateFollowup", "chakraTemplateCancellation", "chakraTemplateBirthday",
+  ];
+  return Object.fromEntries(keys.map((k) => [k, typeof ws[k] === "string" && ws[k] ? ws[k] : undefined]));
+}
 
 export async function POST(request: NextRequest) {
   // Without this check, an unauthenticated caller who omits apiKey/botSailorApiToken
@@ -11,6 +23,9 @@ export async function POST(request: NextRequest) {
   if (!actor) return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
+  // The provider setup is admin-managed: always the salon's stored one,
+  // whatever the request carries.
+  Object.assign(body, await providerSetup(actor.userId));
   const {
     provider, apiKey, botSailorApiToken, botSailorPhoneNumberId, zaptickApiKey,
     chakraAccessToken, chakraPluginId, chakraWhatsappPhoneNumberId,

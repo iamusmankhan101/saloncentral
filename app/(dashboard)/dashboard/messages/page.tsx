@@ -20,6 +20,7 @@ import { getCurrentPlan } from "@/lib/plan-limits";
 import type { QueueDetailItem } from "@/app/api/whatsapp/queue-details/route";
 import { summarizeWinbackAudience, resolveWinbackConfig, WINBACK_DAILY_MAX, WINBACK_DEFAULTS } from "@/lib/winback";
 import type { Client } from "@/lib/types";
+import { whatsAppConnected } from "@/lib/whatsapp-scheduler";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -694,10 +695,8 @@ function MessagesPageContent() {
     autoReminder: boolean; autoConfirmation: boolean; autoFollowup: boolean;
     autoCancellation: boolean; autoLowStock: boolean;
   };
-  const activeCredential = ws.provider === "botsailor" ? ws.botSailorApiToken : ws.provider === "zaptick" ? ws.zaptickApiKey : ws.provider === "chakra" ? ws.chakraAccessToken : ws.apiKey;
-  const isConfigured = !!activeCredential
-    && (ws.provider !== "botsailor" || !!ws.botSailorPhoneNumberId)
-    && (ws.provider !== "chakra" || (!!ws.chakraPluginId && !!ws.chakraWhatsappPhoneNumberId));
+  // Keys are admin-managed and stay on the server; it reports `connected`.
+  const isConfigured = whatsAppConnected(ws);
   const [testingConn, setTestingConn] = useState(false);
   const [connStatus, setConnStatus] = useState<{ ok: boolean; message?: string; status?: string } | null>(null);
   // Use the real API result when available; null = still checking, true/false = known
@@ -708,18 +707,7 @@ function MessagesPageContent() {
     setTestingConn(true);
     setConnStatus(null);
     try {
-      const params = new URLSearchParams({
-        provider: ws.provider || "wasender",
-        apiKey: ws.apiKey,
-        botSailorApiToken: ws.botSailorApiToken || "",
-        botSailorPhoneNumberId: ws.botSailorPhoneNumberId || "",
-        zaptickApiKey: ws.zaptickApiKey || "",
-        chakraAccessToken: ws.chakraAccessToken || "",
-        chakraPluginId: ws.chakraPluginId || "",
-        chakraWhatsappPhoneNumberId: ws.chakraWhatsappPhoneNumberId || "",
-        force: "1",
-      });
-      const res = await fetch(`/api/whatsapp/status?${params}`);
+      const res = await fetch("/api/whatsapp/status?force=1");
       const data = await res.json() as { ok: boolean; connected: boolean; status?: string; message?: string; error?: string };
       setConnStatus({ ok: data.connected, message: data.message || data.error, status: data.status });
     } catch {

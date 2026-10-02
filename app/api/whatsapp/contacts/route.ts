@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { resolveActor } from "@/lib/api-auth";
+import { loadWhatsAppConfig } from "@/lib/whatsapp-config-server";
 
 interface WaSenderContact {
   jid?: unknown;
@@ -17,10 +18,11 @@ export async function POST(request: NextRequest) {
   if (!actor) return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json().catch(() => ({})) as { apiKey?: string };
-  const apiKey = body.apiKey || "";
+  void body.apiKey; // ignored: the key is admin-managed and read from the server
+  const apiKey = String((await loadWhatsAppConfig(actor.userId)).apiKey ?? "").trim();
 
   if (!apiKey) {
-    return Response.json({ ok: false, error: "WaSender API key not configured." }, { status: 400 });
+    return Response.json({ ok: false, error: "WhatsApp is not connected for this salon yet. Contact Salon Central support to set it up." }, { status: 400 });
   }
 
   try {

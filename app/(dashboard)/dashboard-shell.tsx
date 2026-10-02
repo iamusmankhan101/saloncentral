@@ -18,6 +18,7 @@ import type { Invoice } from "@/lib/invoices";
 import { PLAN_CONFIGS, getCurrentPlanId, type PlanId } from "@/lib/plan-limits";
 import { setActivePlan } from "@/lib/payment-requests";
 import { addSalonLocation, clearLocationLocalData, getActiveLocationFilter, getSalonLocations, removeSalonLocation, setActiveLocationFilter, type SalonLocation } from "@/lib/locations";
+import { whatsAppConnected } from "@/lib/whatsapp-scheduler";
 
 // ─── Notification chime ───────────────────────────────────────────────────────
 
@@ -769,22 +770,12 @@ export default function DashboardShell({ children }: { children: React.ReactNode
   useEffect(() => {
     if (!isReady || isAdmin) return;
     const config = settingsStore.wasender as { provider?: "wasender" | "botsailor" | "zaptick" | "chakra"; apiKey: string; botSailorApiToken?: string; botSailorPhoneNumberId?: string; zaptickApiKey?: string; chakraAccessToken?: string; chakraPluginId?: string; chakraWhatsappPhoneNumberId?: string };
-    const credential = config.provider === "botsailor" ? config.botSailorApiToken : config.provider === "zaptick" ? config.zaptickApiKey : config.provider === "chakra" ? config.chakraAccessToken : config.apiKey;
-    if (!credential) return;
+    // Keys are admin-managed and stay on the server; it checks with its own.
+    if (!whatsAppConnected(config)) return;
 
     async function checkWa() {
       try {
-        const params = new URLSearchParams({
-          provider: config.provider || "wasender",
-          apiKey: config.apiKey,
-          botSailorApiToken: config.botSailorApiToken || "",
-          botSailorPhoneNumberId: config.botSailorPhoneNumberId || "",
-          zaptickApiKey: config.zaptickApiKey || "",
-          chakraAccessToken: config.chakraAccessToken || "",
-          chakraPluginId: config.chakraPluginId || "",
-          chakraWhatsappPhoneNumberId: config.chakraWhatsappPhoneNumberId || "",
-        });
-        const res  = await fetch(`/api/whatsapp/status?${params}`);
+        const res  = await fetch("/api/whatsapp/status");
         if (!res.ok) return; // server error — keep current status, don't flip to disconnected
         const data = await res.json() as { connected?: boolean };
         setWaStatus(data.connected ? "connected" : "disconnected");

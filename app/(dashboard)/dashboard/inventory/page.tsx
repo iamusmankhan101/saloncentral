@@ -31,6 +31,7 @@ const UNITS: InventoryUnit[]      = ["ml", "g", "pcs", "box", "bottle", "tube"];
 const CATEGORIES = Object.keys(CATEGORY_CONFIG) as InventoryCategory[];
 
 import { fmtCurrency as fmt } from "@/lib/format";
+import { whatsAppConnected } from "@/lib/whatsapp-scheduler";
 const fmtV = (n: number) => {
   const currency = settingsStore.salon.currency || "PKR";
   return n >= 1_000_000 ? `${currency} ${(n / 1_000_000).toFixed(1)}M`
@@ -597,8 +598,8 @@ function ReminderModal({ alertItems, onClose }: { alertItems: InventoryItem[]; o
   };
 
   const sendViaApi = async () => {
-    if (!(ws.provider === "botsailor" ? ws.botSailorApiToken && ws.botSailorPhoneNumberId : ws.provider === "zaptick" ? ws.zaptickApiKey : ws.provider === "chakra" ? ws.chakraAccessToken : ws.apiKey)) {
-      setApiResult({ ok: false, msg: "WhatsApp provider credentials are not set in Account → WhatsApp Settings" });
+    if (!whatsAppConnected(ws)) {
+      setApiResult({ ok: false, msg: "WhatsApp isn't connected for this salon yet. Contact Salon Central support." });
       return;
     }
     if (!ws.ownerPhone) {
@@ -618,6 +619,7 @@ function ReminderModal({ alertItems, onClose }: { alertItems: InventoryItem[]; o
       const res = await fetch("/api/whatsapp/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        // The server adds the provider setup itself (keys never reach the browser).
         body: JSON.stringify({ ...ws, phone, text, messageIntent: "internal" }),
       });
       const data = await res.json() as { ok: boolean; skipped?: boolean };

@@ -1,5 +1,6 @@
 // Settings persisted to localStorage so changes survive page refreshes
 
+import { activeCredential, isProviderField } from "./whatsapp-credentials";
 import { userKey, getCurrentUser } from "./auth";
 import { saveSettingsToDB } from "./turso-sync";
 
@@ -213,6 +214,12 @@ function load() {
       wasender.randomDelayMinSeconds = dynamicDefaults.wasender.randomDelayMinSeconds;
       wasender.randomDelayMaxSeconds = dynamicDefaults.wasender.randomDelayMaxSeconds;
     }
+    // WhatsApp provider keys are admin-managed and kept on the server. A copy
+    // cached before that change is dropped here, keeping only the fact that one
+    // was set — the next settings sync replaces it with the server's `connected`.
+    const cached = wasender as Record<string, unknown>;
+    if (cached.connected === undefined && activeCredential(cached)) cached.connected = true;
+    for (const k of Object.keys(cached)) if (isProviderField(k)) cached[k] = "";
 
     return {
       replicate: { ...dynamicDefaults.replicate, ...saved.replicate },

@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { checkWhatsAppProvider, type WhatsAppProvider } from "@/lib/whatsapp-provider";
 import { resolveActor } from "@/lib/api-auth";
+import { loadWhatsAppConfig } from "@/lib/whatsapp-config-server";
 
 // Server-side cache — one real check per 15 minutes maximum.
 // Free WaSender plan = 1 req/min total (includes message sends).
@@ -13,19 +14,22 @@ export async function GET(request: NextRequest) {
   if (!actor) return Response.json({ ok: false, connected: false, error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(request.url);
-  const provider = (searchParams.get("provider") || "wasender") as WhatsAppProvider;
-  const apiKey = searchParams.get("apiKey") || "";
-  const botSailorApiToken = searchParams.get("botSailorApiToken") || "";
-  const botSailorPhoneNumberId = searchParams.get("botSailorPhoneNumberId") || "";
-  const zaptickApiKey = searchParams.get("zaptickApiKey") || "";
-  const chakraAccessToken = searchParams.get("chakraAccessToken") || "";
-  const chakraPluginId = searchParams.get("chakraPluginId") || "";
-  const chakraWhatsappPhoneNumberId = searchParams.get("chakraWhatsappPhoneNumberId") || "";
+  // Provider + keys come from the salon's stored setup, never the browser.
+  const ws = await loadWhatsAppConfig(actor.userId);
+  const str = (k: string) => (typeof ws[k] === "string" ? (ws[k] as string).trim() : "");
+  const provider = (str("provider") || "wasender") as WhatsAppProvider;
+  const apiKey = str("apiKey");
+  const botSailorApiToken = str("botSailorApiToken");
+  const botSailorPhoneNumberId = str("botSailorPhoneNumberId");
+  const zaptickApiKey = str("zaptickApiKey");
+  const chakraAccessToken = str("chakraAccessToken");
+  const chakraPluginId = str("chakraPluginId");
+  const chakraWhatsappPhoneNumberId = str("chakraWhatsappPhoneNumberId");
   const force  = searchParams.get("force") === "1"; // manual "Test Connection" click
 
   const credential = provider === "botsailor" ? botSailorApiToken : provider === "zaptick" ? zaptickApiKey : provider === "chakra" ? chakraAccessToken : apiKey;
   if (!credential) {
-    return Response.json({ ok: false, connected: false, error: "No API key configured" });
+    return Response.json({ ok: false, connected: false, error: "Not connected - contact Salon Central support" });
   }
 
   // Return cached result unless a manual test is requested

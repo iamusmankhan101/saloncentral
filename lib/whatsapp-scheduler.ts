@@ -12,6 +12,18 @@ import { appointmentStartHasPassed, appointmentStartMs, timezoneFromSettings } f
  *      "3001234567"     → "923001234567"  (10-digit PK mobile, no leading 0)
  *      "923001234567"   → "923001234567"  (already correct)
  */
+/**
+ * Is a WhatsApp provider set up for this salon? The keys are admin-managed and
+ * never reach the browser — the server reports `connected` instead (see
+ * lib/whatsapp-credentials.ts). A key still cached from before that change
+ * counts too, until the next settings sync replaces it.
+ */
+export function whatsAppConnected(ws: { connected?: boolean; provider?: string; apiKey?: string; botSailorApiToken?: string; zaptickApiKey?: string; chakraAccessToken?: string } | null | undefined): boolean {
+  if (!ws) return false;
+  if (ws.connected) return true;
+  return !!(ws.provider === "botsailor" ? ws.botSailorApiToken : ws.provider === "zaptick" ? ws.zaptickApiKey : ws.provider === "chakra" ? ws.chakraAccessToken : ws.apiKey);
+}
+
 export function normalizePhone(raw: string, countryCode = "92"): string {
   let digits = raw.replace(/\D/g, "");
   // International "00" prefix is the same as "+" (e.g. 00971501234567 → 971501234567)
@@ -467,7 +479,7 @@ export async function sendGroupBookingAlert(appt: {
   if (ws.provider === "botsailor") { console.warn("⚠️ New Booking group alert skipped — BotSailor doesn't support sending to groups."); return; }
   if (ws.provider === "chakra") { console.warn("⚠️ New Booking group alert skipped — ChakraHQ (Meta Cloud API) doesn't support sending to groups."); return; }
   if (!ws.autoGroupBooking) { console.warn("⚠️ New Booking group alert disabled — enable \"New Booking Group Alert\" in Account → WhatsApp Settings"); return; }
-  const hasCredentials = ws.provider === "zaptick" ? !!ws.zaptickApiKey : ws.provider === "chakra" ? !!ws.chakraAccessToken : !!ws.apiKey;
+  const hasCredentials = whatsAppConnected(ws);
   if (!hasCredentials) { console.warn("⚠️ New Booking group alert skipped — no WhatsApp provider credentials set"); return; }
   if (!ws.bookingGroupJid?.endsWith("@g.us")) { console.warn("⚠️ New Booking group alert skipped — no WhatsApp group linked in Account → WhatsApp Settings"); return; }
 
@@ -904,7 +916,7 @@ export async function checkBirthdayReminders(force = false, queueNewBirthdays = 
   // override, so it still works even while automation is paused.
   if (!force && ws.enabled === false) return;
   if (!force && !bd.autoBirthday) return;
-  if (!force && !(ws.provider === "botsailor" ? ws.botSailorApiToken : ws.provider === "zaptick" ? ws.zaptickApiKey : ws.provider === "chakra" ? ws.chakraAccessToken : ws.apiKey)) return;
+  if (!force && !whatsAppConnected(ws)) return;
 
   const birthdayTemplate = (settingsStore.whatsapp as { birthday: string; birthdayNoDiscount?: string })[
     bd.birthdayDiscountEnabled === false ? "birthdayNoDiscount" : "birthday"
@@ -1133,7 +1145,7 @@ async function runSchedulerInternal(): Promise<void> {
   // Check if WhatsApp automation is enabled
   if (ws.enabled === false) return;
 
-  if (!(ws.provider === "botsailor" ? ws.botSailorApiToken : ws.provider === "zaptick" ? ws.zaptickApiKey : ws.provider === "chakra" ? ws.chakraAccessToken : ws.apiKey)) return;
+  if (!whatsAppConnected(ws)) return;
 
   const waTpl = settingsStore.whatsapp as {
     reminder: string;
@@ -1359,7 +1371,7 @@ export async function checkLowStockAlerts(): Promise<void> {
   // applies for the WaSender/Zaptick providers.
   const groupJid = ws.provider !== "botsailor" && ws.provider !== "chakra" && ws.bookingGroupJid?.endsWith("@g.us") ? ws.bookingGroupJid : "";
   if (!ws.ownerPhone && !groupJid) { console.warn("⚠️ No owner phone or linked WhatsApp group set — add one in Account → WhatsApp Settings"); return; }
-  if (!(ws.provider === "botsailor" ? ws.botSailorApiToken : ws.provider === "zaptick" ? ws.zaptickApiKey : ws.provider === "chakra" ? ws.chakraAccessToken : ws.apiKey)) { console.warn("⚠️ No WhatsApp provider credentials set — add them in Account → WhatsApp Settings"); return; }
+  if (!whatsAppConnected(ws)) { console.warn("⚠️ No WhatsApp provider credentials set — add them in Account → WhatsApp Settings"); return; }
 
   const lowstockTemplate = (settingsStore.whatsapp as { lowstock: string }).lowstock;
   if (!lowstockTemplate) { console.warn("⚠️ No low stock template found in WhatsApp Settings"); return; }

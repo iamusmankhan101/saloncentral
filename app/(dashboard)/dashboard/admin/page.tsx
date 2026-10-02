@@ -17,6 +17,7 @@ import type { Invoice } from "@/lib/invoices";
 import { fmtCurrency as fmt } from "@/lib/format";
 import { PLAN_CONFIGS, ORDERED_PLANS, type PlanId } from "@/lib/plan-limits";
 import { DEFAULT_BANK_DETAILS, DEFAULT_BILLED_FROM, type BilledFrom } from "@/lib/billing-constants";
+import AdminWhatsAppModal from "@/components/admin-whatsapp-modal";
 
 interface BillingUserRow {
   id: string;
@@ -1515,6 +1516,7 @@ function UsersPanel() {
   const [updatingApproval, setUpdatingApproval] = useState<string | null>(null);
   const [freezeTarget, setFreezeTarget] = useState<AccountUserRow | null>(null);
   const [devicesTarget, setDevicesTarget] = useState<AccountUserRow | null>(null);
+  const [whatsAppTarget, setWhatsAppTarget] = useState<AccountUserRow | null>(null);
   const [dueDrafts, setDueDrafts] = useState<Record<string, string>>({});
   const [savingDueId, setSavingDueId] = useState<string | null>(null);
   const [dueError, setDueError] = useState<string | null>(null);
@@ -1658,6 +1660,9 @@ function UsersPanel() {
           }}
         />
       )}
+      {whatsAppTarget && (
+        <AdminWhatsAppModal userId={whatsAppTarget.id} salonName={whatsAppTarget.salonName || whatsAppTarget.ownerName} onClose={() => setWhatsAppTarget(null)} />
+      )}
       {devicesTarget && (
         <DevicesModal
           row={devicesTarget}
@@ -1757,6 +1762,12 @@ function UsersPanel() {
                     }}>
                     <Monitor size={12} /> {row.activeDevices}
                   </button>
+                  {row.role === "owner" && (
+                    <button onClick={() => setWhatsAppTarget(row)} title="Set this salon's WhatsApp connection"
+                      style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 6, padding: "4px 10px", borderRadius: 16, cursor: "pointer", border: "1px solid #bbf7d0", background: "#f0fdf4", color: "#059669", fontSize: 11, fontWeight: 800 }}>
+                      WhatsApp
+                    </button>
+                  )}
                 </div>
                 <div style={{ fontSize: 12, color: "#6b6b8a", fontWeight: 700 }}>{row.planName ?? "—"}</div>
                 <div>

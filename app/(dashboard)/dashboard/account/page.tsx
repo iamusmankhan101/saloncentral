@@ -14,6 +14,7 @@ import type { Staff, Client } from "@/lib/types";
 import { normalizePhone } from "@/lib/whatsapp-scheduler";
 import { getDefaultLocationId, getSalonLocations, type SalonLocation } from "@/lib/locations";
 import { getCurrentPlan } from "@/lib/plan-limits";
+import { whatsAppConnected } from "@/lib/whatsapp-scheduler";
 
 type SectionId = "profile" | "salon" | "hours" | "roles" | "security" | "whatsapp" | "mcp" | "decidr" | "tryon";
 
@@ -1095,53 +1096,32 @@ function WhatsAppSection() {
   }
 
   async function testConnection() {
-    const credential = form.provider === "botsailor" ? form.botSailorApiToken : form.provider === "zaptick" ? form.zaptickApiKey : form.provider === "chakra" ? form.chakraAccessToken : form.apiKey;
-    const missingProviderFields = (form.provider === "botsailor" && !form.botSailorPhoneNumberId)
-      || (form.provider === "chakra" && (!form.chakraPluginId || !form.chakraWhatsappPhoneNumberId));
-    if (!credential || missingProviderFields) {
-      const msg = form.provider === "botsailor"
-        ? "Enter your BotSailor API token and phone number ID first."
-        : form.provider === "zaptick"
-        ? "Enter your Zaptick API key first."
-        : form.provider === "chakra"
-        ? "Enter your Chakra access token, Plugin ID, and WhatsApp Phone Number ID first."
-        : "Enter your WaSender API key first.";
-      setTestResult({ ok: false, msg });
+    if (!activeCredential) {
+      setTestResult({ ok: false, msg: "WhatsApp is not connected for your salon yet. Contact Salon Central support to set it up." });
       return;
     }
     setTesting(true);
     setTestResult(null);
     try {
-      const params = new URLSearchParams({
-        force: "1",
-        provider: form.provider,
-        apiKey: form.apiKey,
-        botSailorApiToken: form.botSailorApiToken,
-        botSailorPhoneNumberId: form.botSailorPhoneNumberId,
-        zaptickApiKey: form.zaptickApiKey,
-        chakraAccessToken: form.chakraAccessToken,
-        chakraPluginId: form.chakraPluginId,
-        chakraWhatsappPhoneNumberId: form.chakraWhatsappPhoneNumberId,
-      });
-      const res = await fetch(`/api/whatsapp/status?${params}`);
+      const res = await fetch("/api/whatsapp/status?force=1");
       const data = await res.json();
       if (data.connected) {
         setConnectionState("connected");
         setTestResult({ ok: true, msg: "Connected! The salon WhatsApp session is active." });
       } else {
         setConnectionState("disconnected");
-        setTestResult({ ok: false, msg: data.message || `${form.provider === "botsailor" ? "BotSailor" : form.provider === "zaptick" ? "Zaptick" : form.provider === "chakra" ? "ChakraHQ" : "WaSender"} connection failed.` });
+        setTestResult({ ok: false, msg: data.message || data.error || "WhatsApp is disconnected. Contact Salon Central support." });
       }
     } catch {
       setConnectionState("disconnected");
-      setTestResult({ ok: false, msg: `Could not reach ${form.provider === "botsailor" ? "BotSailor" : form.provider === "zaptick" ? "Zaptick" : form.provider === "chakra" ? "ChakraHQ" : "WaSender"}. Check your internet connection.` });
+      setTestResult({ ok: false, msg: "Could not reach WhatsApp. Check your internet connection." });
     }
     setTesting(false);
   }
 
   async function testGroup() {
-    if (!form.apiKey || !form.bookingGroupJid?.endsWith("@g.us")) {
-      setTestResult({ ok: false, msg: "Enter an API key and a valid Group ID ending in @g.us." });
+    if (!activeCredential || !form.bookingGroupJid?.endsWith("@g.us")) {
+      setTestResult({ ok: false, msg: activeCredential ? "Select a WhatsApp group first." : "WhatsApp is not connected for your salon yet. Contact Salon Central support to set it up." });
       return;
     }
     setTesting(true);
@@ -1151,10 +1131,6 @@ function WhatsAppSection() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          apiKey: form.apiKey,
-          provider: form.provider,
-          botSailorApiToken: form.botSailorApiToken,
-          botSailorPhoneNumberId: form.botSailorPhoneNumberId,
           phone: form.bookingGroupJid,
           text: "Salon Central booking group connected ✅",
           messageIntent: "internal",
@@ -1165,14 +1141,14 @@ function WhatsAppSection() {
         ? { ok: true, msg: "Connected! Test message sent to the booking group." }
         : { ok: false, msg: `Group test failed (status ${data.status ?? res.status}). Check the Group ID.` });
     } catch {
-      setTestResult({ ok: false, msg: "Could not reach WaSender API. Check your internet connection." });
+      setTestResult({ ok: false, msg: "Could not reach WhatsApp. Check your internet connection." });
     }
     setTesting(false);
   }
 
   async function loadGroups() {
-    if (!form.apiKey) {
-      setTestResult({ ok: false, msg: "Enter your WaSender API key first." });
+    if (!activeCredential) {
+      setTestResult({ ok: false, msg: "WhatsApp is not connected for your salon yet. Contact Salon Central support to set it up." });
       return;
     }
     setLoadingGroups(true);
@@ -1181,7 +1157,7 @@ function WhatsAppSection() {
       const response = await fetch("/api/whatsapp/groups", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey: form.apiKey }),
+        body: JSON.stringify({}),
       });
       const data = await response.json() as {
         ok?: boolean;
@@ -1200,19 +1176,19 @@ function WhatsAppSection() {
         ok: availableGroups.length > 0,
         msg: availableGroups.length > 0
           ? `Found ${availableGroups.length} WhatsApp group${availableGroups.length === 1 ? "" : "s"}.`
-          : `No groups were returned for ${data.session?.name || data.session?.id || "this WaSender session"}. Reconnect the salon number in WaSender to refresh group sync, then try again.`,
+          : `No groups were returned for ${data.session?.name || data.session?.id || "your WhatsApp number"}. If you just joined the group, wait a few minutes and try again, or contact Salon Central support.`,
       });
     } catch {
       setGroups([]);
-      setTestResult({ ok: false, msg: "Could not reach WaSender API. Check your connection." });
+      setTestResult({ ok: false, msg: "Could not reach WhatsApp. Check your connection." });
     } finally {
       setLoadingGroups(false);
     }
   }
 
   async function addGroupFromInvite() {
-    if (!form.apiKey || !groupInviteLink.trim()) {
-      setTestResult({ ok: false, msg: "Enter your API key and the WhatsApp group invite link." });
+    if (!activeCredential || !groupInviteLink.trim()) {
+      setTestResult({ ok: false, msg: activeCredential ? "Paste the WhatsApp group invite link." : "WhatsApp is not connected for your salon yet. Contact Salon Central support to set it up." });
       return;
     }
     setLoadingGroups(true);
@@ -1221,7 +1197,7 @@ function WhatsAppSection() {
       const response = await fetch("/api/whatsapp/groups", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey: form.apiKey, inviteLink: groupInviteLink.trim() }),
+        body: JSON.stringify({ inviteLink: groupInviteLink.trim() }),
       });
       const data = await response.json() as {
         ok?: boolean;
@@ -1245,8 +1221,8 @@ function WhatsAppSection() {
   }
 
   async function loadContacts() {
-    if (!form.apiKey) {
-      setTestResult({ ok: false, msg: "Enter your WaSender API key first." });
+    if (!activeCredential) {
+      setTestResult({ ok: false, msg: "WhatsApp is not connected for your salon yet. Contact Salon Central support to set it up." });
       return;
     }
     setLoadingContacts(true);
@@ -1255,7 +1231,7 @@ function WhatsAppSection() {
       const response = await fetch("/api/whatsapp/contacts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey: form.apiKey }),
+        body: JSON.stringify({}),
       });
       const data = await response.json() as {
         ok?: boolean;
@@ -1275,12 +1251,12 @@ function WhatsAppSection() {
       if (availableContacts.length === 0) {
         setTestResult({
           ok: false,
-          msg: `No contacts were returned for ${data.session?.name || data.session?.id || "this WaSender session"}. Reconnect the salon number in WaSender to refresh contact sync, then try again.`,
+          msg: `No contacts were returned for ${data.session?.name || data.session?.id || "your WhatsApp number"}. Contact Salon Central support if this keeps happening.`,
         });
       }
     } catch {
       setContacts([]);
-      setTestResult({ ok: false, msg: "Could not reach WaSender API. Check your connection." });
+      setTestResult({ ok: false, msg: "Could not reach WhatsApp. Check your connection." });
     } finally {
       setLoadingContacts(false);
     }
@@ -1296,8 +1272,10 @@ function WhatsAppSection() {
   const totalSelectedCount = filteredContacts.filter((contact) => selectedContactKeys.has(contactKey(contact)) && !isExistingClient(contact.phone)).length;
   const allVisibleSelected = visibleSelectableContacts.length > 0 && selectedVisibleCount === visibleSelectableContacts.length;
 
-  const activeCredential = form.provider === "botsailor" ? form.botSailorApiToken : form.provider === "zaptick" ? form.zaptickApiKey : form.provider === "chakra" ? form.chakraAccessToken : form.apiKey;
-  const isConnected = !!activeCredential && connectionState !== "disconnected";
+  // The provider keys are admin-managed and never reach the browser; the
+  // server only tells us whether one is set.
+  const activeCredential = whatsAppConnected(settingsStore.wasender as Parameters<typeof whatsAppConnected>[0]);
+  const isConnected = activeCredential && connectionState !== "disconnected";
   const isEnabled = form.enabled !== false; // Default to true if not set
 
   if (!waPlan.whatsapp) {
@@ -1328,7 +1306,7 @@ function WhatsAppSection() {
         <div style={{ flex: 1 }}>
           <h2 style={{ margin: "0 0 6px", color: "#1d1d2f", fontSize: 20, fontWeight: 900 }}>WhatsApp Automation</h2>
           <p style={{ margin: 0, color: "#9999b0", fontSize: 12 }}>
-            Choose WaSenderAPI, BotSailor, Zaptick, or ChakraHQ as the active provider. All automated and manual messages use the selected connection.
+            Automatic reminders, confirmations and follow-ups from your salon&apos;s WhatsApp number. The WhatsApp connection itself is set up and managed by Salon Central.
           </p>
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
@@ -1364,7 +1342,7 @@ function WhatsAppSection() {
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 8, height: 8, borderRadius: "50%", background: isConnected && isEnabled ? "var(--accent)" : "#d1d1e0" }} />
           <span style={{ fontSize: 13, fontWeight: 700, color: isConnected && isEnabled ? "var(--accent)" : "#9999b0" }}>
-            {!activeCredential ? "Not configured" : !isEnabled ? "Disabled" : connectionState === "disconnected" ? "WhatsApp Disconnected" : connectionState === "connected" ? "WhatsApp Connected" : "WhatsApp Configured"}
+            {!activeCredential ? "Not connected — contact Salon Central support" : !isEnabled ? "Disabled" : connectionState === "disconnected" ? "WhatsApp Disconnected" : connectionState === "connected" ? "WhatsApp Connected" : "WhatsApp Configured"}
           </span>
         </div>
         {isConnected && isEnabled && <span style={{ fontSize: 11, color: "#9999b0" }}>Scheduler runs every 60 seconds</span>}
@@ -1373,200 +1351,9 @@ function WhatsAppSection() {
       {/* Credentials */}
       <div style={{ marginBottom: 22, opacity: isEnabled ? 1 : 0.5, pointerEvents: isEnabled ? "auto" : "none" }}>
         <div style={{ fontSize: 11, fontWeight: 800, color: "#7c7c9a", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 14 }}>
-          Provider & Credentials
+          Your WhatsApp
         </div>
         <div style={{ display: "grid", gap: 14 }}>
-          <Field label="Active Provider" hint="Switching provider affects every new WhatsApp message">
-            <select style={inputStyle} value={form.provider} onChange={(e) => { set("provider", e.target.value as WhatsAppSettings["provider"]); setConnectionState("unknown"); setTestResult(null); }}>
-              <option value="wasender">WaSenderAPI</option>
-              <option value="botsailor">BotSailor</option>
-              <option value="zaptick">Zaptick.io</option>
-              <option value="chakra">ChakraHQ</option>
-            </select>
-          </Field>
-          {form.provider === "wasender" ? <Field label="WaSender API Key" hint="wasenderapi.com → Dashboard → API Keys">
-            <input
-              style={inputStyle}
-              type="password"
-              value={form.apiKey}
-              onChange={(e) => set("apiKey", e.target.value)}
-              placeholder="your-api-key"
-            />
-          </Field> : form.provider === "botsailor" ? (
-            <>
-              <Field label="BotSailor API Token" hint="BotSailor → User menu → API Developer">
-                <input style={inputStyle} type="password" value={form.botSailorApiToken} onChange={(e) => set("botSailorApiToken", e.target.value)} placeholder="your-botsailor-api-token" />
-              </Field>
-              <Field label="WhatsApp Phone Number ID" hint="Select the connected WhatsApp account in BotSailor">
-                <input style={inputStyle} value={form.botSailorPhoneNumberId} onChange={(e) => set("botSailorPhoneNumberId", e.target.value)} placeholder="e.g. 119060000000000" />
-              </Field>
-              <div style={{ fontSize: 12, color: "#6b7280", background: "#fef3c7", padding: "12px 16px", borderRadius: 10, border: "1px solid #fcd34d", marginTop: 8 }}>
-                ℹ️ <strong>BotSailor uses Meta Message Templates:</strong> You must create and get approval for message templates in your Meta Business Manager. Enter the template IDs below for each message type.
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 8 }}>
-                <Field label="Reminder Template ID" hint="Template for appointment reminders">
-                  <input style={inputStyle} value={form.botSailorTemplateReminder || ""} onChange={(e) => set("botSailorTemplateReminder", e.target.value)} placeholder="e.g. appointment_reminder" />
-                </Field>
-                <Field label="Confirmation Template ID" hint="Template for booking confirmations">
-                  <input style={inputStyle} value={form.botSailorTemplateConfirmation || ""} onChange={(e) => set("botSailorTemplateConfirmation", e.target.value)} placeholder="e.g. booking_confirmation" />
-                </Field>
-                <Field label="Follow-up Template ID" hint="Template for post-visit follow-ups">
-                  <input style={inputStyle} value={form.botSailorTemplateFollowup || ""} onChange={(e) => set("botSailorTemplateFollowup", e.target.value)} placeholder="e.g. followup_message" />
-                </Field>
-                <Field label="Cancellation Template ID" hint="Template for cancellation win-backs">
-                  <input style={inputStyle} value={form.botSailorTemplateCancellation || ""} onChange={(e) => set("botSailorTemplateCancellation", e.target.value)} placeholder="e.g. cancellation_winback" />
-                </Field>
-                <Field label="Birthday Template ID" hint="Template for birthday greetings">
-                  <input style={inputStyle} value={form.botSailorTemplateBirthday || ""} onChange={(e) => set("botSailorTemplateBirthday", e.target.value)} placeholder="e.g. birthday_greeting" />
-                </Field>
-              </div>
-            </>
-          ) : form.provider === "zaptick" ? (
-            <>
-              <Field label="Zaptick API Key" hint="Get your API key after connecting via Zaptick dashboard">
-                <input style={inputStyle} type="password" value={form.zaptickApiKey} onChange={(e) => set("zaptickApiKey", e.target.value)} placeholder="your-zaptick-api-key" />
-              </Field>
-              
-              {/* Zaptick Connection Guide */}
-              <div style={{ gridColumn: "1 / -1", border: "2px solid #e5e7eb", borderRadius: 12, overflow: "hidden", background: "#fff" }}>
-                <div style={{ background: "linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)", padding: "14px 18px", display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <Smartphone size={18} style={{ color: "#fff" }} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 800, color: "#fff" }}>Connect WhatsApp Business API</div>
-                    <div style={{ fontSize: 11, color: "rgba(255,255,255,0.9)" }}>Secure setup via Facebook Business integration</div>
-                  </div>
-                </div>
-                <div style={{ padding: "20px", background: "#fafafa", display: "flex", flexDirection: "column", gap: 16 }}>
-                  {/* Step-by-step guide */}
-                  <div style={{ display: "grid", gap: 14 }}>
-                    {/* Step 1 */}
-                    <div style={{ display: "flex", gap: 14, padding: "16px", background: "#fff", borderRadius: 10, border: "1px solid #e5e7eb" }}>
-                      <div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg, #06b6d4, #0891b2)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 16, flexShrink: 0 }}>1</div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 13, fontWeight: 800, color: "#1f2937", marginBottom: 4 }}>Open Zaptick Dashboard</div>
-                        <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 10, lineHeight: 1.5 }}>
-                          Click the button below to open Zaptick. You'll need a Facebook Business account to connect.
-                        </div>
-                        <a 
-                          href="https://app.zaptick.io/connect" 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "9px 16px", borderRadius: 8, background: "linear-gradient(135deg, #06b6d4, #0891b2)", color: "#fff", fontSize: 12, fontWeight: 700, textDecoration: "none", boxShadow: "0 2px 6px rgba(6,182,212,0.3)" }}
-                        >
-                          <Smartphone size={14} />
-                          Open Zaptick Dashboard →
-                        </a>
-                      </div>
-                    </div>
-                    
-                    {/* Step 2 */}
-                    <div style={{ display: "flex", gap: 14, padding: "16px", background: "#fff", borderRadius: 10, border: "1px solid #e5e7eb" }}>
-                      <div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg, #0891b2, #0e7490)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 16, flexShrink: 0 }}>2</div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 13, fontWeight: 800, color: "#1f2937", marginBottom: 4 }}>Connect with Facebook</div>
-                        <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 8, lineHeight: 1.5 }}>
-                          Click "Connect with Facebook" button in Zaptick dashboard. This will:
-                        </div>
-                        <div style={{ fontSize: 11, color: "#4b5563", background: "#f9fafb", padding: "10px 12px", borderRadius: 6, border: "1px solid #e5e7eb" }}>
-                          ✓ Authenticate with Meta/Facebook<br/>
-                          ✓ Link your WhatsApp Business Account<br/>
-                          ✓ Activate templates and campaigns instantly<br/>
-                          ✓ Secure, encrypted connection (Official Meta Partner)
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Step 3 */}
-                    <div style={{ display: "flex", gap: 14, padding: "16px", background: "#fff", borderRadius: 10, border: "1px solid #e5e7eb" }}>
-                      <div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg, #059669, #047857)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 16, flexShrink: 0 }}>3</div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 13, fontWeight: 800, color: "#1f2937", marginBottom: 4 }}>Copy API Key & Save</div>
-                        <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 8, lineHeight: 1.5 }}>
-                          After connecting, Zaptick will show your API key. Copy it and paste it in the field above, then click "Save Changes" at the bottom of this page.
-                        </div>
-                        <div style={{ fontSize: 11, color: "#059669", fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
-                          <Check size={14} />
-                          You're all set! Start sending automated WhatsApp messages
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* Visual connection indicator */}
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 16, padding: "16px", background: "#fff", borderRadius: 10, border: "1px dashed #cbd5e1" }}>
-                    <div style={{ textAlign: "center" }}>
-                      <div style={{ width: 48, height: 48, borderRadius: 12, background: "#eff6ff", border: "2px solid #3b82f6", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 8px" }}>
-                        <span style={{ fontSize: 24 }}>f</span>
-                      </div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: "#3b82f6" }}>Facebook</div>
-                    </div>
-                    <div style={{ fontSize: 20, color: "#cbd5e1" }}>→</div>
-                    <div style={{ textAlign: "center" }}>
-                      <div style={{ width: 48, height: 48, borderRadius: 12, background: "#f0fdfa", border: "2px solid #14b8a6", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 8px" }}>
-                        <Smartphone size={24} style={{ color: "#14b8a6" }} />
-                      </div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: "#14b8a6" }}>WhatsApp</div>
-                    </div>
-                    <div style={{ fontSize: 20, color: "#cbd5e1" }}>→</div>
-                    <div style={{ textAlign: "center" }}>
-                      <div style={{ width: 48, height: 48, borderRadius: 12, background: "#eff6ff", border: "2px solid #bfdbfe", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 8px" }}>
-                        <Zap size={24} style={{ color: "#3b82f6" }} />
-                      </div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: "#3b82f6" }}>Zaptick</div>
-                    </div>
-                    <div style={{ fontSize: 20, color: "#cbd5e1" }}>→</div>
-                    <div style={{ textAlign: "center" }}>
-                      <div style={{ width: 48, height: 48, borderRadius: 12, background: "#f5f3ff", border: "2px solid #ddd6fe", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 8px" }}>
-                        <Store size={24} style={{ color: "#7c3aed" }} />
-                      </div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: "#7c3aed" }}>Werzio</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              
-              <div style={{ fontSize: 12, color: "#6b7280", background: "#f9fafb", padding: "12px 16px", borderRadius: 10, border: "1px solid #e5e7eb", gridColumn: "1 / -1" }}>
-                💡 <strong>Official Meta Partner:</strong> Zaptick connects via Facebook Business integration, giving you access to WhatsApp Business API with approved message templates, instant activation, and end-to-end encryption. Works with existing or new WhatsApp Business numbers.
-              </div>
-            </>
-          ) : form.provider === "chakra" ? (
-            <>
-              <Field label="Chakra Access Token" hint="ChakraHQ → Admin → API Keys (chakrahq.com)">
-                <input style={inputStyle} type="password" value={form.chakraAccessToken} onChange={(e) => set("chakraAccessToken", e.target.value)} placeholder="your-chakra-access-token" />
-              </Field>
-              <Field label="Plugin ID" hint="WhatsApp Setup page → ⋮ menu → Copy Plugin Id">
-                <input style={inputStyle} value={form.chakraPluginId} onChange={(e) => set("chakraPluginId", e.target.value)} placeholder="e.g. 6f2a1c9e-..." />
-              </Field>
-              <Field label="WhatsApp Phone Number ID" hint="WhatsApp Setup page → ⚙️ next to Phone Numbers → Meta ID">
-                <input style={inputStyle} value={form.chakraWhatsappPhoneNumberId} onChange={(e) => set("chakraWhatsappPhoneNumberId", e.target.value)} placeholder="e.g. 119060000000000" />
-              </Field>
-              <div style={{ fontSize: 12, color: "#6b7280", background: "#fef3c7", padding: "12px 16px", borderRadius: 10, border: "1px solid #fcd34d", marginTop: 8 }}>
-                ℹ️ <strong>ChakraHQ uses Meta Message Templates:</strong> Like BotSailor, ChakraHQ is a Meta Cloud API partner — proactive messages (reminders, confirmations, etc.) require an approved WhatsApp template. Create and get approval for templates in ChakraHQ / Meta Business Manager, then enter each template name below.
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 8 }}>
-                <Field label="Reminder Template Name" hint="Template for appointment reminders">
-                  <input style={inputStyle} value={form.chakraTemplateReminder || ""} onChange={(e) => set("chakraTemplateReminder", e.target.value)} placeholder="e.g. appointment_reminder" />
-                </Field>
-                <Field label="Confirmation Template Name" hint="Template for booking confirmations">
-                  <input style={inputStyle} value={form.chakraTemplateConfirmation || ""} onChange={(e) => set("chakraTemplateConfirmation", e.target.value)} placeholder="e.g. booking_confirmation" />
-                </Field>
-                <Field label="Follow-up Template Name" hint="Template for post-visit follow-ups">
-                  <input style={inputStyle} value={form.chakraTemplateFollowup || ""} onChange={(e) => set("chakraTemplateFollowup", e.target.value)} placeholder="e.g. followup_message" />
-                </Field>
-                <Field label="Cancellation Template Name" hint="Template for cancellation win-backs">
-                  <input style={inputStyle} value={form.chakraTemplateCancellation || ""} onChange={(e) => set("chakraTemplateCancellation", e.target.value)} placeholder="e.g. cancellation_winback" />
-                </Field>
-                <Field label="Birthday Template Name" hint="Template for birthday greetings">
-                  <input style={inputStyle} value={form.chakraTemplateBirthday || ""} onChange={(e) => set("chakraTemplateBirthday", e.target.value)} placeholder="e.g. birthday_greeting" />
-                </Field>
-              </div>
-              <div style={{ fontSize: 12, color: "#6b7280", background: "#f9fafb", padding: "12px 16px", borderRadius: 10, border: "1px solid #e5e7eb", gridColumn: "1 / -1" }}>
-                💡 Each template's first body variable (<code style={{ fontFamily: "monospace", background: "#ededf4", padding: "1px 5px", borderRadius: 3 }}>{"{{1}}"}</code>) receives the full composed message text. Docs: <a href="https://apidocs.chakrahq.com" target="_blank" rel="noopener noreferrer" style={{ color: "#7C3AED" }}>apidocs.chakrahq.com</a>
-              </div>
-            </>
-          ) : null}
           <Field label="Your WhatsApp Number" hint="International format — e.g. 923001234567 (for owner alerts)">
             <input
               style={inputStyle}
@@ -1691,7 +1478,7 @@ function WhatsAppSection() {
         />}
         {(form.provider === "botsailor" || form.provider === "chakra") && (
           <div style={{ border: "1px solid #e0e7ff", borderRadius: 12, padding: "13px 16px", background: "#f5f7ff", color: "#5b5b78", fontSize: 11, lineHeight: 1.6 }}>
-            {form.provider === "botsailor" ? "BotSailor" : "ChakraHQ"} sends to individual phone numbers. Booking-group alerts remain available when WaSenderAPI is selected.
+            Your WhatsApp connection sends to individual phone numbers only, so booking-group alerts aren&apos;t available. Contact Salon Central support if you need them.
           </div>
         )}
         <AutoRow
