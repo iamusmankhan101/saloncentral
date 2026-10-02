@@ -1659,7 +1659,13 @@ function CreateModal({ onClose, onAdd, clients, staffList, allServices }: { onCl
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <FormField label="Date">
-              <input type="date" value={day.date} onChange={(e) => set("date", e.target.value)} style={selectStyle} />
+              {/* iPhone shows an empty date box with no hint, so overlay one until a date is picked. */}
+              <div style={{ position: "relative" }}>
+                <input type="date" value={day.date} onChange={(e) => set("date", e.target.value)} aria-label="Date" style={{ ...selectStyle, color: day.date ? "#1a1a2e" : "transparent" }} />
+                {!day.date && (
+                  <span className="date-placeholder" style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: "#9898b0", pointerEvents: "none" }}>Select date</span>
+                )}
+              </div>
             </FormField>
             <FormField label="Start Time">
               <TimeSelect value={day.startTime} onChange={(v) => set("startTime", v)} style={selectStyle} />

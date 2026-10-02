@@ -1203,6 +1203,28 @@ button, a, [role="button"] { touch-action: manipulation; }
   input, select, textarea { max-width: 100%; }
 }
 
+/* iPhone Safari draws date/time boxes natively: an empty one is taller than
+   its neighbours, ignores width:100% (spilling into the next column) and
+   centres its text. Make them behave like normal text boxes. */
+@media (max-width: 980px) {
+  input[type="date"], input[type="time"], input[type="datetime-local"], input[type="month"] {
+    -webkit-appearance: none;
+    appearance: none;
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    min-height: 2.6em;
+    box-sizing: border-box;
+    text-align: left;
+  }
+  input[type="date"]::-webkit-date-and-time-value,
+  input[type="time"]::-webkit-date-and-time-value,
+  input[type="datetime-local"]::-webkit-date-and-time-value { text-align: left; min-height: 1.2em; }
+}
+@media (max-width: 980px) and (pointer: coarse) {
+  .date-placeholder { font-size: 16px !important; }
+}
+
 /* iOS Safari zooms the whole page when an input under 16px gets focus. */
 @media (max-width: 980px) and (pointer: coarse) {
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
