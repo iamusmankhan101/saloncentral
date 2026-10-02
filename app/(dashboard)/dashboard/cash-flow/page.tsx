@@ -1250,7 +1250,7 @@ export default function CashFlowPage() {
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "80px 1fr 90px", padding: "10px 20px", background: "#faf9fd", borderBottom: "1px solid #f0f0f5" }}>
+            <div className="cf-in-head" style={{ display: "grid", gridTemplateColumns: "80px 1fr 90px", padding: "10px 20px", background: "#faf9fd", borderBottom: "1px solid #f0f0f5" }}>
               {["DATE", "CLIENT / SERVICE", "AMOUNT"].map((h, i) => (
                 <div key={i} style={{ fontSize: 10, fontWeight: 800, color: "#8e89a3", letterSpacing: "0.08em", textAlign: i === 2 ? "right" : "left" }}>{h}</div>
               ))}
@@ -1262,7 +1262,7 @@ export default function CashFlowPage() {
                 <div style={{ fontSize: 14, color: "#1a1a2e", fontWeight: 800 }}>No income this period</div>
               </div>
             ) : periodIncomeRows.map((row, i) => (
-              <div key={row.id} className="hover-bg-row" style={{ display: "grid", gridTemplateColumns: "80px 1fr 90px", padding: "12px 20px", borderBottom: i === periodIncomeRows.length - 1 ? "none" : "1px solid #f8f8fc", alignItems: "center", transition: "background 0.15s" }}>
+              <div key={row.id} className="hover-bg-row cf-in-row" style={{ display: "grid", gridTemplateColumns: "80px 1fr 90px", padding: "12px 20px", borderBottom: i === periodIncomeRows.length - 1 ? "none" : "1px solid #f8f8fc", alignItems: "center", transition: "background 0.15s" }}>
                 <div style={{ fontSize: 12, color: "#9898b0", fontWeight: 500 }}>{row.date}</div>
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1298,7 +1298,7 @@ export default function CashFlowPage() {
             ))}
 
             {periodIncomeRows.length > 0 && (
-              <div style={{ display: "grid", gridTemplateColumns: "80px 1fr 90px", padding: "12px 20px", background: "#faf9fd", borderTop: "1px solid #f0f0f5" }}>
+              <div className="cf-in-total" style={{ display: "grid", gridTemplateColumns: "80px 1fr 90px", padding: "12px 20px", background: "#faf9fd", borderTop: "1px solid #f0f0f5" }}>
                 <div style={{ gridColumn: "1 / 3", fontSize: 12, fontWeight: 800, color: "#1a1a2e", textTransform: "uppercase", letterSpacing: "0.05em" }}>Total</div>
                 <div style={{ fontSize: 14, fontWeight: 850, color: "var(--accent)", textAlign: "right" }}>{fmt(periodIncome)}</div>
               </div>
@@ -1337,7 +1337,7 @@ export default function CashFlowPage() {
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "80px 110px 1fr 70px 92px 80px 32px 32px", padding: "10px 20px", background: "#faf9fd", borderBottom: "1px solid #f0f0f5" }}>
+            <div className="cf-ex-head" style={{ display: "grid", gridTemplateColumns: "80px 110px 1fr 70px 92px 80px 32px 32px", padding: "10px 20px", background: "#faf9fd", borderBottom: "1px solid #f0f0f5" }}>
               {["DATE", "CATEGORY", "DESCRIPTION", "BILL", "STATUS", "AMOUNT", "", ""].map((h, i) => (
                 <div key={i} style={{ fontSize: 10, fontWeight: 800, color: "#8e89a3", letterSpacing: "0.08em" }}>{h}</div>
               ))}
@@ -1354,7 +1354,7 @@ export default function CashFlowPage() {
               const payColor = PAYMENT_COLORS[exp.paymentMethod];
               const status = expensePaymentStatus(exp);
               return (
-                <div key={exp.id} className="hover-bg-row" style={{ display: "grid", gridTemplateColumns: "80px 110px 1fr 70px 92px 80px 32px 32px", padding: "12px 20px", borderBottom: i === periodExpenses.length - 1 ? "none" : "1px solid #f8f8fc", alignItems: "center", transition: "background 0.15s" }}>
+                <div key={exp.id} className="hover-bg-row cf-ex-row" style={{ display: "grid", gridTemplateColumns: "80px 110px 1fr 70px 92px 80px 32px 32px", padding: "12px 20px", borderBottom: i === periodExpenses.length - 1 ? "none" : "1px solid #f8f8fc", alignItems: "center", transition: "background 0.15s" }}>
                   <div style={{ fontSize: 12, color: "#9898b0", fontWeight: 500 }}>{exp.date}</div>
                   <div>
                     <span style={{ fontSize: 10, fontWeight: 750, color: cat?.color ?? "#888", background: `${cat?.color ?? "#888"}15`, padding: "3px 8px", borderRadius: 20, textTransform: "uppercase", letterSpacing: "0.03em" }}>{cat?.label ?? exp.category}</span>
@@ -1407,7 +1407,7 @@ export default function CashFlowPage() {
             })}
 
             {periodExpenses.length > 0 && (
-              <div style={{ display: "grid", gridTemplateColumns: "80px 110px 1fr 70px 92px 80px 32px 32px", padding: "12px 20px", background: "#faf9fd", borderTop: "1px solid #f0f0f5" }}>
+              <div className="cf-ex-total" style={{ display: "grid", gridTemplateColumns: "80px 110px 1fr 70px 92px 80px 32px 32px", padding: "12px 20px", background: "#faf9fd", borderTop: "1px solid #f0f0f5" }}>
                 <div style={{ gridColumn: "1 / 6", fontSize: 12, fontWeight: 800, color: "#1a1a2e", textTransform: "uppercase", letterSpacing: "0.05em" }}>Total</div>
                 <div style={{ fontSize: 14, fontWeight: 850, color: "#ef4444" }}>{fmt(totalExpense)} paid{pendingExpense > 0 ? ` · ${fmt(pendingExpense)} pending` : ""}</div>
                 <div /><div />

@@ -867,6 +867,29 @@ export default function RevenuePage() {
         ))}
       </div>
 
+      {/* ── Mobile custom range (the desktop picker lives in the desktop-only block) ── */}
+      {period === "custom" && (
+        <div className="mobile-only" style={{ margin: "10px 16px 0", padding: "12px 14px", background: "#fff", border: "1.5px solid #7C3AED", borderRadius: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11, fontWeight: 700, color: "#6b6b8a" }}>
+              From
+              <input type="date" value={customStart} max={customEnd || undefined} onChange={e => setCustomStart(e.target.value)}
+                style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "1px solid #e8e8f0", color: "#1a1a2e", outline: "none", boxSizing: "border-box", background: "#fff" }} />
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11, fontWeight: 700, color: "#6b6b8a" }}>
+              To
+              <input type="date" value={customEnd} min={customStart} onChange={e => setCustomEnd(e.target.value)}
+                style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "1px solid #e8e8f0", color: "#1a1a2e", outline: "none", boxSizing: "border-box", background: "#fff" }} />
+            </label>
+          </div>
+          {customStart && customEnd && customStart <= customEnd && (
+            <div style={{ fontSize: 11, color: "#7C3AED", fontWeight: 700, marginTop: 8 }}>
+              {(n => `${n} day${n === 1 ? "" : "s"} selected`)(getDaysInRange(customStart, customEnd).length)}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── Mobile hero revenue card ── */}
       <div className="mobile-only">
         <div className="mobile-hero-card">
@@ -937,13 +960,13 @@ export default function RevenuePage() {
       <div className="dash-page dashboard-polish desktop-only" style={{ background: "#ffffff", padding: "28px 32px 48px", display: "flex", flexDirection: "column", gap: 20 }}>
 
       {/* Title + controls */}
-      <div className="page-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div className="page-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
         <PageTitle
           icon={<TrendingUp size={24} />}
           title="Revenue"
           subtitle={revenueScoped ? `Restricted to ${activeSection} revenue only` : "Track your salon's financial performance — combined across all sections"}
         />
-        <div className="rev-header-controls" style={{ display: "flex", gap: 12 }}>
+        <div className="rev-header-controls" style={{ display: "flex", gap: 12, marginLeft: "auto" }}>
           <div className="rev-period-selector segment-control">
             {PERIODS.map(p => (
               <button
