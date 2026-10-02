@@ -1,5 +1,6 @@
 import { locationUserKey } from "./locations";
 import { persistEntity } from "./turso-sync";
+import { getStoredInventory, saveInventory } from "./storage";
 
 export type ExpenseCategory =
   | "rent"
@@ -14,6 +15,15 @@ export type ExpenseCategory =
   | "food"
   | "miscellaneous";
 
+/** One product bought in an expense, e.g. Shampoo × 5 @ PKR 800. */
+export interface ExpenseItem {
+  name: string;
+  qty: number;
+  unitPrice: number;
+  /** Set when the product was picked from Inventory — its stock goes up by `qty`. */
+  inventoryItemId?: string;
+}
+
 export interface Expense {
   id: string;
   date: string;        // YYYY-MM-DD
@@ -25,6 +35,8 @@ export interface Expense {
   billImageDataUrl?: string;
   billImageName?: string;
   notes?: string;
+  /** Products bought, name-wise. When present, `amount` is their total. */
+  items?: ExpenseItem[];
   createdAt: string;   // ISO timestamp
   /** Which salon section this expense belongs to (e.g. "Men's", "Women's"). Untagged = shared overhead, excluded from a section-restricted view. */
   section?: string;
@@ -63,4 +75,29 @@ export function deleteExpense(id: string): void {
 
 export async function updateExpense(id: string, patch: Partial<Omit<Expense, "id" | "createdAt">>): Promise<boolean> {
   return saveExpenses(getExpenses().map(e => e.id === id ? { ...e, ...patch } : e));
+}
+
+export function expenseItemsTotal(items: ExpenseItem[] | undefined): number {
+  return (items ?? []).reduce((sum, item) => sum + item.qty * item.unitPrice, 0);
+}
+
+/**
+ * Brings Inventory stock in line with an expense's products changing from
+ * `before` to `after` (an add passes before = [], a delete passes after = []).
+ * Only the difference is applied, so editing an expense never double-counts.
+ * Stock never goes below zero; a stock increase stamps today as last restocked.
+ */
+export function applyExpenseStock(before: ExpenseItem[] | undefined, after: ExpenseItem[] | undefined): void {
+  const delta = new Map<string, number>();
+  for (const item of before ?? []) if (item.inventoryItemId) delta.set(item.inventoryItemId, (delta.get(item.inventoryItemId) ?? 0) - item.qty);
+  for (const item of after ?? []) if (item.inventoryItemId) delta.set(item.inventoryItemId, (delta.get(item.inventoryItemId) ?? 0) + item.qty);
+  if (![...delta.values()].some((d) => d !== 0)) return;
+
+  const today = new Date().toLocaleDateString("en-CA");
+  const inventory = getStoredInventory();
+  saveInventory(inventory.map((inv) => {
+    const d = delta.get(inv.id) ?? 0;
+    if (d === 0) return inv;
+    return { ...inv, currentStock: Math.max(0, inv.currentStock + d), ...(d > 0 ? { lastRestocked: today } : {}) };
+  }));
 }

@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { getStoredAppointments } from "@/lib/storage";
+import { getStoredAppointments, getStoredInventory } from "@/lib/storage";
 import { getSalonInvoices } from "@/lib/salon-invoices";
-import { getExpenses, saveExpenses, addExpense, updateExpense, type Expense, type ExpenseCategory } from "@/lib/expenses";
+import { getExpenses, saveExpenses, addExpense, updateExpense, applyExpenseStock, expenseItemsTotal, type Expense, type ExpenseCategory, type ExpenseItem } from "@/lib/expenses";
 import { getManualCashIncome, saveManualCashIncome, type ManualCashIncome } from "@/lib/cash-flow-income";
-import type { Appointment } from "@/lib/types";
+import type { Appointment, InventoryItem } from "@/lib/types";
 import MobilePageHeader from "@/components/mobile-page-header";
 import PageTitle from "@/components/page-title";
 import { fmtCurrency as fmt } from "@/lib/format";
@@ -94,6 +94,13 @@ function monthlyBarsRange(start: string, end: string): { label: string; key: str
   return arr;
 }
 
+/** A product row while editing — numbers stay as typed text until save. */
+interface ProductRow { name: string; qty: string; unitPrice: string; inventoryItemId?: string }
+
+function itemsSummary(items: ExpenseItem[] | undefined): string {
+  return (items ?? []).map(item => `${item.name} ×${item.qty}`).join(", ");
+}
+
 const EMPTY_FORM = {
   date: "",
   category: "miscellaneous" as ExpenseCategory,
@@ -105,6 +112,7 @@ const EMPTY_FORM = {
   billImageName: undefined as string | undefined,
   notes: "",
   section: "",
+  items: [] as ProductRow[],
 };
 
 export default function CashFlowPage() {
@@ -120,6 +128,7 @@ export default function CashFlowPage() {
   const [showForm, setShowForm]       = useState(false);
   const [editId, setEditId]           = useState<string | null>(null);
   const [form, setForm]               = useState({ ...EMPTY_FORM });
+  const [inventory, setInventory]     = useState<InventoryItem[]>([]);
   const [formError, setFormError]     = useState("");
   const [hoveredBar, setHoveredBar]   = useState<number | null>(null);
   const [fileMessage, setFileMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -342,6 +351,7 @@ export default function CashFlowPage() {
 
   // Form helpers
   function openAdd() {
+    setInventory(getStoredInventory());
     setEditId(null);
     setFormError("");
     setForm({ ...EMPTY_FORM, date: today });
@@ -349,6 +359,7 @@ export default function CashFlowPage() {
   }
 
   function openEdit(exp: Expense) {
+    setInventory(getStoredInventory());
     setEditId(exp.id);
     setFormError("");
     setForm({
@@ -362,8 +373,30 @@ export default function CashFlowPage() {
       billImageName: exp.billImageName,
       notes: exp.notes ?? "",
       section: exp.section ?? "",
+      items: (exp.items ?? []).map(item => ({ name: item.name, qty: String(item.qty), unitPrice: String(item.unitPrice), inventoryItemId: item.inventoryItemId })),
     });
     setShowForm(true);
+  }
+
+  function setProductRow(index: number, patch: Partial<ProductRow>) {
+    setForm(f => ({ ...f, items: f.items.map((row, i) => (i === index ? { ...row, ...patch } : row)) }));
+    setFormError("");
+  }
+
+  // Typing a name that matches an Inventory item links it (its stock goes up on
+  // save) and fills its cost price if no price was entered yet.
+  function setProductName(index: number, name: string) {
+    const match = inventory.find(inv => inv.name.trim().toLowerCase() === name.trim().toLowerCase());
+    setForm(f => ({
+      ...f,
+      items: f.items.map((row, i) => i !== index ? row : {
+        ...row,
+        name,
+        inventoryItemId: match?.id,
+        unitPrice: match && !row.unitPrice ? String(match.costPrice || "") : row.unitPrice,
+      }),
+    }));
+    setFormError("");
   }
 
   function handleBillImageChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -405,17 +438,29 @@ export default function CashFlowPage() {
   }
 
   async function handleSave() {
-    const amt = parseFloat(form.amount);
     if (!form.date) {
       setFormError("Please select an expense date.");
       return;
     }
+    const filledRows = form.items.filter(row => row.name.trim() || row.qty || row.unitPrice);
+    const items: ExpenseItem[] = [];
+    for (const row of filledRows) {
+      const qty = parseFloat(row.qty);
+      const unitPrice = parseFloat(row.unitPrice);
+      if (!row.name.trim()) { setFormError("Every product needs a name."); return; }
+      if (!Number.isFinite(qty) || qty <= 0) { setFormError(`Enter a quantity for ${row.name.trim()}.`); return; }
+      if (!Number.isFinite(unitPrice) || unitPrice < 0) { setFormError(`Enter a price for ${row.name.trim()}.`); return; }
+      items.push({ name: row.name.trim(), qty, unitPrice, ...(row.inventoryItemId ? { inventoryItemId: row.inventoryItemId } : {}) });
+    }
+    // With products listed, the amount is their total.
+    const amt = items.length ? expenseItemsTotal(items) : parseFloat(form.amount);
     if (!Number.isFinite(amt) || amt <= 0) {
-      setFormError("Please enter an amount greater than zero.");
+      setFormError(items.length ? "The products add up to zero — enter their prices." : "Please enter an amount greater than zero.");
       return;
     }
 
     const description = form.description.trim()
+      || (items.length ? itemsSummary(items) : "")
       || EXPENSE_CATEGORIES.find(category => category.key === form.category)?.label
       || "Expense";
     const billImagePatch = { billImageDataUrl: form.billImageDataUrl, billImageName: form.billImageName };
@@ -427,10 +472,14 @@ export default function CashFlowPage() {
 
     try {
       let dbSaved: boolean;
+      const itemsPatch = { items: items.length ? items : undefined };
       if (editId) {
-        dbSaved = await updateExpense(editId, { date: form.date, category: form.category, description, amount: amt, paymentMethod: form.paymentMethod, paymentStatus: form.paymentStatus, ...billImagePatch, notes: form.notes.trim() || undefined, section: expenseSection });
+        const previousItems = getExpenses().find(e => e.id === editId)?.items;
+        dbSaved = await updateExpense(editId, { date: form.date, category: form.category, description, amount: amt, paymentMethod: form.paymentMethod, paymentStatus: form.paymentStatus, ...billImagePatch, notes: form.notes.trim() || undefined, section: expenseSection, ...itemsPatch });
+        applyExpenseStock(previousItems, items);
       } else {
-        ({ dbSaved } = await addExpense({ date: form.date, category: form.category, description, amount: amt, paymentMethod: form.paymentMethod, paymentStatus: form.paymentStatus, ...billImagePatch, notes: form.notes.trim() || undefined, section: expenseSection }));
+        ({ dbSaved } = await addExpense({ date: form.date, category: form.category, description, amount: amt, paymentMethod: form.paymentMethod, paymentStatus: form.paymentStatus, ...billImagePatch, notes: form.notes.trim() || undefined, section: expenseSection, ...itemsPatch }));
+        applyExpenseStock([], items);
       }
       setExpenseSyncFailed(!dbSaved);
       setExpenses(getExpenses().filter(e => !cashFlowScoped || e.section === activeSection));
@@ -444,6 +493,7 @@ export default function CashFlowPage() {
 
   function handleDelete(id: string) {
     try {
+      applyExpenseStock(getExpenses().find(e => e.id === id)?.items, []);
       setExpenses((prev) => {
         const latest = getExpenses().filter(e => !cashFlowScoped || e.section === activeSection);
         const source = latest.some((expense) => expense.id === id) ? latest : prev;
@@ -761,6 +811,7 @@ export default function CashFlowPage() {
         "Payment Method": PAYMENT_LABELS[expense.paymentMethod] ?? expense.paymentMethod,
         Status: expensePaymentStatus(expense) === "pending" ? "Pending / unpaid" : "Paid",
         "Bill Image": expense.billImageName ?? "",
+        Products: (expense.items ?? []).map(item => `${item.name} ×${item.qty} @ ${item.unitPrice}`).join("; "),
         Notes: expense.notes ?? "",
       }));
 
@@ -1180,8 +1231,14 @@ export default function CashFlowPage() {
                 </select>
               </div>
               <div>
-                <label style={labelSt}>Amount (PKR)</label>
-                <input type="number" value={form.amount} onChange={e => { setForm(f => ({ ...f, amount: e.target.value })); setFormError(""); }} placeholder="0" min={0.01} step="0.01" style={inputSt} />
+                <label style={labelSt}>Amount (PKR){form.items.length > 0 && <span style={{ fontWeight: 500, textTransform: "none" }}> · from products</span>}</label>
+                {form.items.length > 0 ? (
+                  <div style={{ ...inputSt, fontWeight: 800, color: "#1a1a2e", background: "#f5f3ff" }}>
+                    {expenseItemsTotal(form.items.map(row => ({ name: row.name, qty: parseFloat(row.qty) || 0, unitPrice: parseFloat(row.unitPrice) || 0 }))).toLocaleString("en-PK")}
+                  </div>
+                ) : (
+                  <input type="number" value={form.amount} onChange={e => { setForm(f => ({ ...f, amount: e.target.value })); setFormError(""); }} placeholder="0" min={0.01} step="0.01" style={inputSt} />
+                )}
               </div>
               <div>
                 <label style={labelSt}>Section</label>
@@ -1199,6 +1256,51 @@ export default function CashFlowPage() {
               <div style={{ gridColumn: "1 / -1" }}>
                 <label style={labelSt}>Description <span style={{ fontWeight: 500, textTransform: "none" }}>(optional)</span></label>
                 <input type="text" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. Shampoo & conditioner restock" style={inputSt} />
+              </div>
+              <div style={{ gridColumn: "1 / -1" }}>
+                <label style={labelSt}>Products <span style={{ fontWeight: 500, textTransform: "none" }}>(optional — list what you bought, name-wise)</span></label>
+                {form.items.length > 0 && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 8 }}>
+                    <div className="cf-item-row cf-item-head" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 80px 110px 100px 32px", gap: 8, fontSize: 10, fontWeight: 700, color: "#a0a0b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      <div>Product</div><div>Qty</div><div>Price / unit</div><div style={{ textAlign: "right" }}>Total</div><div />
+                    </div>
+                    {form.items.map((row, i) => {
+                      const linked = inventory.find(inv => inv.id === row.inventoryItemId);
+                      const lineTotal = (parseFloat(row.qty) || 0) * (parseFloat(row.unitPrice) || 0);
+                      return (
+                        <div key={i}>
+                          <div className="cf-item-row" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 80px 110px 100px 32px", gap: 8, alignItems: "center" }}>
+                            <input type="text" list="cf-inventory-products" value={row.name} onChange={e => setProductName(i, e.target.value)} placeholder="Product name" aria-label="Product name" style={inputSt} />
+                            <input type="number" value={row.qty} onChange={e => setProductRow(i, { qty: e.target.value })} placeholder="Qty" aria-label="Quantity" min={0} step="any" style={inputSt} />
+                            <input type="number" value={row.unitPrice} onChange={e => setProductRow(i, { unitPrice: e.target.value })} placeholder="Price" aria-label="Price per unit" min={0} step="any" style={inputSt} />
+                            <div className="cf-item-total" style={{ fontSize: 13, fontWeight: 800, color: "#1a1a2e", textAlign: "right" }}>{lineTotal.toLocaleString("en-PK")}</div>
+                            <button type="button" aria-label={`Remove ${row.name || "product"}`} onClick={() => setForm(f => ({ ...f, items: f.items.filter((_, j) => j !== i) }))}
+                              style={{ width: 32, height: 32, border: "none", borderRadius: 8, background: "#fef2f2", color: "#dc2626", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                              <X size={14} />
+                            </button>
+                          </div>
+                          {row.name.trim() && (
+                            <div style={{ fontSize: 11, fontWeight: 600, marginTop: 4, color: "#6b6b8a" }}>
+                              {row.qty || 0} × PKR {(parseFloat(row.unitPrice) || 0).toLocaleString("en-PK")} = PKR {lineTotal.toLocaleString("en-PK")}
+                              <span style={{ color: linked ? "#059669" : "#9898b0" }}>
+                                {linked
+                                  ? ` · In Inventory: stock ${linked.currentStock} → ${linked.currentStock + (parseFloat(row.qty) || 0)} ${linked.unit}`
+                                  : " · Not in Inventory — recorded on this expense only"}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <datalist id="cf-inventory-products">
+                  {inventory.map(inv => <option key={inv.id} value={inv.name} />)}
+                </datalist>
+                <button type="button" onClick={() => setForm(f => ({ ...f, items: [...f.items, { name: "", qty: "1", unitPrice: "" }] }))}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 12px", borderRadius: 8, border: "1px dashed #c4b5fd", background: "#faf9fd", color: "#6b46c1", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
+                  <Plus size={14} /> Add product
+                </button>
               </div>
               <div>
                 <label style={labelSt}>Notes</label>
@@ -1361,6 +1463,9 @@ export default function CashFlowPage() {
                   </div>
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 750, color: "#1a1a2e" }}>{exp.description}</div>
+                    {exp.items?.length && exp.description !== itemsSummary(exp.items) ? (
+                      <div style={{ fontSize: 11, color: "#6b6b8a", marginTop: 2 }}>{itemsSummary(exp.items)}</div>
+                    ) : null}
                     {exp.notes && <div style={{ fontSize: 11, color: "#9898b0", marginTop: 2 }}>{exp.notes}</div>}
                     {exp.paymentMethod && <div style={{ fontSize: 11, color: payColor ?? "#9898b0", marginTop: 2, fontWeight: 600 }}>{PAYMENT_LABELS[exp.paymentMethod] ?? exp.paymentMethod}</div>}
                   </div>

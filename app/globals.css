@@ -1357,6 +1357,12 @@ button, a, [role="button"] { touch-action: manipulation; }
   .cf-split > div > div:first-child { width: 36px !important; height: 36px !important; }
   .cf-stat-value { font-size: 18px !important; word-break: break-word; }
   .cf-tables { grid-template-columns: minmax(0, 1fr) !important; }
+  /* Expense product rows: name on its own line, then qty / price / remove. */
+  .cf-item-head { display: none !important; }
+  .cf-item-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 32px !important; }
+  .cf-item-row > input:first-child { grid-column: 1 / -1; }
+  .cf-item-total { display: none; }
+
   /* Income / expense rows become cards instead of a sideways-scrolling table. */
   .cf-in-head, .cf-ex-head { display: none !important; }
   .cf-in-row { grid-template-columns: minmax(0, 1fr) auto !important; row-gap: 4px; padding: 12px 16px !important; }
