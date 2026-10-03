@@ -27,6 +27,7 @@ interface SalonSettings {
   currency: string;
   timezone: string;
   logo: string;
+  cardTaxPercent?: number;
 }
 
 interface BusinessHour {
@@ -399,6 +400,12 @@ function SalonProfile() {
             <option value="Asia/Dubai">Asia/Dubai (GST +4:00)</option>
             <option value="UTC">UTC</option>
           </select>
+        </Field>
+        <Field label="Card Payment Tax (%)">
+          <input style={inputStyle} type="number" min={0} max={100} step="0.01" placeholder="0"
+            value={form.cardTaxPercent || ""}
+            onChange={(event) => setForm((f) => ({ ...f, cardTaxPercent: Math.min(100, Math.max(0, Number(event.target.value) || 0)) }))} />
+          <div style={{ fontSize: 11, color: "#9999b0", marginTop: 5 }}>Added to the bill at checkout when Card is selected. Leave 0 for none.</div>
         </Field>
       </div>
 

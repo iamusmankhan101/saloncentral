@@ -24,6 +24,8 @@ const defaults = {
     currency: "PKR",
     timezone: "Asia/Karachi",
     logo: "",
+    // % added to the bill when the client pays by card (bank/terminal charges). 0 = off.
+    cardTaxPercent: 0,
   },
   locations: {
     activeLocationId: "main",

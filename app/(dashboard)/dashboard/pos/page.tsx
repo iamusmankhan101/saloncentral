@@ -438,7 +438,9 @@ export default function POSPage() {
     setLoyaltyRedeem(Math.min(cashPointsAvailable, pointsToCover(line?.unitPrice ?? svc.price)));
   }
 
-  const { subtotal, taxAmount, total } = calcTotals(cartLineItems, totalDiscountAmount);
+  // Card payments carry the salon's card tax (set on the account page), on the bill after discounts.
+  const cardTaxPercent = !isCredit && payMethod === "card" ? Number((settingsStore.salon as { cardTaxPercent?: number }).cardTaxPercent) || 0 : 0;
+  const { subtotal, taxAmount, total } = calcTotals(cartLineItems, totalDiscountAmount, cardTaxPercent / 100);
   // Never more than the ticket itself — an "advance" covering the whole bill is
   // just a paid sale, and a negative balance would be nonsense on the invoice.
   const rawAdvance = advanceType === "pct" ? wholePkr(total * advanceValue / 100) : wholePkr(advanceValue);
@@ -1907,6 +1909,13 @@ export default function POSPage() {
                         )}
                       </div>
                     )}
+                  </div>
+                )}
+
+                {taxAmount > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#4a4a6a", marginTop: 8, fontWeight: 700, padding: "0 4px" }}>
+                    <span>Card tax ({cardTaxPercent}%)</span>
+                    <span>+ {pkr(taxAmount)}</span>
                   </div>
                 )}
 
