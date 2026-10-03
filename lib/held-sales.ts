@@ -24,6 +24,8 @@ export interface HeldSale<CartLine = unknown> {
   discount2: number;
   discType2: "flat" | "pct";
   loyaltyRedeem: number;
+  /** Free-service loyalty rewards applied (LoyaltyReward ids). */
+  loyaltyRewards?: string[];
   notes: string;
   guests: { name: string; clientId?: string; phone?: string }[];
   isAdvance: boolean;

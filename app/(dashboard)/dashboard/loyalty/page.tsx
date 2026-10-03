@@ -1,13 +1,13 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { getStoredClients, saveClients, getStoredAppointments } from "@/lib/storage";
+import { getStoredClients, saveClients, getStoredAppointments, getStoredServices } from "@/lib/storage";
 import { getSalonInvoices } from "@/lib/salon-invoices";
 import type { Client } from "@/lib/types";
 import {
   getTier, TIER_META, nextTierThreshold, pointsToRupees,
   getClientHistory, adjustPoints, redeemPoints,
-  type LoyaltySettings,
+  type LoyaltySettings, type LoyaltyReward,
 } from "@/lib/loyalty";
 import { settingsStore, saveSettings } from "@/lib/settings-store";
 import { getActiveSection, inSection } from "@/lib/sections";
@@ -549,6 +549,53 @@ function ClientModal({
 
 // ── Settings Panel ─────────────────────────────────────────────────────────────
 
+/** "Redeem for a free service" list: which services, for how many points. */
+function RewardsEditor({ rewards, onChange }: { rewards: LoyaltyReward[]; onChange: (r: LoyaltyReward[]) => void }) {
+  const services = useMemo(() => getStoredServices().filter((s) => s.isActive !== false), []);
+  const [serviceId, setServiceId] = useState("");
+  const [points, setPoints] = useState("");
+  const inp: React.CSSProperties = { padding: "9px 10px", borderRadius: 9, border: "1.5px solid #e8e8f0", fontSize: 13, outline: "none", boxSizing: "border-box", background: "#fff" };
+  function add() {
+    const pts = Math.round(Number(points));
+    if (!serviceId || !(pts > 0)) return;
+    onChange([...rewards.filter((r) => r.serviceId !== serviceId), { id: crypto.randomUUID(), serviceId, points: pts }]);
+    setServiceId(""); setPoints("");
+  }
+  return (
+    <div style={{ borderTop: "1px solid #f0f0f8", paddingTop: 14 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "#5a5a7a", marginBottom: 4 }}>Free-service rewards</div>
+      <div style={{ fontSize: 11, color: "#9898b0", marginBottom: 10 }}>Besides the cash discount, clients can spend points on a free service at POS.</div>
+      {rewards.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+          {rewards.map((r) => {
+            const svc = services.find((s) => s.id === r.serviceId);
+            return (
+              <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, background: "#f5f3ff" }}>
+                <Gift size={14} color="#7C3AED" style={{ flexShrink: 0 }} />
+                <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: "#1a1a2e" }}>{svc?.name ?? "Deleted service"}{svc ? <span style={{ color: "#9898b0", fontWeight: 500 }}> · worth {fmt(svc.price)}</span> : null}</span>
+                <span style={{ fontSize: 12, fontWeight: 800, color: "#7C3AED", whiteSpace: "nowrap" }}>{r.points.toLocaleString()} pts</span>
+                <button type="button" aria-label={`Remove ${svc?.name ?? "reward"}`} onClick={() => onChange(rewards.filter((x) => x.id !== r.id))}
+                  style={{ border: "none", background: "none", cursor: "pointer", color: "#9898b0", display: "flex" }}><X size={14} /></button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 6 }}>
+        <select value={serviceId} onChange={(e) => setServiceId(e.target.value)} style={{ ...inp, flex: 1, minWidth: 0 }}>
+          <option value="">Choose a service…</option>
+          {services.map((s) => <option key={s.id} value={s.id}>{s.name} · {fmt(s.price)}</option>)}
+        </select>
+        <input type="number" min={1} value={points} onChange={(e) => setPoints(e.target.value)} placeholder="Points" aria-label="Points needed" style={{ ...inp, width: 86 }} />
+        <button type="button" onClick={add} disabled={!serviceId || !(Number(points) > 0)}
+          style={{ border: "none", borderRadius: 9, padding: "0 12px", fontSize: 12, fontWeight: 800, cursor: "pointer", background: serviceId && Number(points) > 0 ? "#7C3AED" : "#e8e8f0", color: serviceId && Number(points) > 0 ? "#fff" : "#b0b0c8" }}>
+          Add
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function SettingsPanel({ onClose }: { onClose: () => void }) {
   const s = settingsStore.loyalty as LoyaltySettings;
   const [form, setForm] = useState({ ...s });
@@ -574,6 +621,7 @@ function SettingsPanel({ onClose }: { onClose: () => void }) {
       <div style={{
         background: "#fff", borderRadius: 20, width: "100%", maxWidth: 440,
         boxShadow: "0 24px 60px rgba(0,0,0,0.18)", padding: "28px 28px 24px",
+        maxHeight: "92dvh", overflowY: "auto",
       }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
           <div style={{ fontSize: 18, fontWeight: 800, color: "#1a1a2e" }}>Loyalty Settings</div>
@@ -631,6 +679,9 @@ function SettingsPanel({ onClose }: { onClose: () => void }) {
               e.g. 1 = 100 pts → Rs. 100 off
             </div>
           </div>
+
+          {/* Free-service rewards */}
+          <RewardsEditor rewards={form.rewards ?? []} onChange={(rewards) => setForm((f) => ({ ...f, rewards }))} />
 
           {/* Tier thresholds */}
           <div style={{ borderTop: "1px solid #f0f0f8", paddingTop: 14 }}>

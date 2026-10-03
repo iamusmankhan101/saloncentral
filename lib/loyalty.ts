@@ -13,6 +13,15 @@ export interface LoyaltySettings {
   silverMin: number;
   goldMin: number;
   platinumMin: number;
+  /** Services a client can take free for a set number of points, besides the cash discount. */
+  rewards?: LoyaltyReward[];
+}
+
+export interface LoyaltyReward {
+  id: string;
+  serviceId: string;
+  /** Points it costs. */
+  points: number;
 }
 
 export const TIER_META: Record<LoyaltyTier, { label: string; color: string; bg: string; emoji: string }> = {
