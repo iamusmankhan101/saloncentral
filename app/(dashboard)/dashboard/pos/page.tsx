@@ -422,15 +422,20 @@ export default function POSPage() {
   const pointsToCover         = (price: number) => (rupeePerPoint > 0 ? Math.ceil(price / rupeePerPoint) : 0);
   const pointsLines           = cart.filter((e) => e.type === "service" && pointsOnLines.includes(e.cartId)
     && !activeRewards.some((r) => r.serviceId === e.itemId));
-  function pointsForLines(cartIds: string[]): number {
-    return cart
-      .filter((e) => cartIds.includes(e.cartId) && !activeRewards.some((r) => r.serviceId === e.itemId))
-      .reduce((sum, e) => sum + pointsToCover(e.unitPrice), 0);
-  }
-  function selectPointsLine(cartId: string) {
-    const next = cartId ? [cartId] : [];
-    setPointsOnLines(next);
-    setLoyaltyRedeem(Math.min(cashPointsAvailable, pointsForLines(next)));
+  // Picks any service from the menu; adds it to the bill if it isn't on it yet.
+  function selectPointsService(serviceId: string) {
+    const svc = services.find((s) => s.id === serviceId);
+    if (!svc) { setPointsOnLines([]); setLoyaltyRedeem(0); return; }
+    const line = cart.find((e) => e.type === "service" && e.itemId === svc.id && (e.guestName ?? "") === activeGuest);
+    const cartId = line?.cartId ?? crypto.randomUUID();
+    if (!line) setCart((prev) => [...prev, {
+      cartId, itemId: svc.id, type: "service", name: svc.name, qty: 1,
+      unitPrice: svc.price, basePrice: svc.price, total: svc.price, variablePrice: svc.variablePrice,
+      priceRangeMin: svc.priceRangeMin, priceRangeMax: svc.priceRangeMax,
+      ...(activeGuest ? { guestName: activeGuest } : {}),
+    }]);
+    setPointsOnLines([cartId]);
+    setLoyaltyRedeem(Math.min(cashPointsAvailable, pointsToCover(line?.unitPrice ?? svc.price)));
   }
 
   const { subtotal, taxAmount, total } = calcTotals(cartLineItems, totalDiscountAmount);
@@ -1844,20 +1849,22 @@ export default function POSPage() {
                         <span style={{ whiteSpace: "nowrap" }}>− {pkr(loyaltyDiscount)}</span>
                       </div>
                     )}
-                    {rupeePerPoint > 0 && cart.some((e) => e.type === "service") && (
+                    {rupeePerPoint > 0 && services.length > 0 && (
                       <div style={{ marginTop: 8, borderTop: "1px dashed #fde68a", paddingTop: 8 }}>
                         <div style={{ fontSize: 10.5, fontWeight: 800, color: "#92400e", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Use points on a service</div>
-                        <select value={pointsLines[0]?.cartId ?? ""} onChange={(ev) => selectPointsLine(ev.target.value)}
+                        <select value={pointsLines[0]?.itemId ?? ""} onChange={(ev) => selectPointsService(ev.target.value)}
                           style={{ width: "100%", height: 32, padding: "0 8px", borderRadius: 8, border: "1.5px solid #fde68a", fontSize: 12, fontWeight: 700, color: "#78350f", background: "#fff", outline: "none", cursor: "pointer" }}>
                           <option value="">Select a service…</option>
-                          {cart.filter((e) => e.type === "service").map((e) => {
-                            const rewarded = activeRewards.some((r) => r.serviceId === e.itemId);
-                            const need = pointsToCover(e.unitPrice);
+                          {services.map((svc) => {
+                            const line = cart.find((e) => e.type === "service" && e.itemId === svc.id);
+                            const price = line?.unitPrice ?? svc.price;
+                            const rewarded = activeRewards.some((r) => r.serviceId === svc.id);
+                            const need = pointsToCover(price);
                             const use = Math.min(cashPointsAvailable, need);
-                            const pay = Math.max(0, e.unitPrice - use * rupeePerPoint);
+                            const pay = Math.max(0, price - use * rupeePerPoint);
                             return (
-                              <option key={e.cartId} value={e.cartId} disabled={rewarded || use <= 0 || e.unitPrice <= 0}>
-                                {e.name}{e.guestName ? ` · ${e.guestName}` : ""} ({pkr(e.unitPrice)}) — {rewarded ? "free with reward" : pay <= 0 ? `free with ${need.toLocaleString()} pts` : `use ${use.toLocaleString()} pts · pay ${pkr(pay)}`}
+                              <option key={svc.id} value={svc.id} disabled={rewarded || use <= 0 || price <= 0}>
+                                {svc.name} ({pkr(price)}) — {rewarded ? "free with reward" : pay <= 0 ? `free with ${need.toLocaleString()} pts` : `use ${use.toLocaleString()} pts · pay ${pkr(pay)}`}
                               </option>
                             );
                           })}
