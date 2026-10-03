@@ -427,21 +427,8 @@ export default function POSPage() {
       .filter((e) => cartIds.includes(e.cartId) && !activeRewards.some((r) => r.serviceId === e.itemId))
       .reduce((sum, e) => sum + pointsToCover(e.unitPrice), 0);
   }
-  // Points each selected line actually gets, first-picked first.
-  const pointsAllocation = (() => {
-    const alloc = new Map<string, number>();
-    let left = cashPointsAvailable;
-    for (const id of pointsOnLines) {
-      const e = cart.find((x) => x.cartId === id);
-      if (!e || activeRewards.some((r) => r.serviceId === e.itemId)) continue;
-      const use = Math.min(left, pointsToCover(e.unitPrice));
-      alloc.set(id, use);
-      left -= use;
-    }
-    return { alloc, left };
-  })();
-  function togglePointsOnLine(cartId: string) {
-    const next = pointsOnLines.includes(cartId) ? pointsOnLines.filter((id) => id !== cartId) : [...pointsOnLines, cartId];
+  function selectPointsLine(cartId: string) {
+    const next = cartId ? [cartId] : [];
     setPointsOnLines(next);
     setLoyaltyRedeem(Math.min(cashPointsAvailable, pointsForLines(next)));
   }
@@ -1860,34 +1847,21 @@ export default function POSPage() {
                     {rupeePerPoint > 0 && cart.some((e) => e.type === "service") && (
                       <div style={{ marginTop: 8, borderTop: "1px dashed #fde68a", paddingTop: 8 }}>
                         <div style={{ fontSize: 10.5, fontWeight: 800, color: "#92400e", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Use points on a service</div>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                        <select value={pointsLines[0]?.cartId ?? ""} onChange={(ev) => selectPointsLine(ev.target.value)}
+                          style={{ width: "100%", height: 32, padding: "0 8px", borderRadius: 8, border: "1.5px solid #fde68a", fontSize: 12, fontWeight: 700, color: "#78350f", background: "#fff", outline: "none", cursor: "pointer" }}>
+                          <option value="">Select a service…</option>
                           {cart.filter((e) => e.type === "service").map((e) => {
                             const rewarded = activeRewards.some((r) => r.serviceId === e.itemId);
-                            const on = pointsOnLines.includes(e.cartId) && !rewarded;
                             const need = pointsToCover(e.unitPrice);
-                            // A selected line shows what it was given; an unselected one, what's left over.
-                            const left = on ? (pointsAllocation.alloc.get(e.cartId) ?? 0) : pointsAllocation.left;
-                            const use = Math.min(left, need);
+                            const use = Math.min(cashPointsAvailable, need);
                             const pay = Math.max(0, e.unitPrice - use * rupeePerPoint);
-                            const disabled = rewarded || (!on && left <= 0) || e.unitPrice <= 0;
                             return (
-                              <button key={e.cartId} type="button" disabled={disabled} onClick={() => togglePointsOnLine(e.cartId)}
-                                style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "7px 9px", borderRadius: 8, textAlign: "left",
-                                  cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1,
-                                  border: `1.5px solid ${on ? "#d97706" : "#fde68a"}`, background: on ? "#fef3c7" : "#fff" }}>
-                                <span style={{ flex: 1, minWidth: 0 }}>
-                                  <span style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#78350f", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                    {on ? "✓ " : ""}{e.name}{e.guestName ? ` · ${e.guestName}` : ""}
-                                  </span>
-                                  <span style={{ display: "block", fontSize: 10.5, color: "#b45309", marginTop: 1 }}>
-                                    {rewarded ? "Free with reward" : pay <= 0 ? `Free with ${need.toLocaleString()} pts` : `Use ${use.toLocaleString()} pts · pay ${pkr(pay)}`}
-                                  </span>
-                                </span>
-                                <span style={{ fontSize: 10.5, fontWeight: 800, color: "#d97706", whiteSpace: "nowrap" }}>{pkr(e.unitPrice)}</span>
-                              </button>
+                              <option key={e.cartId} value={e.cartId} disabled={rewarded || use <= 0 || e.unitPrice <= 0}>
+                                {e.name}{e.guestName ? ` · ${e.guestName}` : ""} ({pkr(e.unitPrice)}) — {rewarded ? "free with reward" : pay <= 0 ? `free with ${need.toLocaleString()} pts` : `use ${use.toLocaleString()} pts · pay ${pkr(pay)}`}
+                              </option>
                             );
                           })}
-                        </div>
+                        </select>
                       </div>
                     )}
                     {loyaltyRewards.length > 0 && (
