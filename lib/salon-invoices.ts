@@ -135,7 +135,7 @@ export function advancePercent(inv: Pick<SalonInvoice, "total" | "advanceAmount"
 }
 
 /** The card machines the salon has. Card sales record which one took the payment. */
-export const CARD_TERMINALS = ["Meezan Bank", "Bank Alfalah", "HBL", "Keenu"] as const;
+export const CARD_TERMINALS = ["Meezan Bank", "Bank Alfalah", "HBL", "UBL", "Keenu"] as const;
 
 /** "Card · HBL" for a card sale with a known machine, otherwise just the method's own label. */
 export function paymentMethodLabel(inv: Pick<SalonInvoice, "paymentMethod" | "cardTerminal">, labels: Record<string, string>): string {
