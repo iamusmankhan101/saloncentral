@@ -33,6 +33,7 @@ import { getCurrentPlan } from "@/lib/plan-limits";
 import { getDefaultLocationId } from "@/lib/locations";
 import { getSectionOptions, getActiveSection, inSection } from "@/lib/sections";
 import type { Service, Client, InventoryItem, Staff, PaymentMethod } from "@/lib/types";
+import { settleServiceConsumption } from "@/lib/inventory-consumption";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -794,6 +795,8 @@ export default function POSPage() {
         openWhatsAppThankYou(invoice, selectedClient);
       }
       setCompleted(true);
+      // Products this sale's services use up (e.g. a fifth of a dye tube).
+      settleServiceConsumption();
     } finally {
       setCompleting(false);
     }

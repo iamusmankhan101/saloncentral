@@ -32,6 +32,7 @@ const CATEGORIES = Object.keys(CATEGORY_CONFIG) as InventoryCategory[];
 
 import { fmtCurrency as fmt } from "@/lib/format";
 import { whatsAppConnected } from "@/lib/whatsapp-scheduler";
+import { settleServiceConsumption } from "@/lib/inventory-consumption";
 const fmtV = (n: number) => {
   const currency = settingsStore.salon.currency || "PKR";
   return n >= 1_000_000 ? `${currency} ${(n / 1_000_000).toFixed(1)}M`
@@ -83,6 +84,7 @@ type ItemForm = {
   costPrice: string; retailPrice: string; supplier: string; notes: string;
   barcode: string;
   variablePrice: boolean; priceRangeMin: string; priceRangeMax: string;
+  servicesPerUnit: string;
 };
 
 const EMPTY_FORM: ItemForm = {
@@ -90,6 +92,7 @@ const EMPTY_FORM: ItemForm = {
   currentStock: "", minStock: "", costPrice: "",
   retailPrice: "", barcode: "", supplier: "", notes: "",
   variablePrice: false, priceRangeMin: "", priceRangeMax: "",
+  servicesPerUnit: "",
 };
 
 function itemToForm(item: InventoryItem): ItemForm {
@@ -103,7 +106,20 @@ function itemToForm(item: InventoryItem): ItemForm {
     variablePrice: item.variablePrice ?? false,
     priceRangeMin: item.priceRangeMin ? String(item.priceRangeMin) : "",
     priceRangeMax: item.priceRangeMax ? String(item.priceRangeMax) : "",
+    servicesPerUnit: item.servicesPerUnit ? String(item.servicesPerUnit) : "",
   };
+}
+
+/**
+ * "Lasts about N services" plus the mark service consumption counts from. A
+ * stock figure typed in (or the setting switched on) is a fresh count, so
+ * consumption restarts from now; otherwise the existing mark is kept.
+ */
+function consumptionFields(form: ItemForm, existing?: InventoryItem): Pick<InventoryItem, "servicesPerUnit" | "stockCountedAt"> {
+  const perUnit = Number(form.servicesPerUnit);
+  if (!(perUnit > 0)) return { servicesPerUnit: undefined, stockCountedAt: undefined };
+  const recounted = !existing || Number(form.currentStock) !== existing.currentStock || !existing.servicesPerUnit;
+  return { servicesPerUnit: perUnit, stockCountedAt: recounted ? new Date().toISOString() : existing.stockCountedAt };
 }
 
 function formToItem(form: ItemForm, existing?: InventoryItem): InventoryItem {
@@ -126,6 +142,7 @@ function formToItem(form: ItemForm, existing?: InventoryItem): InventoryItem {
     supplier: form.supplier || undefined,
     notes: form.notes || undefined,
     lastRestocked: existing?.lastRestocked ?? new Date().toLocaleDateString("en-CA"),
+    ...consumptionFields(form, existing),
   };
 }
 
@@ -156,9 +173,20 @@ function ItemFormFields({ form, set, items }: { form: ItemForm; set: (k: keyof I
         </select>
       </Field>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <Field label="Current Stock *"><input type="number" min="0" value={form.currentStock} onChange={(e) => set("currentStock", e.target.value)} placeholder="0" style={INP} /></Field>
+        <Field label="Current Stock *"><input type="number" min="0" step="any" value={form.currentStock} onChange={(e) => set("currentStock", e.target.value)} placeholder="0" style={INP} /></Field>
         <Field label="Min Stock (alert threshold) *"><input type="number" min="0" value={form.minStock} onChange={(e) => set("minStock", e.target.value)} placeholder="0" style={INP} /></Field>
       </div>
+      <Field label={`Used in services — 1 ${form.unit || "unit"} lasts about`}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <input type="number" min="0" step="any" value={form.servicesPerUnit} onChange={(e) => set("servicesPerUnit", e.target.value)} placeholder="e.g. 5" style={{ ...INP, maxWidth: 120 }} />
+          <span style={{ fontSize: 13, color: "#6b6b8a", fontWeight: 600 }}>services</span>
+        </div>
+        <div style={{ fontSize: 11, color: "#9898b0", lineHeight: 1.5 }}>
+          {Number(form.servicesPerUnit) > 0
+            ? `Each service that uses this takes ${Math.round(100 / Number(form.servicesPerUnit)) / 100} ${form.unit || "unit"} off the stock automatically. Pick this product under "Products used" on those services (Services page).`
+            : "Optional. For back-bar products like hair dye: stock goes down automatically as services that use it are done. Leave blank to track this item by hand."}
+        </div>
+      </Field>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <Field label="Cost Price (PKR) *"><input type="number" min="0" value={form.costPrice} onChange={(e) => set("costPrice", e.target.value)} placeholder="0" style={INP} /></Field>
         {!form.variablePrice && (
@@ -815,6 +843,7 @@ function ItemRow({ item, isLast, usage, onEdit, onDelete, onShowUsage }: {
         </div>
         <div style={{ fontSize: 11, color: "#9898b0", marginTop: 1 }}>
           {item.brand}{item.supplier ? ` · ${item.supplier}` : ""}
+          {item.servicesPerUnit ? <span style={{ color: "#7C3AED", fontWeight: 600 }}> · 1 {item.unit} ≈ {item.servicesPerUnit} services</span> : null}
         </div>
       </div>
 
@@ -898,6 +927,7 @@ export default function InventoryPage() {
   const [usageItem, setUsageItem] = useState<InventoryItem | null>(null);
 
   useEffect(() => {
+    settleServiceConsumption();
     setItems(getStoredInventory());
     // Back-bar usage is derived, not logged — see lib/inventory-usage.ts. Read
     // once on mount alongside the stock itself; nothing on this page changes a
@@ -1148,6 +1178,7 @@ export default function InventoryPage() {
                         {item.brand}{item.supplier ? ` · ${item.supplier}` : ""} · {fmt(item.costPrice)}
                         {usageFor(usage, item.id).timesUsed > 0 &&
                           ` · used ${usageFor(usage, item.id).timesUsed}×`}
+                        {item.servicesPerUnit ? ` · 1 ${item.unit} ≈ ${item.servicesPerUnit} services` : ""}
                       </div>
                       <div className="mobile-stock-bar-wrap">
                         <div className="mobile-stock-bar" style={{ width: `${stockPct}%`, background: barColor }} />

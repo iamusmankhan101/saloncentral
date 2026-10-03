@@ -116,6 +116,12 @@ export interface Service {
    * product lines; this is the back-bar side, which never appears on a bill.
    */
   inventoryUsage?: string[];
+  /**
+   * Per product in inventoryUsage: how many of *this* service one unit lasts
+   * (e.g. a dye packet lasts 5 colour services). Each performance then takes
+   * 1/N of a unit off stock. Falls back to the item's own servicesPerUnit.
+   */
+  inventoryServicesPerUnit?: Record<string, number>;
   assignedStaffIds: string[];
   /** When true, all of assignedStaffIds work together as a team on this service (e.g. bridal hair + makeup done jointly), rather than assignedStaffIds being a pool of individually-eligible stylists. Informational only — doesn't affect booking, calendar, or payroll. */
   multiStylist?: boolean;
@@ -237,6 +243,8 @@ export interface Appointment {
    * points all stay with the main client, who pays.
    */
   guests?: AppointmentGuest[];
+  /** ISO time the appointment was marked completed — when its products were used up. */
+  completedAt?: string;
 }
 
 export interface AppointmentGuest {
@@ -301,4 +309,13 @@ export interface InventoryItem {
   supplier?: string;
   lastRestocked?: string;
   notes?: string;
+  /**
+   * How many service performances one unit lasts, e.g. 5 for a dye tube that
+   * covers about five colour services. When set, each performance of a service
+   * that uses this item (Service.inventoryUsage) takes 1/servicesPerUnit off
+   * currentStock — see lib/inventory-consumption.ts.
+   */
+  servicesPerUnit?: number;
+  /** ISO time currentStock was last counted or brought up to date; only services after it reduce stock. */
+  stockCountedAt?: string;
 }

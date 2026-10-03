@@ -58,6 +58,8 @@ interface Performance {
   service: Service;
   count: number;
   date: string;
+  /** When it happened (ms): the POS sale's time, else the appointment's end time. */
+  at: number;
 }
 
 /**
@@ -148,7 +150,8 @@ function collectPerformances(
       const sold = resolveService(line, byId, byName);
       if (!sold) continue;
       for (const service of performedServices(sold, byId)) {
-        performances.push({ service, count: Math.max(1, line.qty), date: invoice.date });
+        const at = Date.parse(invoice.createdAt) || new Date(`${invoice.date}T12:00:00`).getTime();
+        performances.push({ service, count: Math.max(1, line.qty), date: invoice.date, at });
       }
     }
   }
@@ -161,7 +164,10 @@ function collectPerformances(
       const booked = byId.get(serviceId);
       if (!booked) continue;
       for (const service of performedServices(booked, byId)) {
-        performances.push({ service, count: 1, date: appointment.date });
+        // When it was marked completed; older records fall back to the booked end time.
+        const at = Date.parse(appointment.completedAt ?? "")
+          || new Date(`${appointment.date}T${appointment.endTime || appointment.startTime || "23:59"}:00`).getTime();
+        performances.push({ service, count: 1, date: appointment.date, at });
       }
     }
   }
@@ -215,4 +221,48 @@ export function usageFor(usage: Map<string, ItemUsage>, itemId: string): ItemUsa
 /** Services that map to an item — for the inventory item's own detail view. */
 export function servicesUsingItem(services: Service[], itemId: string): Service[] {
   return services.filter((s) => usedItemIds(s).includes(itemId));
+}
+
+/**
+ * Units of stock used up per item strictly after its `since` time: each
+ * performance of a service that uses the item takes 1/N of a unit, N being
+ * the service's own figure for that product (inventoryServicesPerUnit) or else
+ * the item's default (`defaultPerUnit`). Items with neither aren't consumed.
+ */
+export function unitsConsumedSince(
+  invoices: SalonInvoice[],
+  appointments: Appointment[],
+  services: Service[],
+  sinceMsByItem: Map<string, number>,
+  defaultPerUnit: Map<string, number>,
+  nowMs: number = Date.now(),
+): Map<string, number> {
+  const earliest = Math.min(...sinceMsByItem.values());
+  if (!Number.isFinite(earliest)) return new Map();
+  // Day-level pre-filter (cheap), then exact times per item.
+  const from = new Date(earliest - 86_400_000).toISOString().slice(0, 10);
+  const out = new Map<string, number>();
+  for (const { service, count, at } of collectPerformances(invoices, appointments, services, { from })) {
+    for (const itemId of usedItemIds(service)) {
+      const since = sinceMsByItem.get(itemId);
+      // Nothing timed in the future (a booking completed ahead of its slot with
+      // no completion time): it counts once its time has passed, never twice.
+      if (since === undefined || at <= since || at > nowMs) continue;
+      const perUnit = Number(service.inventoryServicesPerUnit?.[itemId]) || defaultPerUnit.get(itemId) || 0;
+      if (perUnit <= 0) continue;
+      out.set(itemId, (out.get(itemId) ?? 0) + count / perUnit);
+    }
+  }
+  return out;
+}
+
+/** Items some service consumes by a per-service "lasts N services" figure. */
+export function itemsWithServiceRates(services: Service[]): Set<string> {
+  const ids = new Set<string>();
+  for (const s of services) {
+    for (const [itemId, n] of Object.entries(s.inventoryServicesPerUnit ?? {})) {
+      if (Number(n) > 0 && usedItemIds(s).includes(itemId)) ids.add(itemId);
+    }
+  }
+  return ids;
 }

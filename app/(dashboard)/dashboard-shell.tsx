@@ -19,6 +19,7 @@ import { PLAN_CONFIGS, getCurrentPlanId, type PlanId } from "@/lib/plan-limits";
 import { setActivePlan } from "@/lib/payment-requests";
 import { addSalonLocation, clearLocationLocalData, getActiveLocationFilter, getSalonLocations, removeSalonLocation, setActiveLocationFilter, type SalonLocation } from "@/lib/locations";
 import { whatsAppConnected } from "@/lib/whatsapp-scheduler";
+import { settleServiceConsumption } from "@/lib/inventory-consumption";
 
 // ─── Notification chime ───────────────────────────────────────────────────────
 
@@ -708,6 +709,8 @@ export default function DashboardShell({ children }: { children: React.ReactNode
 
     syncFromDB().then(async () => {
       await syncLocalDataToDB();
+      // Take services performed on any device off service-consumed stock.
+      settleServiceConsumption();
       reloadSettings();
       window.dispatchEvent(new CustomEvent(SETTINGS_CHANGED_EVENT));
       runWhatsAppScheduler();

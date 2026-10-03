@@ -333,6 +333,10 @@ function AddEditServiceModal({ onClose, onSave, staffList, servicesList, invento
     assignedStaffIds: serviceToEdit?.assignedStaffIds ?? [] as string[],
     multiStylist:     serviceToEdit?.multiStylist ?? false,
     inventoryUsage:   serviceToEdit?.inventoryUsage ?? [] as string[],
+    /** itemId → "lasts N services" as typed (string so the box can be empty). */
+    inventoryServicesPerUnit: Object.fromEntries(
+      Object.entries(serviceToEdit?.inventoryServicesPerUnit ?? {}).map(([id, n]) => [id, String(n)]),
+    ) as Record<string, string>,
   });
   const set = (k: string, v: unknown) => setForm((f) => ({ ...f, [k]: v }));
   const [done, setDone] = useState(false);
@@ -437,6 +441,12 @@ function AddEditServiceModal({ onClose, onSave, staffList, servicesList, invento
       assignedStaffIds: form.assignedStaffIds,
       multiStylist:     form.multiStylist && form.assignedStaffIds.length >= 2 ? true : undefined,
       inventoryUsage:   form.inventoryUsage.length > 0 ? form.inventoryUsage : undefined,
+      inventoryServicesPerUnit: (() => {
+        const rates = Object.fromEntries(form.inventoryUsage
+          .map((id) => [id, Number(form.inventoryServicesPerUnit[id])] as [string, number])
+          .filter(([, n]) => n > 0));
+        return Object.keys(rates).length ? rates : undefined;
+      })(),
       isActive:         serviceToEdit?.isActive ?? true,
     });
     setDone(true);
@@ -628,18 +638,30 @@ function AddEditServiceModal({ onClose, onSave, staffList, servicesList, invento
           {!form.isPackage && (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <label style={{ fontSize: 11, fontWeight: 700, color: "#9898b0", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                Products Used <span style={{ textTransform: "none", fontWeight: 500, color: "#c0c0d0" }}>(optional — counted each time this service is done)</span>
+                Products Used <span style={{ textTransform: "none", fontWeight: 500, color: "#c0c0d0" }}>(optional — set how many services one unit lasts and stock goes down automatically)</span>
               </label>
               {form.inventoryUsage.length > 0 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {form.inventoryUsage.map((itemId) => {
                     const item = inventoryList.find((i) => i.id === itemId);
                     return (
-                      <div key={itemId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 8px", borderRadius: 6, background: "#F5F3FF" }}>
+                      <div key={itemId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 8px", borderRadius: 6, background: "#F5F3FF", flexWrap: "wrap" }}>
                         <Boxes size={13} color="#7C3AED" style={{ flexShrink: 0 }} />
-                        <span style={{ fontSize: 13, fontWeight: 500, color: "#1a1a2e", flex: 1 }}>
+                        <span style={{ fontSize: 13, fontWeight: 500, color: "#1a1a2e", flex: "1 1 100px", minWidth: 0 }}>
                           {item ? `${item.brand ? item.brand + " " : ""}${item.name}` : "Deleted product"}
                         </span>
+                        {item && (
+                          <label title="Stock goes down by 1/N of a unit each time this service is done"
+                            style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: "#6b6b8a", fontWeight: 600, whiteSpace: "nowrap" }}>
+                            1 {item.unit} lasts
+                            <input type="number" min="0" step="any" aria-label={`Services one ${item.unit} of ${item.name} lasts`}
+                              value={form.inventoryServicesPerUnit[itemId] ?? ""}
+                              placeholder={item.servicesPerUnit ? String(item.servicesPerUnit) : "e.g. 5"}
+                              onChange={(e) => set("inventoryServicesPerUnit", { ...form.inventoryServicesPerUnit, [itemId]: e.target.value })}
+                              style={{ width: 62, padding: "4px 6px", borderRadius: 6, border: "1px solid #ddd6fe", fontSize: 12, color: "#1a1a2e", background: "#fff" }} />
+                            services
+                          </label>
+                        )}
                         <button type="button" onClick={() => removeUsage(itemId)} aria-label={`Remove ${item?.name ?? "product"}`}
                           style={{ background: "none", border: "none", cursor: "pointer", display: "flex", padding: 2 }}>
                           <X size={13} color="#7C3AED" />

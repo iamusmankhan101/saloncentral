@@ -32,6 +32,7 @@ const ALL_STATUSES = Object.keys(STATUS) as AppointmentStatus[];
 
 import { fmtCurrency as fmt } from "@/lib/format";
 import { TimeSelect } from "@/components/time-select";
+import { settleServiceConsumption } from "@/lib/inventory-consumption";
 
 function fmtDate(s: string) {
   const [y, m, d] = s.split("-").map(Number);
@@ -2116,11 +2117,14 @@ export default function AppointmentsPage() {
           }}
           onStatusChange={(apptId, newStatus) => {
             setAppointments((prev) => {
-              const updated = prev.map((a) => a.id === apptId ? { ...a, status: newStatus } : a);
+              const completedAt = newStatus === "completed" ? new Date().toISOString() : undefined;
+              const updated = prev.map((a) => a.id === apptId ? { ...a, status: newStatus, completedAt: completedAt ?? a.completedAt } : a);
               saveAppointments(updated);
               return updated;
             });
             setSelected((prev) => prev ? { ...prev, status: newStatus } : null);
+            // After the save above lands: a completed service uses up its products.
+            if (newStatus === "completed") window.setTimeout(() => settleServiceConsumption(), 0);
 
             if (newStatus === "cancelled" || newStatus === "no-show") {
               enqueueWhatsAppCancellation(apptId);
