@@ -28,7 +28,6 @@ const STATUS_META: Record<AttendanceStatus, { label: string; color: string; bg: 
 };
 const STATUS_ORDER: AttendanceStatus[] = ["present", "late", "half-day", "absent", "leave", "week-off"];
 
-const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 function todayStr(): string { return new Date().toLocaleDateString("en-CA"); }
 

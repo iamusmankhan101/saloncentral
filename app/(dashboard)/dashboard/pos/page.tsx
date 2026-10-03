@@ -10,7 +10,7 @@ import {
   ScanBarcode, Lock, PauseCircle, PlayCircle,
 } from "lucide-react";
 import { EasypaisaLogo, JazzCashLogo } from "@/components/wallet-logos";
-import { awardPoints, redeemPoints, type LoyaltySettings, type LoyaltyReward } from "@/lib/loyalty";
+import { awardPoints, redeemPoints, type LoyaltySettings } from "@/lib/loyalty";
 import SalonInvoicePrint from "@/components/salon-invoice-print";
 import SalonInvoiceEdit from "@/components/salon-invoice-edit";
 import {

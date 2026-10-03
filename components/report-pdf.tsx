@@ -1,6 +1,6 @@
 "use client";
 
-import { APPOINTMENTS, REVENUE_LAST_7_DAYS, CLIENTS, STAFF } from "@/lib/mock-data";
+import { APPOINTMENTS, REVENUE_LAST_7_DAYS, STAFF } from "@/lib/mock-data";
 
 import { fmtCurrency as fmt } from "@/lib/format";
 

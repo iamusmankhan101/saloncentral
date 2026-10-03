@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Upload, Wand2, RefreshCw, Download, ChevronRight, Sparkles, ImagePlus, CheckCircle, AlertCircle, Clock } from "lucide-react";
-import { settingsStore } from "@/lib/settings-store";
 import { generateHairMask, compositeWithMask } from "@/lib/hair-mask";
 import { getCurrentPlan } from "@/lib/plan-limits";
 import PageTitle from "@/components/page-title";

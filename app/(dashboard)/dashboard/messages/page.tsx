@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import {
   MessageSquare, CheckCircle2, XCircle, Clock, Send, RefreshCw,
   Zap, Bell, ThumbsUp, Package, ChevronRight, Phone, Copy, Check,
-  Eye, EyeOff, Save, TrendingUp, Wifi, WifiOff, Calendar, CalendarDays, AlertCircle, Cake, CalendarX, Heart, X, ListChecks, UserMinus, RotateCcw, Trash2,
+  Eye, EyeOff, Save, TrendingUp, Wifi, WifiOff, CalendarDays, AlertCircle, Cake, CalendarX, Heart, X, ListChecks, UserMinus, RotateCcw, Trash2,
 } from "lucide-react";
 import DashboardHeader from "@/components/dashboard-header";
 import MobilePageHeader from "@/components/mobile-page-header";
@@ -85,10 +85,6 @@ const FILTERS: { value: WaMsgType | "all"; label: string }[] = [
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function previewText(template: string): string {
-  return template.replace(/\{\{(\w+)\}\}/g, (_, key) => SAMPLE_VARS[key] ?? `{{${key}}}`);
-}
 
 function fmtTime(iso: string) {
   const d = new Date(iso);

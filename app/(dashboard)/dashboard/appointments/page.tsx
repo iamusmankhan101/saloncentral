@@ -947,13 +947,6 @@ function personServicePrice(prices: Record<string, string>, svc: Service): numbe
   return Number.isFinite(n) && n >= 0 ? n : svc.price;
 }
 
-/** The price typed for a service on this day, or its catalog price when left blank. */
-function dayServicePrice(day: DayForm, svc: Service): number {
-  const raw = day.prices[svc.id];
-  const n = raw === undefined || raw.trim() === "" ? NaN : Number(raw);
-  return Number.isFinite(n) && n >= 0 ? n : svc.price;
-}
-
 function CreateModal({ onClose, onAdd, clients, staffList, allServices }: { onClose: () => void; onAdd: (appts: Appointment[], newClients: Client[]) => void; clients: Client[]; staffList: Staff[]; allServices: Service[] }) {
   const [form, setForm] = useState({ clientId: "", notes: "" });
   const [days, setDays] = useState<DayForm[]>(() => [emptyDay()]);

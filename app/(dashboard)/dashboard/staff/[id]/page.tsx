@@ -6,12 +6,12 @@ import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft, Phone, Edit2, TrendingUp, Users, Calendar,
   CheckCircle2, XCircle, Scissors, Star, Award, Clock,
-  BarChart2, ChevronRight, Briefcase,
+  BarChart2,
 } from "lucide-react";
 import { getStoredStaff, getStoredAppointments, getStoredServices, saveStaff, saveServices } from "@/lib/storage";
 import type { Staff, Appointment, Service, StaffPayType } from "@/lib/types";
 import { fmtCurrency as fmt } from "@/lib/format";
-import { Check, X, Plus, FileDown } from "lucide-react";
+import { Check, X, FileDown } from "lucide-react";
 import { exportStaffPdf } from "@/lib/export-pdf";
 import { settingsStore } from "@/lib/settings-store";
 import { getActiveSection, inSection } from "@/lib/sections";

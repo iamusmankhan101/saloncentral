@@ -3,7 +3,6 @@
 import { Suspense, useEffect, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CheckCircle, XCircle, Loader2, RefreshCw } from "lucide-react";
-import { markEmailVerified } from "@/lib/auth";
 
 function VerifyEmailInner() {
   const router = useRouter();

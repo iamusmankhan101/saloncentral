@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { Banknote, Bot, Check, ChevronLeft, ChevronRight, Clock, Copy, ImageIcon, KeyRound, Lock, LogOut, MapPin, Plus, Save, Shield, Smartphone, Store, Trash2, User, UserCog, Wand2, Zap } from "lucide-react";
+import { Banknote, Bot, Check, ChevronLeft, ChevronRight, Clock, Copy, ImageIcon, KeyRound, Lock, LogOut, MapPin, Plus, Save, Shield, Smartphone, Store, Trash2, User, UserCog, Wand2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { AuthUser, getCurrentUser, signOut, updateCurrentPassword, updateCurrentUser } from "@/lib/auth";
 import { saveSettings, settingsStore } from "@/lib/settings-store";
@@ -2090,9 +2090,6 @@ const PERMISSION_OPTIONS = [
   { key: "messages", label: "WhatsApp" },
   { key: "try-on", label: "Virtual Try-On" },
 ];
-
-// Routes that are always owner-only (not available for staff/manager assignment)
-const OWNER_ONLY_ROUTES = ["account", "billing", "admin", "migrate", "settings"];
 
 function RolesPermissionsSection() {
   const [staffList, setStaffList] = useState<Staff[]>([]);
