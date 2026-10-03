@@ -36,7 +36,20 @@ function publicSettings(settings: Json): Json {
       : [],
     appearance: pick(settings.appearance, ["accent"]),
     payments: publicPayments(settings.payments),
+    loyalty: publicLoyalty(settings.loyalty),
   };
+}
+
+/** What customers may see of the loyalty program: rates and free-service rewards. */
+function publicLoyalty(raw: unknown): Json {
+  const l = (raw && typeof raw === "object" ? raw : {}) as Json;
+  if (l.enabled === false) return { enabled: false };
+  const rewards = Array.isArray(l.rewards)
+    ? (l.rewards as Json[])
+        .filter((r) => typeof r?.serviceId === "string" && Number(r?.points) > 0)
+        .map((r) => ({ serviceId: r.serviceId, points: Math.round(Number(r.points)) }))
+    : [];
+  return { enabled: true, rupeePerPoint: Number(l.rupeePerPoint) || 0, pointsPerRupee: Number(l.pointsPerRupee) || 0, rewards };
 }
 
 /** Only the methods the salon switched on, and only the fields a customer needs to pay. */

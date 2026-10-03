@@ -4,6 +4,7 @@ import { use, useState, useEffect } from "react";
 import { Award, ChevronRight, CreditCard, Gift, Loader2, Smartphone, Star } from "lucide-react";
 import { TIER_META, type LoyaltySettings, type LoyaltyTier } from "@/lib/loyalty";
 import type { Client } from "@/lib/types";
+import LoyaltyRewardsList, { type PublicLoyalty } from "@/components/loyalty-rewards-list";
 
 interface CardResponse {
   ok: boolean;
@@ -35,15 +36,19 @@ export default function PublicLoyaltyCardPage({ params }: { params: Promise<{ sa
   const [loading, setLoading] = useState(false);
   const [walletMsg, setWalletMsg] = useState("");
   const [loadedSalonName, setLoadedSalonName] = useState<string | null>(null);
+  const [publicLoyalty, setPublicLoyalty] = useState<PublicLoyalty | undefined>();
+  const [publicServices, setPublicServices] = useState<{ id: string; name: string; price?: number }[]>([]);
 
   // Fetch the real salon name on mount so the card shows it before any lookup
   useEffect(() => {
     if (!salonId) return;
     fetch(`/api/public/salon?salonId=${encodeURIComponent(salonId)}`)
       .then((r) => r.json())
-      .then((d: { ok: boolean; settings?: { salon?: { name?: string } } }) => {
+      .then((d: { ok: boolean; settings?: { salon?: { name?: string }; loyalty?: PublicLoyalty }; services?: { id: string; name: string; price?: number }[] }) => {
         const n = d?.settings?.salon?.name;
         if (n) setLoadedSalonName(n);
+        setPublicLoyalty(d?.settings?.loyalty);
+        setPublicServices(d?.services ?? []);
       })
       .catch(() => {});
   }, [salonId]);
@@ -271,6 +276,15 @@ export default function PublicLoyaltyCardPage({ params }: { params: Promise<{ sa
                     <Smartphone size={15} /> Google Wallet
                   </button>
                 </div>
+              </div>
+            )}
+
+            {data?.card && data.client && publicLoyalty?.enabled && (
+              <div style={{ marginTop: 18 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 15, fontWeight: 900, color: "#1a1a2e", marginBottom: 10 }}>
+                  <Gift size={16} color="#7C3AED" /> Your rewards
+                </div>
+                <LoyaltyRewardsList loyalty={publicLoyalty} services={publicServices} balance={data.card.balance} />
               </div>
             )}
 

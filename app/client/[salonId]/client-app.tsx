@@ -17,7 +17,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useSearchParams } from "next/navigation";
 import {
-  BellRing, BellOff, CalendarPlus, Check, ChevronRight, Clock, CreditCard,
+  BellRing, BellOff, CalendarPlus, Check, ChevronRight, Clock, CreditCard, Gift,
   MapPin, Phone, Scissors, Search, Sparkles, Wallet, X,
 } from "lucide-react";
 import type { Service } from "@/lib/types";
@@ -27,6 +27,7 @@ import ServiceGroups from "./service-groups";
 import { categoryLabel } from "@/lib/service-groups";
 import { PaymentSheet, type PublicPayments } from "./payment-options";
 import { resolveSalonTheme, type SalonTheme } from "@/lib/salon-theme";
+import LoyaltyRewardsList, { type PublicLoyalty } from "@/components/loyalty-rewards-list";
 import {
   checkPushSupport, getExistingSubscription, subscribeToPush, unsubscribeFromPush,
 } from "@/lib/push-client";
@@ -36,6 +37,7 @@ interface SalonSettings {
   appearance?: { accent?: string };
   hours?: BusinessHour[];
   payments?: PublicPayments;
+  loyalty?: PublicLoyalty;
 }
 
 interface SalonResponse {
@@ -338,6 +340,17 @@ function ClientAppInner({ salonId }: { salonId: string }) {
           </a>
         </section>
 
+        {/* ── Loyalty rewards ─────────────────────────────────────────────── */}
+        {data.settings?.loyalty?.enabled && (data.settings.loyalty.rewards?.length || data.settings.loyalty.rupeePerPoint) ? (
+          <section className="ca-rewards">
+            <div className="ca-rewards-head">
+              <span className="ca-rewards-title"><Gift size={16} /> Rewards</span>
+              <a href={`/loyalty-card/${encodeURIComponent(salonId)}`} className="ca-rewards-link">Check my points <ChevronRight size={14} /></a>
+            </div>
+            <LoyaltyRewardsList loyalty={data.settings.loyalty} services={services} accent={theme.accent} currency={currency} />
+          </section>
+        ) : null}
+
         {/* ── Services ────────────────────────────────────────────────────── */}
         <section className="ca-services">
           <div className="ca-sticky">
@@ -537,6 +550,11 @@ function Styles() {
 
       /* ── Quick actions ── */
       .ca-quick { display: flex; flex-direction: column; gap: 1px; border-radius: 16px; overflow: hidden; }
+      .ca-rewards { display: flex; flex-direction: column; gap: 10px; }
+      .ca-rewards-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+      .ca-rewards-title { display: flex; align-items: center; gap: 7px; font-size: 16px; font-weight: 800; color: #1a1a2e; }
+      .ca-rewards-title svg { color: var(--ca-accent, #7C3AED); }
+      .ca-rewards-link { display: inline-flex; align-items: center; gap: 2px; font-size: 13px; font-weight: 700; color: var(--ca-accent, #7C3AED); text-decoration: none; }
       .ca-quick-item {
         display: flex; align-items: center; gap: 11px;
         background: #fff; padding: 14px 15px; text-decoration: none; color: #1a1a2e;

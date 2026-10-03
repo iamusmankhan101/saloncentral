@@ -312,6 +312,8 @@ export default function POSPage() {
   const [discount2,     setDiscount2]     = useState<number>(0);
   const [discType2,     setDiscType2]     = useState<DiscountType>("flat");
   const [loyaltyRedeem, setLoyaltyRedeem] = useState<number>(0);
+  /** Cart lines (cartId) the cash points were put towards, for the note on the bill. */
+  const [pointsOnLines, setPointsOnLines] = useState<string[]>([]);
   /** Free-service rewards applied to this sale (LoyaltyReward ids). */
   const [appliedRewards, setAppliedRewards] = useState<string[]>([]);
   // No default — staff must actively pick a method (or Pay Later/Credit) before checkout,
@@ -413,6 +415,36 @@ export default function POSPage() {
     ? Math.min(Math.floor(cappedLoyaltyRedeem * loyaltySettings.rupeePerPoint), Math.max(0, rawSubtotal - discountAmount - discountAmount2 - rewardDiscount))
     : 0;
   const totalDiscountAmount   = Math.min(rawSubtotal, wholePkr(discountAmount + discountAmount2 + rewardDiscount + loyaltyDiscount));
+  // "Use points on a service": any service line, one unit, at the cash rate.
+  // Full price in points makes it free; fewer points cover part of it and the
+  // client pays the rest. It drives the same cash redemption as the box above.
+  const rupeePerPoint         = Number(loyaltySettings.rupeePerPoint) || 0;
+  const pointsToCover         = (price: number) => (rupeePerPoint > 0 ? Math.ceil(price / rupeePerPoint) : 0);
+  const pointsLines           = cart.filter((e) => e.type === "service" && pointsOnLines.includes(e.cartId)
+    && !activeRewards.some((r) => r.serviceId === e.itemId));
+  function pointsForLines(cartIds: string[]): number {
+    return cart
+      .filter((e) => cartIds.includes(e.cartId) && !activeRewards.some((r) => r.serviceId === e.itemId))
+      .reduce((sum, e) => sum + pointsToCover(e.unitPrice), 0);
+  }
+  // Points each selected line actually gets, first-picked first.
+  const pointsAllocation = (() => {
+    const alloc = new Map<string, number>();
+    let left = cashPointsAvailable;
+    for (const id of pointsOnLines) {
+      const e = cart.find((x) => x.cartId === id);
+      if (!e || activeRewards.some((r) => r.serviceId === e.itemId)) continue;
+      const use = Math.min(left, pointsToCover(e.unitPrice));
+      alloc.set(id, use);
+      left -= use;
+    }
+    return { alloc, left };
+  })();
+  function togglePointsOnLine(cartId: string) {
+    const next = pointsOnLines.includes(cartId) ? pointsOnLines.filter((id) => id !== cartId) : [...pointsOnLines, cartId];
+    setPointsOnLines(next);
+    setLoyaltyRedeem(Math.min(cashPointsAvailable, pointsForLines(next)));
+  }
 
   const { subtotal, taxAmount, total } = calcTotals(cartLineItems, totalDiscountAmount);
   // Never more than the ticket itself — an "advance" covering the whole bill is
@@ -566,11 +598,12 @@ export default function POSPage() {
     resumeLoyaltyRef.current = null;
     setAppliedRewards(resumeRewardsRef.current ?? []);
     resumeRewardsRef.current = null;
+    setPointsOnLines([]);
   }, [selectedClient?.id]);
 
   // ── New sale reset ────────────────────────────────────────────────────────
   function startNewSale() {
-    setCart([]); setDiscount(0); setDiscount2(0); setLoyaltyRedeem(0); setAppliedRewards([]); setSaleNotes(""); setPayMethod(null);
+    setCart([]); setDiscount(0); setDiscount2(0); setLoyaltyRedeem(0); setAppliedRewards([]); setPointsOnLines([]); setSaleNotes(""); setPayMethod(null);
     setCardApproval(""); setCardLast4("");
     setIsAdvance(false); setAdvanceValue(50); setAdvanceType("pct");
     setSelectedClient(null); setClientQ(""); setSelectedStaffId("");
@@ -697,7 +730,11 @@ export default function POSPage() {
         date: today,
         status: isCredit ? "unpaid" : isAdvance ? "partial" : "paid",
         advanceAmount: !isCredit && isAdvance ? advanceAmount : undefined,
-        notes: [saleNotes.trim(), ...activeRewards.map((r) => `Loyalty reward: free ${cart.find((e) => e.itemId === r.serviceId)?.name ?? "service"} (${r.points} pts)`)].filter(Boolean).join("\n"),
+        notes: [
+          saleNotes.trim(),
+          ...activeRewards.map((r) => `Loyalty reward: free ${cart.find((e) => e.itemId === r.serviceId)?.name ?? "service"} (${r.points} pts)`),
+          loyaltyDiscount > 0 && pointsLines.length ? `Points used on: ${pointsLines.map((e) => e.name).join(", ")} (${cappedLoyaltyRedeem} pts = ${pkr(loyaltyDiscount)})` : "",
+        ].filter(Boolean).join("\n"),
         source: "pos",
       });
       // The sale is already final (payment collected, receipt about to send) so a
@@ -1796,17 +1833,17 @@ export default function POSPage() {
                       <input
                         type="number" min={0} max={cashPointsAvailable}
                         value={loyaltyRedeem || ""}
-                        onChange={e => setLoyaltyRedeem(Math.min(Math.max(0, Number(e.target.value)), cashPointsAvailable))}
+                        onChange={e => { setPointsOnLines([]); setLoyaltyRedeem(Math.min(Math.max(0, Number(e.target.value)), cashPointsAvailable)); }}
                         placeholder="0"
                         style={{ flex: 1, height: 30, padding: "0 8px", borderRadius: 8, border: "1.5px solid #fde68a", fontSize: 12, textAlign: "right", outline: "none", background: "#fff", fontWeight: 700 }}
                       />
                       <span style={{ fontSize: 11, color: "#92400e", fontWeight: 600 }}>pts</span>
-                      <button type="button" onClick={() => setLoyaltyRedeem(cashPointsAvailable)}
+                      <button type="button" onClick={() => { setPointsOnLines([]); setLoyaltyRedeem(cashPointsAvailable); }}
                         style={{ padding: "4px 10px", borderRadius: 7, border: "1px solid #fbbf24", background: "#fef3c7", fontSize: 10, fontWeight: 800, color: "#92400e", cursor: "pointer", whiteSpace: "nowrap" }}>
                         Use All
                       </button>
                       {loyaltyRedeem > 0 && (
-                        <button type="button" onClick={() => setLoyaltyRedeem(0)}
+                        <button type="button" onClick={() => { setPointsOnLines([]); setLoyaltyRedeem(0); }}
                           style={{ width: 24, height: 24, borderRadius: 6, border: "none", background: "#fee2e2", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
                           <X size={11} color="#dc2626" />
                         </button>
@@ -1814,8 +1851,43 @@ export default function POSPage() {
                     </div>
                     {loyaltyDiscount > 0 && (
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#d97706", marginTop: 6, fontWeight: 700, padding: "0 2px" }}>
-                        <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Gift size={11} />Points redeemed</span>
-                        <span>− {pkr(loyaltyDiscount)}</span>
+                        <span style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}><Gift size={11} style={{ flexShrink: 0 }} />
+                          {pointsLines.length ? `Points on ${pointsLines.map((e) => e.name).join(", ")}` : "Points redeemed"}
+                        </span>
+                        <span style={{ whiteSpace: "nowrap" }}>− {pkr(loyaltyDiscount)}</span>
+                      </div>
+                    )}
+                    {rupeePerPoint > 0 && cart.some((e) => e.type === "service") && (
+                      <div style={{ marginTop: 8, borderTop: "1px dashed #fde68a", paddingTop: 8 }}>
+                        <div style={{ fontSize: 10.5, fontWeight: 800, color: "#92400e", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Use points on a service</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                          {cart.filter((e) => e.type === "service").map((e) => {
+                            const rewarded = activeRewards.some((r) => r.serviceId === e.itemId);
+                            const on = pointsOnLines.includes(e.cartId) && !rewarded;
+                            const need = pointsToCover(e.unitPrice);
+                            // A selected line shows what it was given; an unselected one, what's left over.
+                            const left = on ? (pointsAllocation.alloc.get(e.cartId) ?? 0) : pointsAllocation.left;
+                            const use = Math.min(left, need);
+                            const pay = Math.max(0, e.unitPrice - use * rupeePerPoint);
+                            const disabled = rewarded || (!on && left <= 0) || e.unitPrice <= 0;
+                            return (
+                              <button key={e.cartId} type="button" disabled={disabled} onClick={() => togglePointsOnLine(e.cartId)}
+                                style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "7px 9px", borderRadius: 8, textAlign: "left",
+                                  cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1,
+                                  border: `1.5px solid ${on ? "#d97706" : "#fde68a"}`, background: on ? "#fef3c7" : "#fff" }}>
+                                <span style={{ flex: 1, minWidth: 0 }}>
+                                  <span style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#78350f", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                    {on ? "✓ " : ""}{e.name}{e.guestName ? ` · ${e.guestName}` : ""}
+                                  </span>
+                                  <span style={{ display: "block", fontSize: 10.5, color: "#b45309", marginTop: 1 }}>
+                                    {rewarded ? "Free with reward" : pay <= 0 ? `Free with ${need.toLocaleString()} pts` : `Use ${use.toLocaleString()} pts · pay ${pkr(pay)}`}
+                                  </span>
+                                </span>
+                                <span style={{ fontSize: 10.5, fontWeight: 800, color: "#d97706", whiteSpace: "nowrap" }}>{pkr(e.unitPrice)}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                     )}
                     {loyaltyRewards.length > 0 && (
