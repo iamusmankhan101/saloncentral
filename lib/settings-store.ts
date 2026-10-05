@@ -145,6 +145,8 @@ const defaults = {
     birthdayNoDiscount: "🎂 Happy Birthday {{name}}! Wishing you a beautiful day from all of us at {{salon_name}}. We hope your day is full of joy and glow 💜",
     winback: "Hi {{name}}, it's been a while since your last visit to {{salon_name}} — we've missed you! Come back and enjoy {{discount}} off your next appointment. Just reply here to book 💜",
     winbackNoDiscount: "Hi {{name}}, it's been a while since your last visit to {{salon_name}} — we've missed you! We'd love to see you again, just reply here whenever you'd like to book 💜",
+    winbackNeverVisited: "Hi {{name}}, we'd love to welcome you to {{salon_name}} for the first time! Enjoy {{discount}} off your first appointment. Just reply here to book 💜",
+    winbackNeverVisitedNoDiscount: "Hi {{name}}, we'd love to welcome you to {{salon_name}} for the first time! Just reply here whenever you'd like to book 💜",
     posThankYou: "Thank you so much for visiting {{salon_name}} today, {{name}}! We hope you loved your experience — see you again soon 💜",
   },
   birthday: {
@@ -163,6 +165,7 @@ const defaults = {
     winbackDiscountEnabled: true,
     winbackDiscount: "",
     winbackDailyLimit: 15,
+    winbackIncludeNeverVisited: false,
   },
   loyalty: {
     enabled: true,

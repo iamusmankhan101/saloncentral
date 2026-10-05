@@ -10,7 +10,7 @@
 
 import { db } from "./db";
 import { isFakePlaceholderPhone } from "./whatsapp-provider";
-import { findLapsedClients, resolveWinbackConfig, todaysWinbackCap, winbackTemplateVars, type WinbackAppointment, type WinbackClient, type WinbackInvoice } from "./winback";
+import { summarizeWinbackAudience, resolveWinbackConfig, todaysWinbackCap, winbackTemplateVars, type WinbackAppointment, type WinbackClient, type WinbackInvoice } from "./winback";
 import { appointmentStartMs, isWithinSalonHours, nextSalonOpenMs, timezoneFromSettings, type SalonHoursDay } from "./appointment-time";
 
 const MINUTE_MS = 60 * 1000;
@@ -227,8 +227,18 @@ export async function enqueueWinbackForUser(
   // often the only record that a client came in, so leaving them out both hides
   // real lapsed clients and, worse, makes active ones look dormant.
   const invoices = await loadEntity<WinbackInvoice>(userId, "salon_invoices");
-  const lapsed = findLapsedClients(clients, appointments, config.daysInactive, nowMs, invoices);
-  if (lapsed.length === 0) return { ok: true, eligible: 0, queued: 0, skipped: 0 };
+  const audience = summarizeWinbackAudience(clients, appointments, config.daysInactive, nowMs, invoices);
+  // Lapsed clients first, so a capped day reaches them before any never-visited
+  // leads. Leads get their own wording since there's no "last visit" to mention.
+  const neverVisitedTemplate = (config.discountEnabled ? whatsapp?.winbackNeverVisited : whatsapp?.winbackNeverVisitedNoDiscount)
+    || whatsapp?.winbackNeverVisited;
+  const targets: { client: WinbackClient; template: string; lastVisit?: string; daysSinceVisit?: number }[] = [
+    ...audience.lapsed.map((entry) => ({ ...entry, template })),
+    ...(config.includeNeverVisited && neverVisitedTemplate?.trim()
+      ? audience.neverVisited.map((client) => ({ client, template: neverVisitedTemplate }))
+      : []),
+  ];
+  if (targets.length === 0) return { ok: true, eligible: 0, queued: 0, skipped: 0 };
 
   const salonName = (settings.salon as { name?: string } | undefined)?.name || "Your Salon";
   const discount = config.discountEnabled ? (config.discount || "a special offer") : "";
@@ -250,14 +260,14 @@ export async function enqueueWinbackForUser(
   const alreadyQueuedToday = await queuedTodayCount(userId, salonDayStartMs);
   const remainingToday = Math.max(0, dailyCap - alreadyQueuedToday);
   if (remainingToday === 0) {
-    return { ok: true, eligible: lapsed.length, queued: 0, skipped: lapsed.length, dailyCap, remainingToday: 0 };
+    return { ok: true, eligible: targets.length, queued: 0, skipped: targets.length, dailyCap, remainingToday: 0 };
   }
 
   let queued = 0;
   let skipped = 0;
   const seenPhones = new Set<string>();
 
-  for (const entry of lapsed) {
+  for (const entry of targets) {
     if (queued >= remainingToday) { skipped++; continue; }
 
     const phone = normalizePhone(entry.client.phone || "");
@@ -269,7 +279,7 @@ export async function enqueueWinbackForUser(
     if (lastSent != null && nowMs - lastSent < cooldownMs) { skipped++; continue; }
     if (await alreadyQueued(userId, phone)) { skipped++; continue; }
 
-    const text = fillTemplate(template, winbackTemplateVars({
+    const text = fillTemplate(entry.template, winbackTemplateVars({
       clientName: entry.client.name,
       salonName,
       discount,
@@ -315,5 +325,5 @@ export async function enqueueWinbackForUser(
     queued++;
   }
 
-  return { ok: true, eligible: lapsed.length, queued, skipped, dailyCap, remainingToday };
+  return { ok: true, eligible: targets.length, queued, skipped, dailyCap, remainingToday };
 }

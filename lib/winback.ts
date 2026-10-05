@@ -30,6 +30,9 @@ export interface WinbackConfig {
    * marketing send, so it drips out over days instead of blasting the whole
    * dormant list at once. Never exceeds WINBACK_DAILY_MAX. */
   dailyLimit: number;
+  /** Also message clients on file who have never visited at all (leads). They
+   * share the daily cap and cooldown, and go after the lapsed clients. */
+  includeNeverVisited: boolean;
 }
 
 // Off by default, unlike the other automations: turning this on messages every
@@ -42,6 +45,7 @@ export const WINBACK_DEFAULTS: WinbackConfig = {
   discountEnabled: true,
   discount: "",
   dailyLimit: WINBACK_DAILY_MAX,
+  includeNeverVisited: false,
 };
 
 function positiveNumber(value: unknown, fallback: number): number {
@@ -61,6 +65,7 @@ export function resolveWinbackConfig(settings: unknown): WinbackConfig {
     // Clamped, not just defaulted — an old saved value (or a hand-edited one)
     // must never lift the ceiling above WINBACK_DAILY_MAX.
     dailyLimit: Math.min(positiveNumber(raw.winbackDailyLimit, WINBACK_DEFAULTS.dailyLimit), WINBACK_DAILY_MAX),
+    includeNeverVisited: raw.winbackIncludeNeverVisited === true,
   };
 }
 
@@ -145,6 +150,9 @@ function hasUpcomingBooking(clientId: string, appointments: WinbackAppointment[]
 /** Why the clients who didn't qualify were left out — drives the empty-state copy. */
 export interface WinbackAudience {
   lapsed: LapsedClient[];
+  /** Reachable clients with no recorded visit and no upcoming booking — only
+   * messaged when includeNeverVisited is on. */
+  neverVisited: WinbackClient[];
   totalClients: number;
   excluded: {
     noPhone: number;
@@ -170,6 +178,7 @@ export function summarizeWinbackAudience(
 ): WinbackAudience {
   const today = dayKey(nowMs);
   const lapsed: LapsedClient[] = [];
+  const neverVisited: WinbackClient[] = [];
   const excluded = { noPhone: 0, optedOut: 0, neverVisited: 0, visitedRecently: 0, upcomingBooking: 0 };
 
   for (const client of clients) {
@@ -177,11 +186,14 @@ export function summarizeWinbackAudience(
     if (client.whatsappOptedOut) { excluded.optedOut++; continue; }
 
     const lastVisit = effectiveLastVisit(client, appointments, invoices);
-    // Never visited at all — a lead, not a lapsed client. Nothing to win back.
-    if (!lastVisit) { excluded.neverVisited++; continue; }
-
-    const lastVisitMs = Date.parse(`${lastVisit}T00:00:00Z`);
-    if (!Number.isFinite(lastVisitMs)) { excluded.neverVisited++; continue; }
+    const lastVisitMs = lastVisit ? Date.parse(`${lastVisit}T00:00:00Z`) : NaN;
+    // Never visited at all — a lead, not a lapsed client. Kept separately so the
+    // salon can opt in to messaging them too.
+    if (!lastVisit || !Number.isFinite(lastVisitMs)) {
+      excluded.neverVisited++;
+      if (!hasUpcomingBooking(client.id, appointments, today)) neverVisited.push(client);
+      continue;
+    }
     const daysSinceVisit = Math.floor((nowMs - lastVisitMs) / DAY_MS);
     if (daysSinceVisit < daysInactive) { excluded.visitedRecently++; continue; }
 
@@ -191,7 +203,7 @@ export function summarizeWinbackAudience(
   }
 
   lapsed.sort((a, b) => b.daysSinceVisit - a.daysSinceVisit);
-  return { lapsed, totalClients: clients.length, excluded };
+  return { lapsed, neverVisited, totalClients: clients.length, excluded };
 }
 
 /** Just the eligible clients — see summarizeWinbackAudience for the exclusion tally. */
@@ -234,14 +246,14 @@ export function winbackTemplateVars(input: {
   clientName: string;
   salonName: string;
   discount: string;
-  lastVisit: string;
-  daysSinceVisit: number;
+  lastVisit?: string;
+  daysSinceVisit?: number;
 }): Record<string, string> {
   return {
     name: input.clientName,
     salon_name: input.salonName,
     discount: input.discount,
-    last_visit: input.lastVisit,
-    days: String(input.daysSinceVisit),
+    last_visit: input.lastVisit ?? "",
+    days: input.daysSinceVisit == null ? "" : String(input.daysSinceVisit),
   };
 }

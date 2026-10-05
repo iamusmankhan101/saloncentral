@@ -66,6 +66,7 @@ const TPL_CONFIG: TplCfg[] = [
   { key: "lowstock",     label: "Low Stock Alert",         description: "Sent once daily to your WhatsApp when stock is low",        vars: ["items","count","salon_name"],                color: "#ea580c", icon: Package },
   { key: "birthday", noDiscountKey: "birthdayNoDiscount", label: "Birthday Greeting", description: "Queued on each client's birthday. Supports separate discount and no-discount wording", vars: ["name","salon_name","discount"], noDiscountVars: ["name","salon_name"], color: "#db2777", icon: Cake },
   { key: "winback", noDiscountKey: "winbackNoDiscount", label: "Win-back (Lapsed Clients)", description: "Sent to clients who haven't visited in a long time. Supports separate discount and no-discount wording", vars: ["name","salon_name","discount","last_visit","days"], noDiscountVars: ["name","salon_name","last_visit","days"], color: "#0d9488", icon: UserMinus },
+  { key: "winbackNeverVisited", noDiscountKey: "winbackNeverVisitedNoDiscount", label: "Win-back (Never Visited)", description: "Sent to clients on file who have never visited, when that option is on in Win-back Messages", vars: ["name","salon_name","discount"], noDiscountVars: ["name","salon_name"], color: "#0d9488", icon: UserMinus },
   { key: "posThankYou",  label: "POS Thank You",           description: "Included in the invoice message caption after a POS sale", vars: ["name","salon_name"],                          color: "#c026d3", icon: Heart },
 ];
 
@@ -399,6 +400,7 @@ function MessagesPageContent() {
   const [wbDays,        setWbDays]        = useState(String(wbDefaults.daysInactive));
   const [wbCooldown,    setWbCooldown]    = useState(String(wbDefaults.cooldownDays));
   const [wbLimit,       setWbLimit]       = useState(String(wbDefaults.dailyLimit));
+  const [wbNeverVisited, setWbNeverVisited] = useState(wbDefaults.includeNeverVisited);
   const [wbSaving,      setWbSaving]      = useState(false);
   const [wbSaved,       setWbSaved]       = useState(false);
   const [wbSending,     setWbSending]     = useState(false);
@@ -422,6 +424,8 @@ function MessagesPageContent() {
     );
   }, [clients, wbDays]);
   const lapsedClients = winbackAudience?.lapsed ?? [];
+  const neverVisitedClients = winbackAudience?.neverVisited ?? [];
+  const winbackTargetCount = lapsedClients.length + (wbNeverVisited ? neverVisitedClients.length : 0);
 
   // "Nobody qualifies" is often the correct answer, so say which rule produced it
   // rather than leaving the owner to guess whether the feature is broken.
@@ -476,10 +480,12 @@ function MessagesPageContent() {
     wb.winbackDaysInactive = Number(wbDays) > 0 ? Number(wbDays) : WINBACK_DEFAULTS.daysInactive;
     wb.winbackCooldownDays = Number(wbCooldown) > 0 ? Number(wbCooldown) : WINBACK_DEFAULTS.cooldownDays;
     wb.winbackDailyLimit = Math.min(Number(wbLimit) > 0 ? Number(wbLimit) : WINBACK_DEFAULTS.dailyLimit, WINBACK_DAILY_MAX);
-    saveSettings();
+    wb.winbackIncludeNeverVisited = wbNeverVisited;
+    const dbSaved = saveSettings();
     setWbSaving(false);
     setWbSaved(true);
     setTimeout(() => setWbSaved(false), 2500);
+    return dbSaved;
   }
 
   // Queues server-side (unlike the birthday test send, which runs in this tab) so
@@ -488,6 +494,8 @@ function MessagesPageContent() {
     setWbSending(true);
     setWbResult(null);
     try {
+      // The server reads the saved settings, so unsaved edits (days, never-visited) must land first.
+      await saveWinbackSettings();
       const res = await fetch("/api/whatsapp/queue-winback", { method: "POST" });
       const data = await res.json() as { ok?: boolean; queued?: number; eligible?: number; skipped?: number; dailyCap?: number; error?: string };
       if (data.ok) {
@@ -1268,6 +1276,18 @@ function MessagesPageContent() {
                       : winbackEmptyReason}
                   </div>
 
+                  <label style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "10px 12px", borderRadius: 9, border: "1px solid #e8e8f0", fontSize: 12, color: "#29293d", cursor: "pointer", lineHeight: 1.5 }}>
+                    <input type="checkbox" checked={wbNeverVisited} onChange={(e) => setWbNeverVisited(e.target.checked)} style={{ marginTop: 2, accentColor: "#0d9488" }} />
+                    <span>
+                      <strong>Also message clients who have never visited</strong>
+                      <span style={{ display: "block", fontSize: 11, color: "#9999b0" }}>
+                        {neverVisitedClients.length > 0
+                          ? `${neverVisitedClients.length} client${neverVisitedClients.length > 1 ? "s" : ""}: ${neverVisitedClients.slice(0, 4).map((c) => c.name).join(", ")}${neverVisitedClients.length > 4 ? ` +${neverVisitedClients.length - 4} more` : ""}. Sent after lapsed clients, same daily limit.`
+                          : "No clients without a visit right now."}
+                      </span>
+                    </span>
+                  </label>
+
                   <div style={{ display: "flex", gap: 8 }}>
                     <div style={{ flex: 1 }}>
                       <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#7c7c9a", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 5 }}>
@@ -1317,9 +1337,9 @@ function MessagesPageContent() {
                       style={{ flex: 1, border: "none", borderRadius: 10, padding: "10px 0", fontSize: 12, fontWeight: 800, cursor: wbSaving ? "not-allowed" : "pointer", background: wbSaved ? "#ecfdf5" : "linear-gradient(135deg,#0f766e,#0d9488)", color: wbSaved ? "#059669" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, boxShadow: wbSaved ? "none" : "0 3px 10px rgba(13,148,136,0.3)" }}>
                       {wbSaved ? <><Check size={13} /> Saved</> : wbSaving ? "Saving…" : <><Save size={13} /> Save</>}
                     </button>
-                    <button type="button" onClick={queueWinbackNow} disabled={wbSending || lapsedClients.length === 0}
-                      title={lapsedClients.length === 0 ? "No lapsed clients to message" : "Queue today\u2019s win-back messages, each at least 30 min apart"}
-                      style={{ flex: 1, border: "1px solid #ccfbf1", borderRadius: 10, padding: "10px 0", fontSize: 12, fontWeight: 800, cursor: (wbSending || lapsedClients.length === 0) ? "not-allowed" : "pointer", background: "#f0fdfa", color: "#0d9488", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, opacity: lapsedClients.length === 0 ? 0.5 : 1 }}>
+                    <button type="button" onClick={queueWinbackNow} disabled={wbSending || winbackTargetCount === 0}
+                      title={winbackTargetCount === 0 ? "No clients to message" : "Queue today\u2019s win-back messages, each at least 30 min apart"}
+                      style={{ flex: 1, border: "1px solid #ccfbf1", borderRadius: 10, padding: "10px 0", fontSize: 12, fontWeight: 800, cursor: (wbSending || winbackTargetCount === 0) ? "not-allowed" : "pointer", background: "#f0fdfa", color: "#0d9488", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, opacity: winbackTargetCount === 0 ? 0.5 : 1 }}>
                       {wbSending ? "Queueing…" : <><Send size={13} /> Queue Now</>}
                     </button>
                   </div>
