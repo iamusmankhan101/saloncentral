@@ -60,7 +60,7 @@ function spacingDelayMs(kind: QueueKind): number {
   if (kind === "birthday") return randBetween(20 * MINUTE_MS, 30 * MINUTE_MS);
   // Widest of all — a win-back run is a bulk marketing batch to dormant
   // numbers, the send pattern most likely to get a number flagged.
-  if (kind === "winback") return randBetween(25 * MINUTE_MS, 45 * MINUTE_MS);
+  if (kind === "winback") return randBetween(15 * MINUTE_MS, 30 * MINUTE_MS);
   return randBetween(10 * MINUTE_MS, 15 * MINUTE_MS);
 }
 
@@ -493,10 +493,10 @@ function minGapMsForKind(kind: QueueKind): number {
   if (kind === "reminder") return 10 * MINUTE_MS;
   if (kind === "cancellation") return 15 * MINUTE_MS;
   if (kind === "birthday") return 20 * MINUTE_MS;
-  // Matches the 30 min floor win-back scheduling already builds into every gap
+  // Matches the 15 min floor win-back scheduling already builds into every gap
   // (see WINBACK_MIN_GAP_MS), so a message that drains a minute early — or a
   // predecessor that drained late — is held back rather than closing the gap.
-  if (kind === "winback") return 30 * MINUTE_MS;
+  if (kind === "winback") return 15 * MINUTE_MS;
   return 10 * MINUTE_MS;
 }
 // The floor between two invoice sends. Was 10 min, matching the old spacing;

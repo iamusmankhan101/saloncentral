@@ -18,7 +18,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { locationUserKey } from "@/lib/locations";
 import { getCurrentPlan } from "@/lib/plan-limits";
 import type { QueueDetailItem } from "@/app/api/whatsapp/queue-details/route";
-import { summarizeWinbackAudience, resolveWinbackConfig, WINBACK_DAILY_MAX, WINBACK_DEFAULTS } from "@/lib/winback";
+import { summarizeWinbackAudience, resolveWinbackConfig, WINBACK_DAILY_MIN, WINBACK_DAILY_MAX, WINBACK_DEFAULTS } from "@/lib/winback";
 import type { Client } from "@/lib/types";
 import { whatsAppConnected } from "@/lib/whatsapp-scheduler";
 
@@ -399,7 +399,6 @@ function MessagesPageContent() {
   const [wbEnabled,     setWbEnabled]     = useState(wbDefaults.autoWinback);
   const [wbDays,        setWbDays]        = useState(String(wbDefaults.daysInactive));
   const [wbCooldown,    setWbCooldown]    = useState(String(wbDefaults.cooldownDays));
-  const [wbLimit,       setWbLimit]       = useState(String(wbDefaults.dailyLimit));
   const [wbNeverVisited, setWbNeverVisited] = useState(wbDefaults.includeNeverVisited);
   const [wbSaving,      setWbSaving]      = useState(false);
   const [wbSaved,       setWbSaved]       = useState(false);
@@ -479,7 +478,7 @@ function MessagesPageContent() {
     wb.autoWinback = wbEnabled;
     wb.winbackDaysInactive = Number(wbDays) > 0 ? Number(wbDays) : WINBACK_DEFAULTS.daysInactive;
     wb.winbackCooldownDays = Number(wbCooldown) > 0 ? Number(wbCooldown) : WINBACK_DEFAULTS.cooldownDays;
-    wb.winbackDailyLimit = Math.min(Number(wbLimit) > 0 ? Number(wbLimit) : WINBACK_DEFAULTS.dailyLimit, WINBACK_DAILY_MAX);
+    delete wb.winbackDailyLimit; // retired — the daily cap is fixed at 15-20
     wb.winbackIncludeNeverVisited = wbNeverVisited;
     const dbSaved = saveSettings();
     setWbSaving(false);
@@ -502,7 +501,7 @@ function MessagesPageContent() {
         setWbResult({
           ok: true,
           message: data.queued
-            ? `Queued ${data.queued} win-back message${data.queued > 1 ? "s" : ""}, going out at least 30 min apart${data.skipped ? ` · ${data.skipped} held back (daily cap or cooldown)` : ""}.`
+            ? `Queued ${data.queued} win-back message${data.queued > 1 ? "s" : ""}, spread over the next 7\u20138 hours${data.skipped ? ` · ${data.skipped} held back (daily cap or cooldown)` : ""}.`
             : `Nothing to queue — today's limit of ${data.dailyCap ?? WINBACK_DAILY_MAX} is used up, or every lapsed client is inside their cooldown window.`,
         });
       } else {
@@ -1252,7 +1251,7 @@ function MessagesPageContent() {
                   </div>
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 900, color: "#1d1d2f" }}>Win-back Messages</div>
-                    <div style={{ fontSize: 11, color: "#9999b0", marginTop: 1 }}>Reaches clients who haven&rsquo;t been in for a while &mdash; a few a day, never less than 30 min apart</div>
+                    <div style={{ fontSize: 11, color: "#9999b0", marginTop: 1 }}>Reaches clients who haven&rsquo;t been in for a while &mdash; 15\u201320 a day, spread over 7\u20138 hours</div>
                   </div>
                   <button type="button" onClick={() => setWbEnabled((v) => !v)}
                     aria-label={`${wbEnabled ? "Disable" : "Enable"} win-back messages`}
@@ -1267,9 +1266,9 @@ function MessagesPageContent() {
                       ? <>
                           <strong>{lapsedClients.length} client{lapsedClients.length > 1 ? "s haven\u2019t" : " hasn\u2019t"} visited in {wbDays}+ days:</strong>{" "}
                           {lapsedClients.slice(0, 6).map((entry) => entry.client.name).join(", ")}{lapsedClients.length > 6 ? ` +${lapsedClients.length - 6} more` : ""}
-                          {lapsedClients.length > Number(wbLimit || WINBACK_DAILY_MAX) && (
+                          {winbackTargetCount > WINBACK_DAILY_MIN && (
                             <div style={{ marginTop: 5, opacity: 0.85 }}>
-                              The longest-absent {wbLimit} go out today; the rest follow on the days after.
+                              The longest-absent {WINBACK_DAILY_MIN}&ndash;{WINBACK_DAILY_MAX} go out today; the rest follow on the days after.
                             </div>
                           )}
                         </>
@@ -1299,15 +1298,6 @@ function MessagesPageContent() {
                         <span style={{ fontSize: 11, color: "#9999b0", fontWeight: 700 }}>days</span>
                       </div>
                     </div>
-                    <div style={{ flex: 1 }}>
-                      <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#7c7c9a", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 5 }}>
-                        Max per day
-                      </label>
-                      <input type="number" min={1} max={WINBACK_DAILY_MAX} value={wbLimit}
-                        onChange={(e) => setWbLimit(e.target.value)}
-                        onBlur={() => setWbLimit((v) => String(Math.min(Number(v) > 0 ? Number(v) : WINBACK_DEFAULTS.dailyLimit, WINBACK_DAILY_MAX)))}
-                        style={{ width: "100%", height: 36, padding: "0 12px", borderRadius: 9, border: "1px solid #e4e4ee", fontSize: 13, color: "#29293d", outline: "none", boxSizing: "border-box" }} />
-                    </div>
                   </div>
 
                   <div>
@@ -1320,8 +1310,8 @@ function MessagesPageContent() {
                       <span style={{ fontSize: 11, color: "#9999b0", fontWeight: 700 }}>days</span>
                     </div>
                     <div style={{ fontSize: 10, color: "#b0b0c8", marginTop: 4 }}>
-                      Capped at {WINBACK_DAILY_MAX}/day (the exact number varies day to day), with a random
-                      30&ndash;50 min gap between every message &mdash; nothing goes out the moment it&rsquo;s queued.
+                      {WINBACK_DAILY_MIN}&ndash;{WINBACK_DAILY_MAX} messages a day (the exact number varies day to day), spread
+                      over a random 7&ndash;8 hours with uneven gaps of at least 15 min &mdash; nothing goes out the moment it&rsquo;s queued.
                       Edit the wording and the discount on the Templates tab &rarr; Win-back (Lapsed Clients).
                     </div>
                   </div>
@@ -1338,7 +1328,7 @@ function MessagesPageContent() {
                       {wbSaved ? <><Check size={13} /> Saved</> : wbSaving ? "Saving…" : <><Save size={13} /> Save</>}
                     </button>
                     <button type="button" onClick={queueWinbackNow} disabled={wbSending || winbackTargetCount === 0}
-                      title={winbackTargetCount === 0 ? "No clients to message" : "Queue today\u2019s win-back messages, each at least 30 min apart"}
+                      title={winbackTargetCount === 0 ? "No clients to message" : "Queue today\u2019s win-back messages, spread over 7\u20138 hours"}
                       style={{ flex: 1, border: "1px solid #ccfbf1", borderRadius: 10, padding: "10px 0", fontSize: 12, fontWeight: 800, cursor: (wbSending || winbackTargetCount === 0) ? "not-allowed" : "pointer", background: "#f0fdfa", color: "#0d9488", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, opacity: winbackTargetCount === 0 ? 0.5 : 1 }}>
                       {wbSending ? "Queueing…" : <><Send size={13} /> Queue Now</>}
                     </button>

@@ -18,18 +18,17 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // Win-backs are pure marketing with no deadline, so they're spread far wider than
 // any other automated send — never a recognizable burst from one number.
 //
-// The gap between consecutive messages is the hard guarantee: never less than
-// WINBACK_MIN_GAP_MS, plus up to WINBACK_GAP_JITTER_MS of randomness on top so it
-// is never a fixed, guessable interval. Scheduling walks a cursor forward by that
-// gap rather than dividing a fixed window into slots — slots with jitter inside
-// them can still put two messages minutes apart, which is exactly what the floor
-// exists to prevent. A full 10-12 message batch at 30-50 min gaps works out to
-// roughly a 6-9 hour spread.
+// Each day's batch (15-20 messages) is spread across a random 7-8 hour window.
+// Every gap gets the WINBACK_MIN_GAP_MS floor, and the rest of the window is
+// shared out between the gaps by random weights — so the gaps are uneven and
+// never a guessable interval, but the batch always ends inside the window and two
+// messages are never closer than the floor.
 //
 // Nothing goes out at queue time either: even the first message waits out
 // WINBACK_FIRST_SEND_*, so a manual "Queue Now" never becomes an instant blast.
-const WINBACK_MIN_GAP_MS = 30 * MINUTE_MS;
-const WINBACK_GAP_JITTER_MS = 20 * MINUTE_MS;
+const WINBACK_MIN_GAP_MS = 15 * MINUTE_MS;
+const WINBACK_SPREAD_MIN_MS = 7 * 60 * MINUTE_MS;
+const WINBACK_SPREAD_MAX_MS = 8 * 60 * MINUTE_MS;
 const WINBACK_FIRST_SEND_MIN_MS = 30 * MINUTE_MS;
 const WINBACK_FIRST_SEND_MAX_MS = 50 * MINUTE_MS;
 
@@ -102,6 +101,17 @@ function fillTemplate(template: string, vars: Record<string, string>): string {
 
 function randBetween(minMs: number, maxMs: number): number {
   return Math.round(minMs + Math.random() * (maxMs - minMs));
+}
+
+/** Random gaps for `count` messages that add up to a 7-8 hour spread, none under the floor. */
+export function winbackGapsMs(count: number): number[] {
+  if (count < 2) return [];
+  const spreadMs = randBetween(WINBACK_SPREAD_MIN_MS, WINBACK_SPREAD_MAX_MS);
+  const slackMs = Math.max(0, spreadMs - (count - 1) * WINBACK_MIN_GAP_MS);
+  // 0.5-1.5 weights keep any one gap from swallowing most of the window.
+  const weights = Array.from({ length: count - 1 }, () => 0.5 + Math.random());
+  const total = weights.reduce((sum, w) => sum + w, 0);
+  return weights.map((w) => WINBACK_MIN_GAP_MS + Math.floor(slackMs * w / total));
 }
 
 async function loadEntity<T>(userId: string, entity: string): Promise<T[]> {
@@ -256,19 +266,20 @@ export async function enqueueWinbackForUser(
   }).format(new Date(nowMs));
   const salonDayStartMs = appointmentStartMs(salonDay, "00:00", timezone) ?? nowMs - DAY_MS;
 
-  const dailyCap = todaysWinbackCap(userId, salonDay, config.dailyLimit);
+  const dailyCap = todaysWinbackCap(userId, salonDay);
   const alreadyQueuedToday = await queuedTodayCount(userId, salonDayStartMs);
   const remainingToday = Math.max(0, dailyCap - alreadyQueuedToday);
   if (remainingToday === 0) {
     return { ok: true, eligible: targets.length, queued: 0, skipped: targets.length, dailyCap, remainingToday: 0 };
   }
 
-  let queued = 0;
   let skipped = 0;
   const seenPhones = new Set<string>();
+  // Pick today's batch first, so the gaps can be sized to fill the 7-8 hour window.
+  const batch: { clientId: string; clientName: string; phone: string; text: string }[] = [];
 
   for (const entry of targets) {
-    if (queued >= remainingToday) { skipped++; continue; }
+    if (batch.length >= remainingToday) { skipped++; continue; }
 
     const phone = normalizePhone(entry.client.phone || "");
     if (!phone || isFakePlaceholderPhone(phone)) { skipped++; continue; }
@@ -287,12 +298,13 @@ export async function enqueueWinbackForUser(
       daysSinceVisit: entry.daysSinceVisit,
     }));
 
-    // Step the cursor a full jittered gap past the previous message before
-    // placing this one, so consecutive win-backs are always at least
-    // WINBACK_MIN_GAP_MS apart by construction.
-    if (queued > 0) {
-      sendCursorMs += WINBACK_MIN_GAP_MS + Math.floor(Math.random() * WINBACK_GAP_JITTER_MS);
-    }
+    seenPhones.add(phone);
+    batch.push({ clientId: entry.client.id, clientName: entry.client.name, phone, text });
+  }
+
+  const gaps = winbackGapsMs(batch.length);
+  for (const [i, item] of batch.entries()) {
+    if (i > 0) sendCursorMs += gaps[i - 1];
     // The cursor absorbs any shift to the salon's next opening time — otherwise a
     // message pushed to tomorrow morning would be followed by one still scheduled
     // for this evening, sending them out of order and inside the gap floor.
@@ -307,11 +319,11 @@ export async function enqueueWinbackForUser(
         // Dated so the same client can be re-queued after their cooldown lapses —
         // a bare `winback_{clientId}` row would stay in the table forever and the
         // INSERT OR IGNORE would silently drop every future attempt.
-        `winback_${entry.client.id}_${salonDay}`,
+        `winback_${item.clientId}_${salonDay}`,
         userId,
-        phone,
-        text,
-        entry.client.name,
+        item.phone,
+        item.text,
+        item.clientName,
         // The `service` column is unused for win-backs, so it carries how the row
         // got here instead: the queue drainer lets a hand-queued batch through even
         // when the nightly win-back automation is switched off.
@@ -320,10 +332,7 @@ export async function enqueueWinbackForUser(
         createdAt,
       ],
     });
-
-    seenPhones.add(phone);
-    queued++;
   }
 
-  return { ok: true, eligible: targets.length, queued, skipped, dailyCap, remainingToday };
+  return { ok: true, eligible: targets.length, queued: batch.length, skipped, dailyCap, remainingToday };
 }

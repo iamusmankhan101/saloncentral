@@ -164,7 +164,6 @@ const defaults = {
     winbackCooldownDays: 180,
     winbackDiscountEnabled: true,
     winbackDiscount: "",
-    winbackDailyLimit: 15,
     winbackIncludeNeverVisited: false,
   },
   loyalty: {
