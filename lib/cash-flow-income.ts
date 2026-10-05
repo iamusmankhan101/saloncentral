@@ -9,6 +9,9 @@ export interface ManualCashIncome {
 
 const KEY = "werzio_cash_flow_income";
 
+/** Cash put into the drawer (e.g. a float for small expenses) — money in hand, not money earned, so Revenue leaves it out. */
+export const PETTY_CASH_CATEGORY = "Petty Cash";
+
 export function getManualCashIncome(): ManualCashIncome[] {
   if (typeof window === "undefined") return [];
   try {

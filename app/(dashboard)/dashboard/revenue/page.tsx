@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { getStoredAppointments } from "@/lib/storage";
 import { getSalonInvoices, revenueAmount } from "@/lib/salon-invoices";
 import { getExpenses, type Expense, type ExpenseCategory } from "@/lib/expenses";
-import { getManualCashIncome, type ManualCashIncome } from "@/lib/cash-flow-income";
+import { getManualCashIncome, PETTY_CASH_CATEGORY, type ManualCashIncome } from "@/lib/cash-flow-income";
 import { getActiveSection } from "@/lib/sections";
 import type { Appointment } from "@/lib/types";
 import MobilePageHeader from "@/components/mobile-page-header";
@@ -159,7 +159,7 @@ export default function RevenuePage() {
       // Flow already counts these, so Revenue needs the same source or it
       // undercounts every imported entry. These have no section of their own,
       // so a section-restricted view can't attribute them and excludes them.
-      setManualIncome(revenueScoped ? [] : getManualCashIncome());
+      setManualIncome(revenueScoped ? [] : getManualCashIncome().filter(entry => entry.category !== PETTY_CASH_CATEGORY));
       // Untagged expenses are shared overhead (rent, general salaries, etc.)
       // that can't be attributed to one section, so a restricted view excludes
       // them too — only expenses explicitly tagged to the active section count

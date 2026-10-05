@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { getStoredAppointments, getStoredInventory } from "@/lib/storage";
 import { getSalonInvoices } from "@/lib/salon-invoices";
 import { getExpenses, saveExpenses, addExpense, updateExpense, applyExpenseStock, expenseItemsTotal, linkExpenseItemsToInventory, type Expense, type ExpenseCategory, type ExpenseItem } from "@/lib/expenses";
-import { getManualCashIncome, saveManualCashIncome, type ManualCashIncome } from "@/lib/cash-flow-income";
+import { getManualCashIncome, saveManualCashIncome, PETTY_CASH_CATEGORY, type ManualCashIncome } from "@/lib/cash-flow-income";
 import type { Appointment, InventoryItem } from "@/lib/types";
 import MobilePageHeader from "@/components/mobile-page-header";
 import PageTitle from "@/components/page-title";
@@ -136,6 +136,7 @@ export default function CashFlowPage() {
   const [previewImage, setPreviewImage] = useState<{ src: string; title: string } | null>(null);
   const [expenseSyncFailed, setExpenseSyncFailed] = useState(false);
   const [retryingExpenseSync, setRetryingExpenseSync] = useState(false);
+  const [pettyForm, setPettyForm]     = useState<{ date: string; amount: string; note: string } | null>(null);
   const importInputRef                 = useRef<HTMLInputElement>(null);
   const expenseFormRef                 = useRef<HTMLDivElement>(null);
 
@@ -493,6 +494,33 @@ export default function CashFlowPage() {
     } catch {
       setFormError("The expense could not be saved. Please try again.");
     }
+  }
+
+  async function savePettyCash() {
+    if (!pettyForm) return;
+    const amount = Number(pettyForm.amount);
+    if (!pettyForm.date || !(amount > 0)) {
+      setFileMessage({ type: "error", text: "Enter a date and an amount above 0 for petty cash." });
+      return;
+    }
+    const entry: ManualCashIncome = {
+      id: `petty_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      date: pettyForm.date,
+      category: PETTY_CASH_CATEGORY,
+      description: pettyForm.note.trim() || "Cash added to drawer",
+      amount,
+      createdAt: new Date().toISOString(),
+    };
+    const updated = [...getManualCashIncome(), entry];
+    setManualIncome(updated);
+    setPettyForm(null);
+    setExpenseSyncFailed(!(await saveManualCashIncome(updated)));
+  }
+
+  async function deletePettyCash(id: string) {
+    const updated = getManualCashIncome().filter(entry => entry.id !== id);
+    setManualIncome(updated);
+    setExpenseSyncFailed(!(await saveManualCashIncome(updated)));
   }
 
   function handleDelete(id: string) {
@@ -932,7 +960,7 @@ export default function CashFlowPage() {
           <td>${row.date}</td>
           <td style="font-weight:600">${row.client}</td>
           <td style="color:#6b6b8a">${row.description}</td>
-          <td><span class="src-badge" style="background:${row.source === "pos" ? "#fffbeb" : "#F5F3FF"};color:${row.source === "pos" ? "#d97706" : "#7C3AED"}">${row.source === "pos" ? "POS Sale" : row.source === "manual" ? "Imported Income" : "Appointment"}</span></td>
+          <td><span class="src-badge" style="background:${row.source === "pos" ? "#fffbeb" : "#F5F3FF"};color:${row.source === "pos" ? "#d97706" : "#7C3AED"}">${row.source === "pos" ? "POS Sale" : row.source === "manual" ? (row.client === PETTY_CASH_CATEGORY ? PETTY_CASH_CATEGORY : "Imported Income") : "Appointment"}</span></td>
           <td style="text-align:right;font-weight:700;color:#7C3AED">${fmt(row.amount)}</td>
         </tr>`).join("")}
         <tr class="income-total">
@@ -1081,11 +1109,47 @@ export default function CashFlowPage() {
             <a href="/templates/cash-flow-import-template.xlsx" download style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 16px", borderRadius: 12, border: "1px solid #e3e0eb", background: "#fff", color: "#6b6b8a", fontSize: 13, fontWeight: 750, textDecoration: "none", transition: "all 0.15s" }} className="hover-bg-light">
               <Download size={15} /> Template
             </a>
+            {/* Hidden in a section view, which doesn't show manual income at all. */}
+            {!cashFlowScoped && (
+              <button onClick={() => setPettyForm({ date: today, amount: "", note: "" })} style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 16px", borderRadius: 12, border: "1px solid #a7f3d0", background: "#ecfdf5", color: "#059669", fontSize: 13, fontWeight: 750, cursor: "pointer", transition: "all 0.15s" }} className="hover-bg-light">
+                <Banknote size={15} /> Add Petty Cash
+              </button>
+            )}
             <button onClick={openAdd} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 20px", borderRadius: 12, border: "none", cursor: "pointer", background: "var(--accent-gradient)", color: "#fff", fontSize: 13, fontWeight: 750, boxShadow: "0 4px 14px var(--accent-glow)", transition: "all 0.18s ease" }} className="hover-scale page-header-btn cf-add-main">
               <Plus size={16} /> Add Expense
             </button>
           </div>
         </div>
+
+        {pettyForm && (
+          <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #a7f3d0", padding: 16, display: "flex", flexWrap: "wrap", alignItems: "flex-end", gap: 10 }}>
+            <div style={{ width: "100%", fontSize: 14, fontWeight: 800, color: "#1a1a2e" }}>
+              Add Petty Cash
+              <span style={{ display: "block", fontSize: 11, fontWeight: 500, color: "#9898b0", marginTop: 2 }}>Cash put into the drawer. Counts toward cash in hand here, not toward revenue.</span>
+            </div>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11, fontWeight: 700, color: "#7c7c9a" }}>
+              Date
+              <input type="date" value={pettyForm.date} onChange={e => setPettyForm({ ...pettyForm, date: e.target.value })}
+                style={{ height: 38, padding: "0 10px", borderRadius: 10, border: "1px solid #e4e4ee", fontSize: 13 }} />
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11, fontWeight: 700, color: "#7c7c9a" }}>
+              Amount
+              <input type="number" min={1} inputMode="decimal" value={pettyForm.amount} onChange={e => setPettyForm({ ...pettyForm, amount: e.target.value })}
+                placeholder="0" style={{ width: 130, height: 38, padding: "0 10px", borderRadius: 10, border: "1px solid #e4e4ee", fontSize: 13 }} />
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11, fontWeight: 700, color: "#7c7c9a", flex: "1 1 180px" }}>
+              Note (optional)
+              <input value={pettyForm.note} onChange={e => setPettyForm({ ...pettyForm, note: e.target.value })}
+                placeholder="e.g. Float from owner" style={{ height: 38, padding: "0 10px", borderRadius: 10, border: "1px solid #e4e4ee", fontSize: 13 }} />
+            </label>
+            <button onClick={savePettyCash} style={{ display: "flex", alignItems: "center", gap: 6, height: 38, padding: "0 16px", borderRadius: 10, border: "none", background: "#059669", color: "#fff", fontSize: 13, fontWeight: 750, cursor: "pointer" }}>
+              <Check size={15} /> Save
+            </button>
+            <button onClick={() => setPettyForm(null)} style={{ height: 38, padding: "0 14px", borderRadius: 10, border: "1px solid #e4e4ee", background: "#fff", color: "#6b6b8a", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+              Cancel
+            </button>
+          </div>
+        )}
 
         {fileMessage && (
           <div style={{
@@ -1376,7 +1440,7 @@ export default function CashFlowPage() {
                       {row.source === "pos"
                         ? <ShoppingBag size={12} color="#d97706" />
                         : row.source === "manual"
-                          ? <Upload size={12} color="var(--accent)" />
+                          ? (row.client === PETTY_CASH_CATEGORY ? <Banknote size={12} color="#059669" /> : <Upload size={12} color="var(--accent)" />)
                           : <CalendarCheck size={12} color="var(--accent)" />}
                     </div>
                     <div>
@@ -1399,7 +1463,15 @@ export default function CashFlowPage() {
                     </div>
                   </div>
                 </div>
-                <div style={{ fontSize: 13, fontWeight: 800, color: "var(--accent)", textAlign: "right" }}>{fmt(row.amount)}</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: "var(--accent)", textAlign: "right", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6 }}>
+                  {fmt(row.amount)}
+                  {row.source === "manual" && row.client === PETTY_CASH_CATEGORY && (
+                    <button type="button" onClick={() => deletePettyCash(row.id)} aria-label="Delete petty cash entry" title="Delete"
+                      style={{ border: "none", background: "transparent", padding: 2, cursor: "pointer", color: "#c4c4d4", display: "flex" }}>
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
 
