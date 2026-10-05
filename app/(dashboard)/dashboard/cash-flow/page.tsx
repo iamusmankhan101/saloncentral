@@ -125,6 +125,7 @@ export default function CashFlowPage() {
   const [posInvoices, setPosInvoices] = useState<ReturnType<typeof getSalonInvoices>>([]);
   const [posInvoiceAppointmentIds, setPosInvoiceAppointmentIds] = useState<string[]>([]);
   const [manualIncome, setManualIncome] = useState<ManualCashIncome[]>([]);
+  const [pettyCash, setPettyCash]     = useState<ManualCashIncome[]>([]);
   const [today, setToday]             = useState("");
   const [showForm, setShowForm]       = useState(false);
   const [editId, setEditId]           = useState<string | null>(null);
@@ -169,7 +170,11 @@ export default function CashFlowPage() {
         .filter(inv => !cashFlowScoped || inv.section === activeSection);
       setPosInvoiceAppointmentIds(allPosInvoices.map(inv => inv.appointmentId).filter((id): id is string => !!id));
       setPosInvoices(allPosInvoices.filter(inv => inv.status === "paid"));
-      setManualIncome(cashFlowScoped ? [] : getManualCashIncome());
+      // Petty cash shares the manual-income store but is kept out of income — it's
+      // money put into the drawer, not money earned.
+      const storedIncome = cashFlowScoped ? [] : getManualCashIncome();
+      setManualIncome(storedIncome.filter(entry => entry.category !== PETTY_CASH_CATEGORY));
+      setPettyCash(storedIncome.filter(entry => entry.category === PETTY_CASH_CATEGORY));
     });
     return () => { cancelled = true; };
   }, [cashFlowScoped, activeSection]);
@@ -287,6 +292,26 @@ export default function CashFlowPage() {
   }, [paidPeriodExpenses]);
 
   const netCashIncome   = periodIncomeSplit.cash   - periodExpenseSplit.cash;
+
+  // Petty cash is its own pot: what was put in, minus every paid cash expense
+  // since the first top-up (cash expenses from before petty cash was used aren't
+  // charged against it). The balance runs up to the end of the selected period.
+  const pettySummary = useMemo(() => {
+    if (pettyCash.length === 0 || !filterEnd) return null;
+    const firstDate = pettyCash.reduce((min, e) => (e.date < min ? e.date : min), pettyCash[0].date);
+    const cashSpend = expenses.filter(e =>
+      expensePaymentStatus(e) === "paid" && (e.paymentMethod || "cash") === "cash" && e.date >= firstDate && e.date <= filterEnd);
+    const addedToDate = pettyCash.filter(e => e.date <= filterEnd).reduce((s, e) => s + e.amount, 0);
+    const spentToDate = cashSpend.reduce((s, e) => s + e.amount, 0);
+    const inPeriod = pettyCash.filter(e => e.date >= rangeStart && e.date <= filterEnd)
+      .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+    return {
+      balance: addedToDate - spentToDate,
+      addedInPeriod: inPeriod.reduce((s, e) => s + e.amount, 0),
+      spentInPeriod: cashSpend.filter(e => e.date >= rangeStart).reduce((s, e) => s + e.amount, 0),
+      entries: inPeriod,
+    };
+  }, [pettyCash, expenses, rangeStart, filterEnd]);
   const netOnlineIncome = periodIncomeSplit.online - periodExpenseSplit.online;
 
   const categoryBreakdown = useMemo(() => {
@@ -512,14 +537,14 @@ export default function CashFlowPage() {
       createdAt: new Date().toISOString(),
     };
     const updated = [...getManualCashIncome(), entry];
-    setManualIncome(updated);
+    setPettyCash(updated.filter(e => e.category === PETTY_CASH_CATEGORY));
     setPettyForm(null);
     setExpenseSyncFailed(!(await saveManualCashIncome(updated)));
   }
 
   async function deletePettyCash(id: string) {
     const updated = getManualCashIncome().filter(entry => entry.id !== id);
-    setManualIncome(updated);
+    setPettyCash(updated.filter(e => e.category === PETTY_CASH_CATEGORY));
     setExpenseSyncFailed(!(await saveManualCashIncome(updated)));
   }
 
@@ -700,7 +725,7 @@ export default function CashFlowPage() {
       });
       
       setExpenses(mergedExpenses.filter(e => !cashFlowScoped || e.section === activeSection));
-      setManualIncome(cashFlowScoped ? [] : mergedIncome);
+      setManualIncome(cashFlowScoped ? [] : mergedIncome.filter(entry => entry.category !== PETTY_CASH_CATEGORY));
       
       // Auto-expand the date range to show imported data
       const allDates = [...uniqueExpenses.map(e => e.date), ...uniqueIncome.map(i => i.date)];
@@ -960,7 +985,7 @@ export default function CashFlowPage() {
           <td>${row.date}</td>
           <td style="font-weight:600">${row.client}</td>
           <td style="color:#6b6b8a">${row.description}</td>
-          <td><span class="src-badge" style="background:${row.source === "pos" ? "#fffbeb" : "#F5F3FF"};color:${row.source === "pos" ? "#d97706" : "#7C3AED"}">${row.source === "pos" ? "POS Sale" : row.source === "manual" ? (row.client === PETTY_CASH_CATEGORY ? PETTY_CASH_CATEGORY : "Imported Income") : "Appointment"}</span></td>
+          <td><span class="src-badge" style="background:${row.source === "pos" ? "#fffbeb" : "#F5F3FF"};color:${row.source === "pos" ? "#d97706" : "#7C3AED"}">${row.source === "pos" ? "POS Sale" : row.source === "manual" ? "Imported Income" : "Appointment"}</span></td>
           <td style="text-align:right;font-weight:700;color:#7C3AED">${fmt(row.amount)}</td>
         </tr>`).join("")}
         <tr class="income-total">
@@ -1125,7 +1150,7 @@ export default function CashFlowPage() {
           <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #a7f3d0", padding: 16, display: "flex", flexWrap: "wrap", alignItems: "flex-end", gap: 10 }}>
             <div style={{ width: "100%", fontSize: 14, fontWeight: 800, color: "#1a1a2e" }}>
               Add Petty Cash
-              <span style={{ display: "block", fontSize: 11, fontWeight: 500, color: "#9898b0", marginTop: 2 }}>Cash put into the drawer. Counts toward cash in hand here, not toward revenue.</span>
+              <span style={{ display: "block", fontSize: 11, fontWeight: 500, color: "#9898b0", marginTop: 2 }}>Cash put into the drawer. Kept separate from income — paid cash expenses are deducted from it.</span>
             </div>
             <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11, fontWeight: 700, color: "#7c7c9a" }}>
               Date
@@ -1220,6 +1245,41 @@ export default function CashFlowPage() {
             </div>
           ))}
         </div>
+
+        {/* ── Petty cash (separate from income) ───────────────────────── */}
+        {pettySummary && (
+          <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #a7f3d0", padding: "18px 20px", boxShadow: "0 4px 12px rgba(0,0,0,0.02)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+              <div style={{ width: 46, height: 46, borderRadius: 12, background: "#ecfdf5", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <Banknote size={22} color="#059669" />
+              </div>
+              <div>
+                <div className="cf-stat-value" style={{ fontSize: 24, fontWeight: 850, color: pettySummary.balance >= 0 ? "#059669" : "#ef4444", lineHeight: 1.1 }}>
+                  {pettySummary.balance < 0 ? "−" : ""}{fmt(Math.abs(pettySummary.balance))}
+                </div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#9898b0", marginTop: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Petty Cash Balance</div>
+                <div style={{ fontSize: 11, color: "#9898b0", marginTop: 2, fontWeight: 500 }}>
+                  This period: {fmt(pettySummary.addedInPeriod)} added − {fmt(pettySummary.spentInPeriod)} cash expenses
+                </div>
+              </div>
+            </div>
+            {pettySummary.entries.length > 0 && (
+              <div style={{ marginTop: 14, borderTop: "1px solid #f0f0f5" }}>
+                {pettySummary.entries.map(entry => (
+                  <div key={entry.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderBottom: "1px solid #f8f8fc", fontSize: 12 }}>
+                    <span style={{ color: "#9898b0", width: 80, flexShrink: 0 }}>{entry.date}</span>
+                    <span style={{ flex: 1, color: "#1a1a2e", fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.description}</span>
+                    <span style={{ fontWeight: 800, color: "#059669" }}>+{fmt(entry.amount)}</span>
+                    <button type="button" onClick={() => deletePettyCash(entry.id)} aria-label="Delete petty cash entry" title="Delete"
+                      style={{ border: "none", background: "transparent", padding: 2, cursor: "pointer", color: "#c4c4d4", display: "flex" }}>
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── Chart (compact) ─────────────────────────────────────────── */}
         {chartData.length > 1 && (
@@ -1440,7 +1500,7 @@ export default function CashFlowPage() {
                       {row.source === "pos"
                         ? <ShoppingBag size={12} color="#d97706" />
                         : row.source === "manual"
-                          ? (row.client === PETTY_CASH_CATEGORY ? <Banknote size={12} color="#059669" /> : <Upload size={12} color="var(--accent)" />)
+                          ? <Upload size={12} color="var(--accent)" />
                           : <CalendarCheck size={12} color="var(--accent)" />}
                     </div>
                     <div>
@@ -1463,15 +1523,7 @@ export default function CashFlowPage() {
                     </div>
                   </div>
                 </div>
-                <div style={{ fontSize: 13, fontWeight: 800, color: "var(--accent)", textAlign: "right", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6 }}>
-                  {fmt(row.amount)}
-                  {row.source === "manual" && row.client === PETTY_CASH_CATEGORY && (
-                    <button type="button" onClick={() => deletePettyCash(row.id)} aria-label="Delete petty cash entry" title="Delete"
-                      style={{ border: "none", background: "transparent", padding: 2, cursor: "pointer", color: "#c4c4d4", display: "flex" }}>
-                      <Trash2 size={13} />
-                    </button>
-                  )}
-                </div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: "var(--accent)", textAlign: "right" }}>{fmt(row.amount)}</div>
               </div>
             ))}
 
