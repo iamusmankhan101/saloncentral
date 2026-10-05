@@ -27,6 +27,7 @@ import { revenueInPeriod, ALL_TIME_START, ALL_TIME_END } from "@/lib/payouts";
 import { upsellInPeriod, upsellIncentive } from "@/lib/upsell";
 import { getSalonInvoices, type SalonInvoice } from "@/lib/salon-invoices";
 import ShiftFields from "@/components/shift-fields";
+import WeeklyOffFields from "@/components/weekly-off-fields";
 
 /**
  * Appointment count and revenue for one staff member's card.
@@ -159,6 +160,8 @@ function StaffFormModal({ onClose, onSave, staff, servicesList, staffList }: { o
     shiftStart: staff?.shiftStart ?? "",
     shiftEnd: staff?.shiftEnd ?? "",
   });
+  // null = follow the salon roster; an array (empty included) = this person's own.
+  const [offDays, setOffDays] = useState<number[] | null>(staff?.weeklyOffDays ?? null);
   const sectionOptions = getSectionOptions(staffList);
   // The role being edited is already the selected option, so don't list it twice.
   const existingCustomRoles = customRolesInUse(staffList).filter((r) => r !== staff?.role);
@@ -210,10 +213,8 @@ function StaffFormModal({ onClose, onSave, staff, servicesList, staffList }: { o
       standardHoursPerDay: Number(form.standardHoursPerDay) > 0 ? Number(form.standardHoursPerDay) : undefined,
       shiftStart: form.shiftStart && form.shiftEnd ? form.shiftStart : undefined,
       shiftEnd: form.shiftStart && form.shiftEnd ? form.shiftEnd : undefined,
-      // Set on the Staff record's own page; preserved here so editing from the
-      // list doesn't silently put the person back on the salon-wide roster.
       upsellCommissionRate: form.upsellCommissionRate !== "" && Number(form.upsellCommissionRate) > 0 ? Number(form.upsellCommissionRate) : undefined,
-      weeklyOffDays: staff?.weeklyOffDays,
+      weeklyOffDays: offDays ?? undefined,
     };
 
     onSave(savedStaff, selectedServiceIds);
@@ -326,6 +327,8 @@ function StaffFormModal({ onClose, onSave, staff, servicesList, staffList }: { o
               style={{ padding: "9px 12px", borderRadius: 8, border: "1px solid #e8e8f0", fontSize: 13, color: "#1a1a2e", outline: "none" }} />
             <div style={{ fontSize: 11, color: "#b0b0c8" }}>Leave days marked in Attendance, up to this many per pay period, are paid in full; further leaves reduce salary. Leave blank to use the salon default from Settings → Business Hours.</div>
           </div>
+
+          <WeeklyOffFields value={offDays} onChange={setOffDays} />
 
           <ShiftFields start={form.shiftStart} end={form.shiftEnd}
             onChange={(a, b) => setForm((f) => ({ ...f, shiftStart: a, shiftEnd: b }))}
