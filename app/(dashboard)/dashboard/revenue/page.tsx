@@ -73,7 +73,7 @@ const EXPENSE_CATEGORIES: { key: ExpenseCategory; label: string; color: string }
 const EXPENSE_LABELS: Record<string, string> = Object.fromEntries(EXPENSE_CATEGORIES.map(c => [c.key, c.label]));
 const EXPENSE_COLORS: Record<string, string> = Object.fromEntries(EXPENSE_CATEGORIES.map(c => [c.key, c.color]));
 
-type RevTab = "overview" | "net";
+type RevTab = "overview" | "net" | "ledger";
 
 function toDateStr(d: Date) { return d.toLocaleDateString("en-CA"); }
 
@@ -1015,6 +1015,7 @@ export default function RevenuePage() {
         {([
           { key: "overview", label: "Overview" },
           { key: "net",      label: "Net Profit" },
+          { key: "ledger",   label: "Ledger" },
         ] as { key: RevTab; label: string }[]).map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)} style={{
             background: "none", border: "none", cursor: "pointer",
@@ -1561,6 +1562,14 @@ export default function RevenuePage() {
         />
       )}
 
+      {tab === "ledger" && (
+        <LedgerView
+          rangeStart={rangeStart} filterEnd={filterEnd}
+          appointments={appointments} posLinkedAppointmentIds={posLinkedAppointmentIds}
+          posInvoices={posInvoices} manualIncome={manualIncome} expenses={expenses}
+        />
+      )}
+
       </div>{/* /desktop-only */}
     </div>
   );
@@ -1674,6 +1683,141 @@ function NetProfitView({
             ))}
           </div>
         </div>
+      </div>
+    </>
+  );
+}
+
+// ── Ledger tab (day book) ────────────────────────────────────────────────────
+const PAYMENT_LABELS: Record<string, string> = {
+  cash: "Cash", jazzcash: "JazzCash", easypaisa: "EasyPaisa", bank: "Bank Transfer", card: "Card",
+};
+type LedgerRow = { id: string; date: string; sortKey: string; description: string; detail: string; moneyIn: number; moneyOut: number };
+
+function LedgerView({ rangeStart, filterEnd, appointments, posLinkedAppointmentIds, posInvoices, manualIncome, expenses }: {
+  rangeStart: string; filterEnd: string;
+  appointments: Appointment[]; posLinkedAppointmentIds: Set<string>;
+  posInvoices: ReturnType<typeof getSalonInvoices>; manualIncome: ManualCashIncome[]; expenses: Expense[];
+}) {
+  // Same sources and rules as the Overview and Net Profit tabs: completed
+  // appointments without a POS checkout, paid POS invoices, imported income,
+  // and every expense that isn't still pending.
+  const allRows = useMemo((): LedgerRow[] => [
+    ...appointments
+      .filter(a => a.status === "completed" && !posLinkedAppointmentIds.has(a.id))
+      .map(a => ({ id: a.id, date: a.date, sortKey: a.date + "T" + (a.startTime || "00:00"),
+        description: a.clientName || "Appointment", detail: a.serviceNames.join(", ") || "Appointment",
+        moneyIn: a.totalAmount, moneyOut: 0 })),
+    ...posInvoices.map(inv => ({ id: inv.id, date: inv.date, sortKey: inv.date + "T" + inv.createdAt.slice(11, 16),
+      description: inv.clientName || "POS Sale", detail: `POS · ${PAYMENT_LABELS[inv.paymentMethod || "cash"] ?? inv.paymentMethod}`,
+      moneyIn: revenueAmount(inv), moneyOut: 0 })),
+    ...manualIncome.map(entry => ({ id: entry.id, date: entry.date, sortKey: entry.date + "T" + entry.createdAt.slice(11, 16),
+      description: entry.description || "Income", detail: entry.category || "Imported income",
+      moneyIn: entry.amount, moneyOut: 0 })),
+    ...expenses
+      .filter(e => e.paymentStatus !== "pending")
+      .map(e => ({ id: e.id, date: e.date, sortKey: e.date + "T" + e.createdAt.slice(11, 16),
+        description: e.description || (EXPENSE_LABELS[e.category] ?? e.category),
+        detail: `${EXPENSE_LABELS[e.category] ?? e.category} · ${PAYMENT_LABELS[e.paymentMethod || "cash"] ?? e.paymentMethod}`,
+        moneyIn: 0, moneyOut: e.amount })),
+  ].sort((a, b) => a.sortKey.localeCompare(b.sortKey)),
+  [appointments, posLinkedAppointmentIds, posInvoices, manualIncome, expenses]);
+
+  const { opening, rows, totalIn, totalOut } = useMemo(() => {
+    let balance = 0, totalIn = 0, totalOut = 0;
+    const rows: (LedgerRow & { balance: number })[] = [];
+    for (const row of allRows) {
+      if (row.date > filterEnd) break;
+      if (row.date < rangeStart) { balance += row.moneyIn - row.moneyOut; continue; }
+      totalIn += row.moneyIn; totalOut += row.moneyOut;
+      rows.push({ ...row, balance: 0 });
+    }
+    const opening = balance;
+    rows.forEach(row => { balance += row.moneyIn - row.moneyOut; row.balance = balance; });
+    return { opening, rows, totalIn, totalOut };
+  }, [allRows, rangeStart, filterEnd]);
+  const closing = opening + totalIn - totalOut;
+
+  async function exportLedger() {
+    const XLSX = await import("xlsx");
+    const sheetRows = [
+      { Date: rangeStart, Description: "Opening balance", Details: "", "Money In": "", "Money Out": "", Balance: opening },
+      ...rows.map(row => ({ Date: row.date, Description: row.description, Details: row.detail,
+        "Money In": row.moneyIn || "", "Money Out": row.moneyOut || "", Balance: row.balance })),
+      { Date: filterEnd, Description: "Closing balance", Details: "", "Money In": totalIn, "Money Out": totalOut, Balance: closing },
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheetRows), "Ledger");
+    XLSX.writeFile(wb, `ledger-${rangeStart}-to-${filterEnd}.xlsx`);
+  }
+
+  const signed = (n: number) => (n < 0 ? "−" : "") + fmt(Math.abs(n));
+  const cols = "90px 1.4fr 1.2fr 110px 110px 120px";
+  const cell = { fontSize: 12, color: "#6b6b8a" } as const;
+  return (
+    <>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12 }}>
+        {[
+          { label: "Opening Balance", value: signed(opening), color: "#6b6b8a" },
+          { label: "Money In",  value: fmt(totalIn),  color: "#059669" },
+          { label: "Money Out", value: fmt(totalOut), color: "#dc2626" },
+          { label: "Closing Balance", value: signed(closing), color: closing >= 0 ? "var(--accent)" : "#dc2626" },
+        ].map(({ label, value, color }) => (
+          <div key={label} style={{ background: "#fff", borderRadius: 16, border: "1px solid rgba(226,223,235,0.8)", padding: "16px 20px" }}>
+            <div style={{ fontSize: 22, fontWeight: 850, color, lineHeight: 1.1 }}>{value}</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#9898b0", marginTop: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ background: "#fff", borderRadius: 18, border: "1px solid rgba(226,223,235,.95)", overflow: "hidden" }}>
+        <div style={{ padding: "14px 20px", borderBottom: "1px solid #f0f0f5", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: "#1a1a2e" }}>
+            Day Book <span style={{ fontSize: 12, fontWeight: 600, color: "#9898b0", marginLeft: 6 }}>{rangeStart} → {filterEnd} · {rows.length} entries</span>
+          </div>
+          <button type="button" onClick={exportLedger} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 10, border: "1px solid #e3e0eb", background: "#fff", color: "var(--accent)", fontSize: 12, fontWeight: 750, cursor: "pointer" }}>
+            <Download size={14} /> Export
+          </button>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <div style={{ minWidth: 760 }}>
+            <div style={{ display: "grid", gridTemplateColumns: cols, padding: "10px 20px", background: "#faf9fd", borderBottom: "1px solid #f0f0f5" }}>
+              {["DATE", "DESCRIPTION", "DETAILS", "MONEY IN", "MONEY OUT", "BALANCE"].map((h, i) => (
+                <div key={h} style={{ fontSize: 10, fontWeight: 800, color: "#8e89a3", letterSpacing: "0.08em", textAlign: i >= 3 ? "right" : "left" }}>{h}</div>
+              ))}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: cols, padding: "10px 20px", borderBottom: "1px solid #f8f8fc", background: "#fcfcfe" }}>
+              <div style={cell}>{rangeStart}</div>
+              <div style={{ ...cell, fontWeight: 750, color: "#1a1a2e" }}>Opening balance</div>
+              <div /><div /><div />
+              <div style={{ ...cell, fontWeight: 800, color: "#1a1a2e", textAlign: "right" }}>{signed(opening)}</div>
+            </div>
+            {rows.length === 0 ? (
+              <div style={{ padding: "36px 20px", textAlign: "center", fontSize: 13, color: "#9898b0" }}>No entries in this period</div>
+            ) : rows.map(row => (
+              <div key={row.id} style={{ display: "grid", gridTemplateColumns: cols, padding: "10px 20px", borderBottom: "1px solid #f8f8fc", alignItems: "center" }}>
+                <div style={cell}>{row.date}</div>
+                <div style={{ ...cell, fontWeight: 700, color: "#1a1a2e", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={row.description}>{row.description}</div>
+                <div style={{ ...cell, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={row.detail}>{row.detail}</div>
+                <div style={{ ...cell, fontWeight: 750, color: "#059669", textAlign: "right" }}>{row.moneyIn ? fmt(row.moneyIn) : ""}</div>
+                <div style={{ ...cell, fontWeight: 750, color: "#dc2626", textAlign: "right" }}>{row.moneyOut ? fmt(row.moneyOut) : ""}</div>
+                <div style={{ ...cell, fontWeight: 800, color: row.balance >= 0 ? "#1a1a2e" : "#dc2626", textAlign: "right" }}>{signed(row.balance)}</div>
+              </div>
+            ))}
+            <div style={{ display: "grid", gridTemplateColumns: cols, padding: "12px 20px", background: "#faf9fd" }}>
+              <div style={cell}>{filterEnd}</div>
+              <div style={{ ...cell, fontWeight: 800, color: "#1a1a2e" }}>Closing balance</div>
+              <div />
+              <div style={{ ...cell, fontWeight: 800, color: "#059669", textAlign: "right" }}>{fmt(totalIn)}</div>
+              <div style={{ ...cell, fontWeight: 800, color: "#dc2626", textAlign: "right" }}>{fmt(totalOut)}</div>
+              <div style={{ ...cell, fontWeight: 850, color: closing >= 0 ? "var(--accent)" : "#dc2626", textAlign: "right" }}>{signed(closing)}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style={{ fontSize: 11, color: "#b0b0c8", lineHeight: 1.6 }}>
+        Opening balance is everything in minus everything out before {rangeStart}. Pending expenses, unpaid invoices and
+        petty cash top-ups are left out — they aren&rsquo;t earnings or spending yet.
       </div>
     </>
   );
