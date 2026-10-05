@@ -6,14 +6,15 @@ import type { Staff } from "@/lib/types";
 import { getActiveSection, inSection } from "@/lib/sections";
 import {
   getAttendance, setAttendanceStatus, setAttendanceTimes, getAttendanceSummary,
-  hoursWorked, nowTimeString, standardHoursFor, isWeeklyOff, leaveAllowanceFor, dayWeightFor, expectedStartFor,
+  hoursWorked, nowTimeString, standardHoursFor, isWeeklyOff, weeklyOffDaysFor, leaveAllowanceFor, dayWeightFor, expectedStartFor,
   type AttendanceRecord, type AttendanceStatus,
 } from "@/lib/attendance";
 import { getStoredStaff as readStaff, saveStaff } from "@/lib/storage";
 import PageTitle from "@/components/page-title";
 import MobilePageHeader from "@/components/mobile-page-header";
-import { ClipboardCheck, ChevronLeft, ChevronRight, CheckCheck, LogIn, LogOut, Clock, QrCode } from "lucide-react";
+import { ClipboardCheck, ChevronLeft, ChevronRight, CheckCheck, LogIn, LogOut, Clock, QrCode, Download } from "lucide-react";
 import QrCheckinSetup from "@/components/qr-checkin-setup";
+import WeeklyOffFields from "@/components/weekly-off-fields";
 import { settingsStore } from "@/lib/settings-store";
 import { DEFAULT_LATE_AFTER_MINUTES, time12, toMinutes, type QrCheckinSettings } from "@/lib/attendance-checkin";
 import { subscribeToStoredData } from "@/lib/storage";
@@ -108,6 +109,13 @@ export default function AttendancePage() {
     setStaffList((current) => current.map((st) => (st.id === staffId ? { ...st, paidLeavesPerMonth: next } : st)));
   }
 
+  /** Same full-list save as setLeaveAllowance. null = back to the salon roster. */
+  function setWeeklyOff(staffId: string, days: number[] | null) {
+    const next = days ?? undefined;
+    saveStaff(readStaff().map((st) => (st.id === staffId ? { ...st, weeklyOffDays: next } : st)));
+    setStaffList((current) => current.map((st) => (st.id === staffId ? { ...st, weeklyOffDays: next } : st)));
+  }
+
   function setTime(staffId: string, field: "checkIn" | "checkOut", value: string) {
     setAttendanceTimes(staffId, selectedDate, { [field]: value });
     refresh();
@@ -155,6 +163,46 @@ export default function AttendancePage() {
     })),
     [staffList, month, records],
   );
+
+  // Monthly report: the summary table as one sheet, plus a day-by-day register.
+  async function exportMonth() {
+    const XLSX = await import("xlsx");
+    const summaryRows = monthlySummaries.map(({ staff, summary, standardHours }) => ({
+      Staff: staff.name,
+      Role: staff.role.replace(/-/g, " "),
+      "Weekly Off": weeklyOffDaysFor(staff).map((d) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d]).join(", ") || "None",
+      Present: summary.present,
+      Late: summary.late,
+      "Half-day": summary.halfDay,
+      Absent: summary.absent,
+      Leave: summary.leave,
+      "Unpaid Leave": summary.leaveOverBy,
+      "Week Off": summary.weekOff,
+      "Days Marked": summary.markedDays,
+      "Hours Worked": Math.round(summary.hoursWorked * 10) / 10,
+      "Expected Hours": Math.round(summary.expectedHours * 10) / 10,
+      "Standard Hours / Day": standardHours,
+      "Pay Credit %": Math.round(summary.creditFactor * 100),
+      "Leaves Allowed": summary.leaveAllowance,
+    }));
+    const days: string[] = [];
+    for (let d = month.start; d <= month.end; d = shiftDate(d, 1)) days.push(d);
+    // Explicit column order below: keys like "10".."31" are integer-like, so a
+    // plain object would list them ahead of "Staff" and "01".."09".
+    const registerRows = staffList.map((s) => {
+      const row: Record<string, string> = { Staff: s.name };
+      days.forEach((d) => {
+        const rec = records.find((r) => r.staffId === s.id && r.date === d);
+        const times = rec?.checkIn ? ` ${time12(rec.checkIn)}${rec.checkOut ? `–${time12(rec.checkOut)}` : ""}` : "";
+        row[d.slice(8)] = rec ? STATUS_META[rec.status].label + times : "";
+      });
+      return row;
+    });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), "Summary");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(registerRows, { header: ["Staff", ...days.map((d) => d.slice(8))] }), "Daily Register");
+    XLSX.writeFile(wb, `attendance-${month.start.slice(0, 7)}.xlsx`);
+  }
 
   return (
     <div className="dash-page dashboard-polish" style={{ background: "#ffffff", minHeight: "100vh", display: "flex", flexDirection: "column", gap: 20 }}>
@@ -232,6 +280,17 @@ export default function AttendancePage() {
                     </div>
                   </div>
                 </div>
+                <details>
+                  <summary style={{ fontSize: 11, color: "#6b6b8a", fontWeight: 700, cursor: "pointer" }}>
+                    Weekly off: {weeklyOffDaysFor(s).length === 0
+                      ? "none"
+                      : weeklyOffDaysFor(s).map((d) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d]).join(", ")}
+                    {!Array.isArray(s.weeklyOffDays) && <span style={{ color: "#b0b0c8", fontWeight: 600 }}> (salon roster)</span>}
+                  </summary>
+                  <div style={{ marginTop: 8 }}>
+                    <WeeklyOffFields value={Array.isArray(s.weeklyOffDays) ? s.weeklyOffDays : null} onChange={(days) => setWeeklyOff(s.id, days)} />
+                  </div>
+                </details>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   {STATUS_ORDER.map((st) => {
                     const meta = STATUS_META[st];
@@ -325,7 +384,12 @@ export default function AttendancePage() {
       {/* Monthly summary */}
       {staffList.length > 0 && (
         <div style={{ marginTop: 8 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: "#1a1a2e", marginBottom: 12 }}>{month.label} Summary</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: "#1a1a2e" }}>{month.label} Summary</div>
+            <button type="button" onClick={exportMonth} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 10, border: "1px solid #e3e0eb", background: "#fff", color: "var(--accent)", fontSize: 12, fontWeight: 750, cursor: "pointer" }}>
+              <Download size={14} /> Export {month.label}
+            </button>
+          </div>
           <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #ebebf0", overflow: "hidden", overflowX: "auto" }}>
             <div style={{ display: "grid", gridTemplateColumns: "1.6fr repeat(5, 0.62fr) 0.7fr 1.05fr 0.8fr 1.05fr", padding: "10px 20px", background: "#faf9fd", borderBottom: "1px solid #f0f0f5", minWidth: 900 }}>
               {["STAFF", "PRESENT", "LATE", "HALF-DAY", "ABSENT", "LEAVE", "WEEK OFF", "MARKED", "HOURS", "PAY CREDIT", "LEAVES ALLOWED"].map((h) => (
@@ -396,7 +460,7 @@ export default function AttendancePage() {
             salon default in Settings → Business Hours. Leave days within the allowance are paid in full; the rest are
             unpaid. <strong style={{ color: "#8e89a3" }}>Week Off</strong> counts the rostered days off marked so far
             against how many the roster puts in {month.label} — the default weekend is two a week, and the days can be
-            changed for the salon in Settings or for one person on their Staff record. Rostered days off are not
+            changed for the salon in Settings, or for one person under &ldquo;Weekly off&rdquo; on their card above or on their Staff record. Rostered days off are not
             absences and don&rsquo;t affect pay credit. A leave or absence on one of the salon&rsquo;s busy days counts
             as more than one day — the weekend at 2× by default, set in Settings → Business Hours — so those days
             spend the allowance faster and cost more pay credit.
