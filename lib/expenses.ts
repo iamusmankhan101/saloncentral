@@ -7,6 +7,7 @@ export type ExpenseCategory =
   | "rent"
   | "water_bill"
   | "electricity_bill"
+  | "internet_bill"
   | "committee"
   | "salaries"
   | "utilities"

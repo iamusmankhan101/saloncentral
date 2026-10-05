@@ -31,6 +31,7 @@ export const EXPENSE_CATEGORIES: { key: ExpenseCategory; label: string; color: s
   { key: "rent",          label: "Rent",                color: "#ef4444" },
   { key: "water_bill",    label: "Water Bill",          color: "#0ea5e9" },
   { key: "electricity_bill", label: "Electricity Bill", color: "#f59e0b" },
+  { key: "internet_bill", label: "Internet Bill",    color: "#6366f1" },
   { key: "committee",     label: "Committee",           color: "#14b8a6" },
   { key: "salaries",      label: "Staff Salaries",      color: "#f97316" },
   { key: "utilities",     label: "Utilities",           color: "#eab308" },
