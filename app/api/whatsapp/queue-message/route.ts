@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { followupsTimedFromInvoice } from "@/lib/salon-overrides";
+import { spacedFollowupScheduledAt } from "@/lib/followup-spacing";
 import { resolveActor } from "@/lib/api-auth";
 import { db } from "@/lib/db";
 import { activeWhatsAppCredential, isFakePlaceholderPhone, type WhatsAppProviderConfig, ycloudConfigOf } from "@/lib/whatsapp-provider";
@@ -329,6 +330,8 @@ export async function POST(req: NextRequest) {
     }
 
     const now = new Date().toISOString();
+    let scheduledAt = scheduledAtFor(body.kind, settings, body.scheduledAt);
+    if (body.kind === "followup") scheduledAt = await spacedFollowupScheduledAt(actor.userId, scheduledAt);
     await db.execute({
       sql: `INSERT OR IGNORE INTO wa_booking_send_queue
               (id, user_id, kind, phone, text, client_name, appt_date, appt_time, service, scheduled_at, status, attempts, created_at)
@@ -343,7 +346,7 @@ export async function POST(req: NextRequest) {
         body.apptDate || null,
         body.apptTime || null,
         body.service || null,
-        scheduledAtFor(body.kind, settings, body.scheduledAt),
+        scheduledAt,
         now,
       ],
     });

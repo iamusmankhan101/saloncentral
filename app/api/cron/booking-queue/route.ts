@@ -54,7 +54,7 @@ function randBetween(minMs: number, maxMs: number): number {
 }
 
 function spacingDelayMs(kind: QueueKind): number {
-  if (kind === "followup") return randBetween(30 * MINUTE_MS, 120 * MINUTE_MS);
+  if (kind === "followup") return randBetween(15 * MINUTE_MS, 20 * MINUTE_MS);
   if (kind === "reminder") return randBetween(10 * MINUTE_MS, 20 * MINUTE_MS);
   if (kind === "cancellation") return randBetween(15 * MINUTE_MS, 20 * MINUTE_MS);
   if (kind === "birthday") return randBetween(20 * MINUTE_MS, 30 * MINUTE_MS);
@@ -489,7 +489,7 @@ async function getRecipientOptedIn(
 // check real elapsed time since the last actual send, not just collisions
 // within a single cron run — see getLastSentAtMs below for why that matters.
 function minGapMsForKind(kind: QueueKind): number {
-  if (kind === "followup") return 30 * MINUTE_MS;
+  if (kind === "followup") return 15 * MINUTE_MS;
   if (kind === "reminder") return 10 * MINUTE_MS;
   if (kind === "cancellation") return 15 * MINUTE_MS;
   if (kind === "birthday") return 20 * MINUTE_MS;

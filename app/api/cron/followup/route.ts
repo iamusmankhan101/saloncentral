@@ -13,6 +13,7 @@ import { db } from "@/lib/db";
 import { activeWhatsAppCredential, isFakePlaceholderPhone, type WhatsAppProviderConfig, ycloudConfigOf } from "@/lib/whatsapp-provider";
 import { appointmentStartMs, isWithinSalonHours, nextSalonOpenMs, timezoneFromSettings, type SalonHoursDay } from "@/lib/appointment-time";
 import { followupsTimedFromInvoice, INVOICE_FOLLOWUP_DELAY_MS } from "@/lib/salon-overrides";
+import { spacedFollowupScheduledAt } from "@/lib/followup-spacing";
 
 const MINUTE_MS = 60 * 1000;
 
@@ -145,7 +146,7 @@ async function queueFollowup(input: {
       input.clientName,
       input.visitDate,
       input.visitTime,
-      input.scheduledAt,
+      await spacedFollowupScheduledAt(input.userId, input.scheduledAt),
       now,
     ],
   });
