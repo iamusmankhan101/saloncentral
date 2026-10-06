@@ -1,4 +1,6 @@
 import { Document, Page, StyleSheet, Text, View, Image, renderToBuffer } from "@react-pdf/renderer";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { renderQrDataUrl } from "@/lib/qr";
 import { ADVANCE_NON_REFUNDABLE_NOTE, PAYMENT_NON_REFUNDABLE_NOTE, balanceDue, advancePercent, invoiceItemsByPerson, invoiceTimeLabel, type SalonInvoice } from "@/lib/salon-invoices";
 
@@ -64,10 +66,11 @@ function fmtDate(d: string): string {
   });
 }
 
-function InvoiceDocument({ invoice, salon, fbrQr }: {
+function InvoiceDocument({ invoice, salon, fbrQr, fbrLogo }: {
   invoice: SalonInvoice;
   salon: { name: string; phone?: string; email?: string; address?: string; logo?: string };
   fbrQr?: string;
+  fbrLogo?: Buffer;
 }) {
   const isPaid   = invoice.status === "paid";
   const isAdvance = invoice.status === "partial";
@@ -172,6 +175,12 @@ function InvoiceDocument({ invoice, salon, fbrQr }: {
               <Text style={styles.cellMuted}>{money(invoice.taxAmount)}</Text>
             </View>
           )}
+          {!!invoice.fbrFee && (
+            <View style={styles.summaryRow}>
+              <Text style={styles.cellMuted}>FBR POS fee</Text>
+              <Text style={styles.cellMuted}>{money(invoice.fbrFee)}</Text>
+            </View>
+          )}
           {invoice.discountAmount > 0 && (
             <View style={styles.summaryRow}>
               <Text style={styles.cellMuted}>Discount</Text>
@@ -199,6 +208,7 @@ function InvoiceDocument({ invoice, salon, fbrQr }: {
         {/* ── FBR ── */}
         {!!invoice.fbrInvoiceNumber && (
           <View style={{ flexDirection: "row", alignItems: "center", marginTop: 16 }}>
+            {!!fbrLogo && <Image src={{ data: fbrLogo, format: "png" }} style={{ height: 48, marginRight: 10 }} />}
             {!!fbrQr && <Image src={fbrQr} style={{ width: 64, height: 64, marginRight: 10 }} />}
             <View>
               <Text style={styles.sectionLabel}>FBR Invoice No.</Text>
@@ -255,5 +265,9 @@ export async function generateSalonInvoicePdf(
   salon: { name: string; phone?: string; email?: string; address?: string; logo?: string },
 ) {
   const fbrQr = invoice.fbrInvoiceNumber ? await renderQrDataUrl(invoice.fbrInvoiceNumber, { size: 192, margin: 1 }) : undefined;
-  return renderToBuffer(<InvoiceDocument invoice={invoice} salon={salon} fbrQr={fbrQr} />);
+  // FBR's logo file is optional until the salon's IMS package logo is added to /public.
+  const fbrLogo = invoice.fbrInvoiceNumber
+    ? await readFile(path.join(process.cwd(), "public", "fbr-pos-logo.png")).catch(() => undefined)
+    : undefined;
+  return renderToBuffer(<InvoiceDocument invoice={invoice} salon={salon} fbrQr={fbrQr} fbrLogo={fbrLogo} />);
 }

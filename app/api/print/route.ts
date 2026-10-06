@@ -207,6 +207,9 @@ function buildReceipt(data: ReceiptData): Buffer {
   if (data.invoice.taxAmount > 0)
     push(padLine("Tax", `${data.currency} ${data.invoice.taxAmount.toFixed(0)}`, W));
 
+  if (data.invoice.fbrFee)
+    push(padLine("FBR POS fee", `${data.currency} ${data.invoice.fbrFee.toFixed(0)}`, W));
+
   push(CMD.heavyOn);
   push(padLine("TOTAL", `${data.currency} ${data.invoice.total.toFixed(0)}`, W));
   push(CMD.heavyOff);
@@ -252,7 +255,10 @@ function buildReceipt(data: ReceiptData): Buffer {
 
   if (data.invoice.fbrInvoiceNumber) {
     push(divider("-", W));
-    push(CMD.alignCenter, CMD.heavyOn, text("FBR Invoice No."), CMD.heavyOff);
+    push(CMD.alignCenter);
+    const fbrLogo = logoBuffer(data.fbrLogo);
+    if (fbrLogo) push(fbrLogo, CMD.lf);
+    push(CMD.heavyOn, text("FBR Invoice No."), CMD.heavyOff);
     push(text(data.invoice.fbrInvoiceNumber));
     push(qrCode(data.invoice.fbrInvoiceNumber));
     push(text("Verify on FBR's Tax Asaan app"));
@@ -317,6 +323,8 @@ interface ReceiptData {
    * absent when the salon has no logo, and dropped when it fails validation.
    */
   logo?: { widthBytes: number; height: number; base64: string };
+  /** FBR's POS logo, rasterized the same way as the salon logo. */
+  fbrLogo?: { widthBytes: number; height: number; base64: string };
   salonName: string;
   salonPhone: string;
   salonAddress: string;
@@ -340,6 +348,7 @@ interface ReceiptData {
     advanceAmount?: number;
     notes?: string;
     fbrInvoiceNumber?: string;
+    fbrFee?: number;
   };
 }
 

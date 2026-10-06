@@ -46,14 +46,30 @@ function fbrDateTime(iso: string): string {
 }
 
 /**
- * The FBR PostData body for one sale. Invoice-level discount and tax are
+ * The USIN (the POS's own invoice id) the sale's current FBR invoice was or
+ * will be filed under. An edited bill is re-filed as "-R1", "-R2"… because
+ * FBR won't take the same USIN twice.
+ */
+export function fbrUsin(invoice: Pick<SalonInvoice, "number" | "fbrRevision">): string {
+  return invoice.fbrRevision ? `${invoice.number}-R${invoice.fbrRevision}` : invoice.number;
+}
+
+/**
+ * The FBR PostData body for one sale, or — with `creditNote` — for the credit
+ * note that cancels the sale's current FBR invoice (used on refund, delete and
+ * before an edited bill is re-filed). Invoice-level discount and tax are
  * spread over the lines in proportion to each line's price, with the last
  * line taking the rounding remainder so the lines add up to the totals exactly.
  */
-export function buildFbrPayload(invoice: SalonInvoice, config: FbrConfig) {
+export function buildFbrPayload(invoice: SalonInvoice, config: FbrConfig, creditNote = false) {
   const tax = invoice.taxAmount || 0;
-  const saleValue = round2(invoice.total - tax);
-  const discount = round2(Math.max(0, invoice.subtotal + tax - invoice.total));
+  // The Re.1 FBR POS fee is collected for FBR, not a sale, so it stays out of the figures.
+  const billAmount = invoice.total - (invoice.fbrFee || 0);
+  const saleValue = round2(billAmount - tax);
+  const discount = round2(Math.max(0, invoice.subtotal + tax - billAmount));
+  const usin = fbrUsin(invoice);
+  const invoiceType = creditNote ? 3 : 1;
+  const refUsin = creditNote ? usin : null;
   const taxRate = saleValue > 0 ? round2((tax / saleValue) * 100) : 0;
   const base = invoice.subtotal || 1;
 
@@ -76,19 +92,19 @@ export function buildFbrPayload(invoice: SalonInvoice, config: FbrConfig) {
       TaxCharged: lineTax,
       Discount: lineDiscount,
       FurtherTax: 0,
-      InvoiceType: 1,
-      RefUSIN: null,
+      InvoiceType: invoiceType,
+      RefUSIN: refUsin,
     };
   });
 
   return {
     InvoiceNumber: "",
     POSID: Number(config.posId),
-    USIN: invoice.number,
+    USIN: creditNote ? `${usin}-CN` : usin,
     DateTime: fbrDateTime(invoice.createdAt),
     BuyerName: invoice.clientName,
     BuyerPhoneNumber: invoice.clientPhone || "",
-    TotalBillAmount: round2(invoice.total),
+    TotalBillAmount: round2(billAmount),
     TotalQuantity: invoice.items.reduce((s, i) => s + (i.qty || 1), 0),
     TotalSaleValue: saleValue,
     TotalTaxCharged: round2(tax),
@@ -97,16 +113,17 @@ export function buildFbrPayload(invoice: SalonInvoice, config: FbrConfig) {
     // FBR modes: 1 cash, 2 card. Wallets and bank transfers have no code of
     // their own, so they go as cash.
     PaymentMode: invoice.paymentMethod === "card" ? 2 : 1,
-    RefUSIN: null,
-    InvoiceType: 1,
+    RefUSIN: refUsin,
+    InvoiceType: invoiceType,
     Items: items,
   };
 }
 
-/** Sends the sale to FBR. Returns the fiscal invoice number, or a readable error. */
+/** Sends the sale (or its credit note) to FBR. Returns the fiscal number, or a readable error. */
 export async function reportToFbr(
   invoice: SalonInvoice,
   config: FbrConfig,
+  creditNote = false,
 ): Promise<{ ok: true; fbrInvoiceNumber: string } | { ok: false; error: string }> {
   if (!config.posId || !config.token) return { ok: false, error: "FBR POS ID or token is missing in Account settings." };
   if (!Number.isFinite(Number(config.posId))) return { ok: false, error: "FBR POS ID must be a number." };
@@ -115,7 +132,7 @@ export async function reportToFbr(
     const res = await fetch(config.sandbox ? FBR_URLS.sandbox : FBR_URLS.live, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.token}` },
-      body: JSON.stringify(buildFbrPayload(invoice, config)),
+      body: JSON.stringify(buildFbrPayload(invoice, config, creditNote)),
       signal: AbortSignal.timeout(15_000),
     });
     const data = await res.json().catch(() => ({})) as { InvoiceNumber?: string; Code?: string; Response?: string; Errors?: unknown };

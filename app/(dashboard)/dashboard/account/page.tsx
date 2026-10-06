@@ -34,6 +34,7 @@ interface SalonSettings {
   fbrToken?: string;
   fbrPctCode?: string;
   fbrTaxPercent?: number;
+  fbrPosFee?: boolean;
 }
 
 interface BusinessHour {
@@ -429,6 +430,12 @@ function SalonProfile() {
               value={form.fbrTaxPercent || ""}
               onChange={(event) => setForm((f) => ({ ...f, fbrTaxPercent: Math.min(100, Math.max(0, Number(event.target.value) || 0)) }))} />
             <div style={{ fontSize: 11, color: "#9999b0", marginTop: 5 }}>Added to every bill at checkout and reported to FBR. Leave 0 if your prices already include tax.</div>
+          </Field>
+          <Field label="FBR POS Fee" full>
+            <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+              <input type="checkbox" checked={form.fbrPosFee !== false} onChange={(event) => setForm((f) => ({ ...f, fbrPosFee: event.target.checked }))} />
+              Add Re.1 FBR POS fee to every bill
+            </span>
           </Field>
           <Field label="Mode" full>
             <select style={inputStyle} value={form.fbrSandbox === false ? "live" : "sandbox"} onChange={(event) => setForm((f) => ({ ...f, fbrSandbox: event.target.value !== "live" }))}>

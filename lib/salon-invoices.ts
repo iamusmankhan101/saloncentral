@@ -111,30 +111,73 @@ export interface SalonInvoice {
   fbrInvoiceNumber?: string;
   /** Why the last FBR report failed; cleared once it goes through. */
   fbrError?: string;
+  /** The Re.1 FBR POS fee, already included in `total`. */
+  fbrFee?: number;
+  /** How many times an edited bill has been re-filed with FBR (see fbrUsin in lib/fbr.ts). */
+  fbrRevision?: number;
 }
 
-/**
- * Reports the invoice to FBR (when the salon has it switched on), saves the
- * result onto the invoice, and returns the updated copy. Never throws — a sale
- * that couldn't reach FBR is kept with fbrError so it can be sent again later.
- */
-export async function reportInvoiceToFbr(invoice: SalonInvoice): Promise<SalonInvoice> {
-  let updated: SalonInvoice;
+async function postToFbr(invoice: SalonInvoice, creditNote = false): Promise<{ ok: boolean; fbrInvoiceNumber?: string; error?: string }> {
   try {
     const res = await fetch("/api/fbr/invoice", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ invoice }),
+      body: JSON.stringify({ invoice, creditNote }),
     });
     const data = await res.json() as { ok: boolean; fbrInvoiceNumber?: string; error?: string };
-    updated = data.ok && data.fbrInvoiceNumber
-      ? { ...invoice, fbrInvoiceNumber: data.fbrInvoiceNumber, fbrError: undefined }
-      : { ...invoice, fbrError: data.error || "FBR report failed" };
+    return data.ok && data.fbrInvoiceNumber ? data : { ok: false, error: data.error || "FBR report failed" };
   } catch {
-    updated = { ...invoice, fbrError: "No internet — couldn't reach FBR." };
+    return { ok: false, error: "No internet — couldn't reach FBR." };
   }
+}
+
+/** The invoice with the outcome of an FBR filing applied. */
+function withFbrResult(invoice: SalonInvoice, result: { ok: boolean; fbrInvoiceNumber?: string; error?: string }): SalonInvoice {
+  return result.ok
+    ? { ...invoice, fbrInvoiceNumber: result.fbrInvoiceNumber, fbrError: undefined }
+    : { ...invoice, fbrInvoiceNumber: undefined, fbrError: result.error };
+}
+
+/**
+ * Reports the invoice to FBR, saves the result onto it, and returns the
+ * updated copy. Never throws — a sale that couldn't reach FBR is kept with
+ * fbrError so it can be sent again from its receipt.
+ */
+export async function reportInvoiceToFbr(invoice: SalonInvoice): Promise<SalonInvoice> {
+  const updated = withFbrResult(invoice, await postToFbr(invoice));
   updateSalonInvoice(updated);
   return updated;
+}
+
+/**
+ * Cancels the invoice's FBR invoice with a credit note — required before a
+ * reported bill is deleted or refunded. Returns an error message on failure,
+ * in which case the caller must not go ahead.
+ */
+export async function cancelInvoiceOnFbr(invoice: SalonInvoice): Promise<string | null> {
+  if (!invoice.fbrInvoiceNumber) return null;
+  const result = await postToFbr(invoice, true);
+  return result.ok ? null : result.error || "FBR credit note failed";
+}
+
+/**
+ * For an edited bill that FBR already has: cancels the old FBR invoice, then
+ * files the edited bill as a new one. Returns the copy to save, or an error
+ * when the old invoice couldn't be cancelled — the edit must not be saved
+ * then, or FBR would be left holding the old amounts. If only the re-filing
+ * fails, the edit is kept with fbrError and can be re-sent from its receipt.
+ */
+export async function reviseInvoiceOnFbr(previous: SalonInvoice, updated: SalonInvoice): Promise<{ invoice: SalonInvoice } | { error: string }> {
+  const cancelError = await cancelInvoiceOnFbr(previous);
+  if (cancelError) return { error: `FBR wasn't updated, so the edit wasn't saved: ${cancelError}` };
+  const next = { ...updated, fbrRevision: (previous.fbrRevision || 0) + 1 };
+  return { invoice: withFbrResult(next, await postToFbr(next)) };
+}
+
+/** Whether an edit changes anything FBR holds (amounts, lines, payment method). */
+export function fbrRelevantChange(a: SalonInvoice, b: SalonInvoice): boolean {
+  const key = (i: SalonInvoice) => JSON.stringify([i.total, i.taxAmount, i.paymentMethod, i.items.map((x) => [x.description, x.qty, x.total])]);
+  return key(a) !== key(b);
 }
 
 /**

@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { X, Plus, Trash2, Save } from "lucide-react";
 import {
-  updateSalonInvoice, newBlankItem,
+  updateSalonInvoice, newBlankItem, reviseInvoiceOnFbr, fbrRelevantChange,
   type SalonInvoice, type SalonInvoiceItem,
 } from "@/lib/salon-invoices";
 import type { PaymentMethod } from "@/lib/types";
@@ -40,6 +40,7 @@ export default function SalonInvoiceEdit({ invoice, onClose, onSaved }: Props) {
   const [notes,          setNotes]          = useState(invoice.notes || "");
   const [paymentMethod,  setPaymentMethod]  = useState<PaymentMethod | "">(invoice.paymentMethod || "");
   const [saving,         setSaving]         = useState(false);
+  const [saveError,      setSaveError]      = useState("");
   const [pickedServiceId, setPickedServiceId] = useState("");
 
   // Read once: nothing in this modal changes the catalogue or the booking.
@@ -58,7 +59,7 @@ export default function SalonInvoiceEdit({ invoice, onClose, onSaved }: Props) {
   const subtotal = Math.max(0, Math.round(items.reduce((s, i) => s + i.qty * i.unitPrice, 0)));
   const clampedDiscount  = Math.min(Math.max(0, Math.round(discount)), subtotal);
   const clampedDiscount2 = Math.min(Math.max(0, Math.round(discount2)), Math.max(0, subtotal - clampedDiscount));
-  const total = Math.max(0, subtotal - clampedDiscount - clampedDiscount2 + invoice.taxAmount);
+  const total = Math.max(0, subtotal - clampedDiscount - clampedDiscount2 + invoice.taxAmount) + (invoice.fbrFee || 0);
 
   function updateItem(id: string, patch: Partial<SalonInvoiceItem>) {
     setItems(list => list.map(i => {
@@ -106,10 +107,11 @@ export default function SalonInvoiceEdit({ invoice, onClose, onSaved }: Props) {
     setPickedServiceId("");
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (saving || items.length === 0) return;
     setSaving(true);
-    const updated: SalonInvoice = {
+    setSaveError("");
+    let updated: SalonInvoice = {
       ...invoice,
       items,
       subtotal,
@@ -119,6 +121,12 @@ export default function SalonInvoiceEdit({ invoice, onClose, onSaved }: Props) {
       paymentMethod,
       notes: notes.trim(),
     };
+    // FBR already holds this bill — cancel it there and re-file the edited one.
+    if (invoice.fbrInvoiceNumber && fbrRelevantChange(invoice, updated)) {
+      const revised = await reviseInvoiceOnFbr(invoice, updated);
+      if ("error" in revised) { setSaveError(revised.error); setSaving(false); return; }
+      updated = revised.invoice;
+    }
     updateSalonInvoice(updated);
 
     // Commission is computed from the appointment's totalAmount, not the bill,
@@ -266,6 +274,9 @@ export default function SalonInvoiceEdit({ invoice, onClose, onSaved }: Props) {
             </div>
           </div>
 
+          {saveError && (
+            <div style={{ marginBottom: 12, padding: "10px 14px", background: "#fef2f2", borderRadius: 10, fontSize: 12, color: "#dc2626", fontWeight: 700 }}>{saveError}</div>
+          )}
           {/* Actions */}
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
             <button type="button" onClick={onClose}
@@ -274,7 +285,7 @@ export default function SalonInvoiceEdit({ invoice, onClose, onSaved }: Props) {
             </button>
             <button type="button" onClick={handleSave} disabled={saving || items.length === 0}
               style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 20px", borderRadius: 9, border: "none", background: "#7C3AED", fontSize: 13, fontWeight: 700, color: "#fff", cursor: items.length === 0 ? "not-allowed" : "pointer", opacity: items.length === 0 ? 0.6 : 1 }}>
-              <Save size={14} /> Save Changes
+              <Save size={14} /> {saving ? "Saving…" : "Save Changes"}
             </button>
           </div>
         </div>

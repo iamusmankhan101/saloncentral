@@ -27,6 +27,9 @@ function fmtDate(d: string): string {
   });
 }
 
+/** FBR's official POS logo, from the IMS package FBR gives on POS registration. */
+const FBR_LOGO_SRC = "/fbr-pos-logo.png";
+
 const METHOD_LABELS: Record<string, string> = {
   cash: "Cash", jazzcash: "JazzCash", easypaisa: "EasyPaisa",
   raast: "Raast", card: "Card", bank: "Bank Transfer", "": "—",
@@ -331,6 +334,8 @@ export default function SalonInvoicePrint({
       // it. Returns null for "no logo" and for "logo wouldn't decode" alike —
       // both simply print a receipt without a mark.
       const logoRaster = logo ? await rasterizeLogoForThermal(logo, paperWidthMm) : null;
+      // Null when the FBR logo file isn't in /public yet — the slip just prints without it.
+      const fbrLogoRaster = fbrNumber ? await rasterizeLogoForThermal(FBR_LOGO_SRC, paperWidthMm) : null;
       const res = await fetch("/api/print", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -339,6 +344,7 @@ export default function SalonInvoicePrint({
           printerPort: printer.port || 9100,
           paperWidthMm,
           logo: logoRaster ?? undefined,
+          fbrLogo: fbrLogoRaster ?? undefined,
           salonName,
           salonPhone,
           salonAddress,
@@ -581,6 +587,11 @@ export default function SalonInvoicePrint({
                       <span>Tax</span><span>{fmt(invoice.taxAmount)}</span>
                     </div>
                   )}
+                  {!!invoice.fbrFee && (
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 13, color: "#555", borderBottom: "1px solid #e8e8e8" }}>
+                      <span>FBR POS fee</span><span>{fmt(invoice.fbrFee)}</span>
+                    </div>
+                  )}
                   {invoice.discountAmount > 0 && (
                     <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 13, color: "#555", borderBottom: "1px solid #e8e8e8" }}>
                       <span>Discount</span><span>−{fmt(invoice.discountAmount)}</span>
@@ -612,6 +623,7 @@ export default function SalonInvoicePrint({
               {/* ── FBR ── */}
               {fbrNumber && (
                 <div className="sip-fbr" style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 28 }}>
+                  <img src={FBR_LOGO_SRC} alt="FBR" height={56} onError={(e) => { e.currentTarget.style.display = "none"; }} />
                   {fbrQr && <img src={fbrQr} alt="FBR invoice QR code" width={96} height={96} />}
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 800, color: "#111", textTransform: "uppercase", letterSpacing: "0.08em" }}>FBR Invoice No.</div>

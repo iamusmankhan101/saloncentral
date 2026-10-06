@@ -6,7 +6,7 @@ import {
   ReceiptText, ShoppingCart, TrendingUp, Users, MessageSquare,
 } from "lucide-react";
 import {
-  getSalonInvoices, deleteSalonInvoice, markSalonInvoicePaid, updateSalonInvoice, localDateKey, balanceDue, advancePercent,
+  getSalonInvoices, deleteSalonInvoice, cancelInvoiceOnFbr, markSalonInvoicePaid, updateSalonInvoice, localDateKey, balanceDue, advancePercent,
   paymentMethodLabel, type SalonInvoice,
 } from "@/lib/salon-invoices";
 import type { PaymentMethod } from "@/lib/types";
@@ -253,8 +253,17 @@ export default function InvoicesPage() {
     setTimeout(() => setResendNotice(null), 6000);
   }
 
-  function handleDelete(id: string) {
+  async function handleDelete(id: string) {
     const invoice = getSalonInvoices().find((item) => item.id === id);
+    // A bill FBR already has must be cancelled there first (credit note);
+    // otherwise FBR keeps a sale the salon no longer shows.
+    const fbrError = invoice ? await cancelInvoiceOnFbr(invoice) : null;
+    if (fbrError) {
+      setDeleteConfirm(null);
+      setResendNotice({ ok: false, text: `${invoice?.number} wasn't deleted — FBR couldn't be updated: ${fbrError}` });
+      setTimeout(() => setResendNotice(null), 8000);
+      return;
+    }
     deleteSalonInvoice(id);
     if (invoice?.appointmentId) {
       const appointments = getStoredAppointments();

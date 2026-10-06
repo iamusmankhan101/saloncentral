@@ -439,11 +439,14 @@ export default function POSPage() {
   }
 
   // Card payments carry the salon's card tax (set on the account page), on the bill after discounts.
-  const salonTax = settingsStore.salon as { cardTaxPercent?: number; fbrEnabled?: boolean; fbrTaxPercent?: number };
+  const salonTax = settingsStore.salon as { cardTaxPercent?: number; fbrEnabled?: boolean; fbrTaxPercent?: number; fbrPosFee?: boolean };
   const cardTaxPercent = !isCredit && payMethod === "card" ? Number(salonTax.cardTaxPercent) || 0 : 0;
   // FBR sales tax applies to every bill, on top of any card tax.
   const fbrTaxPercent = salonTax.fbrEnabled ? Number(salonTax.fbrTaxPercent) || 0 : 0;
-  const { subtotal, taxAmount, total } = calcTotals(cartLineItems, totalDiscountAmount, (cardTaxPercent + fbrTaxPercent) / 100);
+  const { subtotal, taxAmount, total: totalBeforeFee } = calcTotals(cartLineItems, totalDiscountAmount, (cardTaxPercent + fbrTaxPercent) / 100);
+  // FBR's Re.1 POS fee, charged on every bill reported to FBR.
+  const fbrFee = salonTax.fbrEnabled && salonTax.fbrPosFee !== false && cartLineItems.length > 0 ? 1 : 0;
+  const total = totalBeforeFee + fbrFee;
   // Never more than the ticket itself — an "advance" covering the whole bill is
   // just a paid sale, and a negative balance would be nonsense on the invoice.
   const rawAdvance = advanceType === "pct" ? wholePkr(total * advanceValue / 100) : wholePkr(advanceValue);
@@ -718,6 +721,7 @@ export default function POSPage() {
         section:       saleSection,
         items:         cartLineItems,
         subtotal, discountAmount: wholePkr(discountAmount + loyaltyDiscount + rewardDiscount), discount2Amount: discountAmount2, taxAmount, total,
+        fbrFee: fbrFee || undefined,
         paymentMethod: isCredit ? "" : (payMethod as PaymentMethod),
         ...(isCard ? {
           cardTerminal,
@@ -1924,6 +1928,12 @@ export default function POSPage() {
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#4a4a6a", marginTop: 8, fontWeight: 700, padding: "0 4px" }}>
                     <span>{fbrTaxPercent ? "Sales tax" : "Card tax"} ({cardTaxPercent + fbrTaxPercent}%)</span>
                     <span>+ {pkr(taxAmount)}</span>
+                  </div>
+                )}
+                {fbrFee > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#4a4a6a", marginTop: 8, fontWeight: 700, padding: "0 4px" }}>
+                    <span>FBR POS fee</span>
+                    <span>+ {pkr(fbrFee)}</span>
                   </div>
                 )}
 

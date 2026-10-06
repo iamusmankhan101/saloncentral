@@ -40,6 +40,10 @@ const nextConfig: NextConfig = {
   // reason as @libsql/client: bundling it breaks the native bindings.
   serverExternalPackages: ["@libsql/client", "sharp"],
 
+  // The WhatsApp invoice PDF is built on the server and reads FBR's logo from
+  // /public, which isn't part of a serverless function's files by default.
+  outputFileTracingIncludes: { "/api/**": ["./public/fbr-pos-logo.png"] },
+
   async headers() {
     return [
       {
