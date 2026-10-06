@@ -107,6 +107,34 @@ export interface SalonInvoice {
   source?: "pos" | "manual";
   /** Which salon section this sale belongs to (e.g. "Men's", "Women's"). Free text, cosmetic only. */
   section?: string;
+  /** Fiscal invoice number FBR issued for this sale; printed with its QR code. */
+  fbrInvoiceNumber?: string;
+  /** Why the last FBR report failed; cleared once it goes through. */
+  fbrError?: string;
+}
+
+/**
+ * Reports the invoice to FBR (when the salon has it switched on), saves the
+ * result onto the invoice, and returns the updated copy. Never throws — a sale
+ * that couldn't reach FBR is kept with fbrError so it can be sent again later.
+ */
+export async function reportInvoiceToFbr(invoice: SalonInvoice): Promise<SalonInvoice> {
+  let updated: SalonInvoice;
+  try {
+    const res = await fetch("/api/fbr/invoice", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ invoice }),
+    });
+    const data = await res.json() as { ok: boolean; fbrInvoiceNumber?: string; error?: string };
+    updated = data.ok && data.fbrInvoiceNumber
+      ? { ...invoice, fbrInvoiceNumber: data.fbrInvoiceNumber, fbrError: undefined }
+      : { ...invoice, fbrError: data.error || "FBR report failed" };
+  } catch {
+    updated = { ...invoice, fbrError: "No internet — couldn't reach FBR." };
+  }
+  updateSalonInvoice(updated);
+  return updated;
 }
 
 /**

@@ -20,7 +20,7 @@ import {
 } from "@/lib/storage";
 import { getHeldSales, saveHeldSale, removeHeldSale, type HeldSale } from "@/lib/held-sales";
 import {
-  createSalonInvoice, calcTotals,
+  createSalonInvoice, calcTotals, reportInvoiceToFbr,
   localDateKey, getSalonInvoices, saveSalonInvoices,
   ADVANCE_NON_REFUNDABLE_NOTE, CARD_TERMINALS,
   type SalonInvoice, type SalonInvoiceItem,
@@ -439,8 +439,11 @@ export default function POSPage() {
   }
 
   // Card payments carry the salon's card tax (set on the account page), on the bill after discounts.
-  const cardTaxPercent = !isCredit && payMethod === "card" ? Number((settingsStore.salon as { cardTaxPercent?: number }).cardTaxPercent) || 0 : 0;
-  const { subtotal, taxAmount, total } = calcTotals(cartLineItems, totalDiscountAmount, cardTaxPercent / 100);
+  const salonTax = settingsStore.salon as { cardTaxPercent?: number; fbrEnabled?: boolean; fbrTaxPercent?: number };
+  const cardTaxPercent = !isCredit && payMethod === "card" ? Number(salonTax.cardTaxPercent) || 0 : 0;
+  // FBR sales tax applies to every bill, on top of any card tax.
+  const fbrTaxPercent = salonTax.fbrEnabled ? Number(salonTax.fbrTaxPercent) || 0 : 0;
+  const { subtotal, taxAmount, total } = calcTotals(cartLineItems, totalDiscountAmount, (cardTaxPercent + fbrTaxPercent) / 100);
   // Never more than the ticket itself — an "advance" covering the whole bill is
   // just a paid sale, and a negative balance would be nonsense on the invoice.
   const rawAdvance = advanceType === "pct" ? wholePkr(total * advanceValue / 100) : wholePkr(advanceValue);
@@ -704,7 +707,7 @@ export default function POSPage() {
       const saleSection = staffMember?.section
         ?? (new Set(cartSections).size === 1 ? cartSections[0] : undefined)
         ?? (activeSection !== "all" ? activeSection : undefined);
-      const { invoice, dbSaved } = await createSalonInvoice({
+      const { invoice: createdInvoice, dbSaved } = await createSalonInvoice({
         appointmentId: checkoutAppointmentId || undefined,
         clientId:      selectedClient?.id || undefined,
         clientName:    selectedClient?.name || "Walk-in Customer",
@@ -735,6 +738,11 @@ export default function POSPage() {
       // failed sync doesn't block checkout — but it must not go unnoticed the way
       // it did before, silently leaving the invoice missing on every other device.
       setSyncFailed(!dbSaved);
+
+      // Reported before the receipt prints or goes out on WhatsApp, so both
+      // carry the FBR number. A failure doesn't block the sale — the invoice
+      // keeps fbrError and can be sent again from its receipt.
+      const invoice = salonTax.fbrEnabled ? await reportInvoiceToFbr(createdInvoice) : createdInvoice;
 
       // The sale is done — it no longer belongs in the held list on any device.
       if (resumedHeldId) {
@@ -1914,7 +1922,7 @@ export default function POSPage() {
 
                 {taxAmount > 0 && (
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#4a4a6a", marginTop: 8, fontWeight: 700, padding: "0 4px" }}>
-                    <span>Card tax ({cardTaxPercent}%)</span>
+                    <span>{fbrTaxPercent ? "Sales tax" : "Card tax"} ({cardTaxPercent + fbrTaxPercent}%)</span>
                     <span>+ {pkr(taxAmount)}</span>
                   </div>
                 )}

@@ -3,7 +3,8 @@
 import { Fragment, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { X, Printer, CheckCircle, Pencil, MessageSquare } from "lucide-react";
-import { ADVANCE_NON_REFUNDABLE_NOTE, PAYMENT_NON_REFUNDABLE_NOTE, balanceDue, advancePercent, invoiceItemsByPerson, invoiceTimeLabel, type SalonInvoice } from "@/lib/salon-invoices";
+import QRCode from "qrcode";
+import { ADVANCE_NON_REFUNDABLE_NOTE, PAYMENT_NON_REFUNDABLE_NOTE, balanceDue, advancePercent, invoiceItemsByPerson, invoiceTimeLabel, reportInvoiceToFbr, type SalonInvoice } from "@/lib/salon-invoices";
 import { settingsStore } from "@/lib/settings-store";
 import SalonCentralWordmark from "@/components/salon-central-wordmark";
 import { fmtCurrency as fmt } from "@/lib/format";
@@ -285,8 +286,28 @@ export default function SalonInvoicePrint({
   const [receiptPageMm, setReceiptPageMm] = useState(FALLBACK_RECEIPT_MM);
   const [thermalError, setThermalError]   = useState("");
 
+  // Kept locally so a "Send to FBR" retry shows its number without reopening.
+  const [fbrNumber, setFbrNumber] = useState(invoice.fbrInvoiceNumber || "");
+  const [fbrError, setFbrError]   = useState(invoice.fbrError || "");
+  const [fbrSending, setFbrSending] = useState(false);
+  const [fbrQr, setFbrQr]         = useState("");
+
   useEffect(() => { setMounted(true); }, []);
+  useEffect(() => {
+    if (!fbrNumber) return;
+    QRCode.toDataURL(fbrNumber, { margin: 1, width: 192 }).then(setFbrQr).catch(() => setFbrQr(""));
+  }, [fbrNumber]);
   if (!mounted) return null;
+
+  const fbrEnabled = (settingsStore.salon as { fbrEnabled?: boolean }).fbrEnabled === true;
+
+  async function sendToFbr() {
+    setFbrSending(true);
+    const updated = await reportInvoiceToFbr(invoice);
+    setFbrNumber(updated.fbrInvoiceNumber || "");
+    setFbrError(updated.fbrError || "");
+    setFbrSending(false);
+  }
 
   const itemGroups = invoiceItemsByPerson(invoice);
   const isPaid   = invoice.status === "paid";
@@ -322,7 +343,7 @@ export default function SalonInvoicePrint({
           salonPhone,
           salonAddress,
           currency: "PKR",
-          invoice,
+          invoice: { ...invoice, fbrInvoiceNumber: fbrNumber || undefined },
         }),
       });
       const json = await res.json();
@@ -410,6 +431,17 @@ export default function SalonInvoicePrint({
                   style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 9, border: "1px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.15)", fontSize: 12, fontWeight: 700, color: "#fff", cursor: sendingWhatsApp ? "default" : "pointer", opacity: sendingWhatsApp ? 0.6 : 1 }}>
                   <MessageSquare size={14} /> {sendingWhatsApp ? "Sending…" : "Send WhatsApp"}
                 </button>
+              )}
+              {fbrEnabled && !fbrNumber && (
+                <button onClick={e => { e.stopPropagation(); sendToFbr(); }} disabled={fbrSending} title={fbrError}
+                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 9, border: "1px solid rgba(255,255,255,0.3)", background: fbrError ? "rgba(220,38,38,0.35)" : "rgba(255,255,255,0.15)", fontSize: 12, fontWeight: 700, color: "#fff", cursor: fbrSending ? "default" : "pointer", opacity: fbrSending ? 0.6 : 1 }}>
+                  {fbrSending ? "Sending to FBR…" : fbrError ? "FBR failed — Retry" : "Send to FBR"}
+                </button>
+              )}
+              {fbrError && !fbrNumber && !fbrSending && (
+                <span style={{ fontSize: 11, color: "#fca5a5", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={fbrError}>
+                  {fbrError}
+                </span>
               )}
               {onEdit && (
                 <button onClick={e => { e.stopPropagation(); onEdit(); }}
@@ -576,6 +608,18 @@ export default function SalonInvoicePrint({
                   )}
                 </div>
               </div>
+
+              {/* ── FBR ── */}
+              {fbrNumber && (
+                <div className="sip-fbr" style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 28 }}>
+                  {fbrQr && <img src={fbrQr} alt="FBR invoice QR code" width={96} height={96} />}
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: "#111", textTransform: "uppercase", letterSpacing: "0.08em" }}>FBR Invoice No.</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#111", marginTop: 4, wordBreak: "break-all" }}>{fbrNumber}</div>
+                    <div style={{ fontSize: 11, color: "#555", marginTop: 4 }}>Verify on FBR&apos;s Tax Asaan app</div>
+                  </div>
+                </div>
+              )}
 
               {isAdvance && (
                 <div style={{ marginBottom: 24, fontSize: 12, fontWeight: 800, color: "#b45309" }}>

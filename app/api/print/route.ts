@@ -78,6 +78,24 @@ function logoBuffer(logo: ReceiptData["logo"]): Buffer | null {
   return rasterImage(logo.widthBytes, logo.height, bitmap);
 }
 
+/**
+ * GS ( k — the printer draws the QR code itself (model 2, module size 6,
+ * error level M), so no image has to be rendered and sent.
+ */
+function qrCode(data: string): Buffer {
+  const bytes = Buffer.from(data, "utf8");
+  const len = bytes.length + 3;
+  return Buffer.concat([
+    Buffer.from([GS, 0x28, 0x6b, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]),
+    Buffer.from([GS, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x43, 0x06]),
+    Buffer.from([GS, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x45, 0x31]),
+    Buffer.from([GS, 0x28, 0x6b, len & 0xff, (len >> 8) & 0xff, 0x31, 0x50, 0x30]),
+    bytes,
+    Buffer.from([GS, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x51, 0x30]),
+    CMD.lf,
+  ]);
+}
+
 function divider(char = "-", len = 32): Buffer {
   return text(char.repeat(len));
 }
@@ -232,6 +250,14 @@ function buildReceipt(data: ReceiptData): Buffer {
     push(text(`Note: ${data.invoice.notes}`));
   }
 
+  if (data.invoice.fbrInvoiceNumber) {
+    push(divider("-", W));
+    push(CMD.alignCenter, CMD.heavyOn, text("FBR Invoice No."), CMD.heavyOff);
+    push(text(data.invoice.fbrInvoiceNumber));
+    push(qrCode(data.invoice.fbrInvoiceNumber));
+    push(text("Verify on FBR's Tax Asaan app"));
+  }
+
   // ── Footer ────────────────────────────────────────────────────────────────
   push(divider("=", W));
   push(CMD.alignCenter);
@@ -313,6 +339,7 @@ interface ReceiptData {
     /** Set only on a "partial" sale — the amount taken up front. */
     advanceAmount?: number;
     notes?: string;
+    fbrInvoiceNumber?: string;
   };
 }
 

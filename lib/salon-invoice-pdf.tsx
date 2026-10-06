@@ -1,4 +1,5 @@
 import { Document, Page, StyleSheet, Text, View, Image, renderToBuffer } from "@react-pdf/renderer";
+import { renderQrDataUrl } from "@/lib/qr";
 import { ADVANCE_NON_REFUNDABLE_NOTE, PAYMENT_NON_REFUNDABLE_NOTE, balanceDue, advancePercent, invoiceItemsByPerson, invoiceTimeLabel, type SalonInvoice } from "@/lib/salon-invoices";
 
 const METHOD_LABELS: Record<string, string> = {
@@ -63,9 +64,10 @@ function fmtDate(d: string): string {
   });
 }
 
-function InvoiceDocument({ invoice, salon }: {
+function InvoiceDocument({ invoice, salon, fbrQr }: {
   invoice: SalonInvoice;
   salon: { name: string; phone?: string; email?: string; address?: string; logo?: string };
+  fbrQr?: string;
 }) {
   const isPaid   = invoice.status === "paid";
   const isAdvance = invoice.status === "partial";
@@ -194,6 +196,18 @@ function InvoiceDocument({ invoice, salon }: {
           )}
         </View>
 
+        {/* ── FBR ── */}
+        {!!invoice.fbrInvoiceNumber && (
+          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 16 }}>
+            {!!fbrQr && <Image src={fbrQr} style={{ width: 64, height: 64, marginRight: 10 }} />}
+            <View>
+              <Text style={styles.sectionLabel}>FBR Invoice No.</Text>
+              <Text style={styles.cellStrong}>{invoice.fbrInvoiceNumber}</Text>
+              <Text style={styles.cellMuted}>Verify on FBR&apos;s Tax Asaan app</Text>
+            </View>
+          </View>
+        )}
+
         {/* ── PAYMENT STATUS ── */}
         {isPaid && invoice.paymentMethod && (
           <Text style={styles.paidLine}>Paid via {methodLabel}</Text>
@@ -240,5 +254,6 @@ export async function generateSalonInvoicePdf(
   invoice: SalonInvoice,
   salon: { name: string; phone?: string; email?: string; address?: string; logo?: string },
 ) {
-  return renderToBuffer(<InvoiceDocument invoice={invoice} salon={salon} />);
+  const fbrQr = invoice.fbrInvoiceNumber ? await renderQrDataUrl(invoice.fbrInvoiceNumber, { size: 192, margin: 1 }) : undefined;
+  return renderToBuffer(<InvoiceDocument invoice={invoice} salon={salon} fbrQr={fbrQr} />);
 }

@@ -28,6 +28,12 @@ interface SalonSettings {
   timezone: string;
   logo: string;
   cardTaxPercent?: number;
+  fbrEnabled?: boolean;
+  fbrSandbox?: boolean;
+  fbrPosId?: string;
+  fbrToken?: string;
+  fbrPctCode?: string;
+  fbrTaxPercent?: number;
 }
 
 interface BusinessHour {
@@ -407,6 +413,30 @@ function SalonProfile() {
             onChange={(event) => setForm((f) => ({ ...f, cardTaxPercent: Math.min(100, Math.max(0, Number(event.target.value) || 0)) }))} />
           <div style={{ fontSize: 11, color: "#9999b0", marginTop: 5 }}>Added to the bill at checkout when Card is selected. Leave 0 for none.</div>
         </Field>
+
+        <Field label="FBR Invoicing" full>
+          <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+            <input type="checkbox" checked={!!form.fbrEnabled} onChange={(event) => setForm((f) => ({ ...f, fbrEnabled: event.target.checked }))} />
+            Report every POS sale to FBR and print the FBR invoice number and QR code on receipts
+          </span>
+        </Field>
+        {form.fbrEnabled && <>
+          <Field label="FBR POS ID"><input style={inputStyle} inputMode="numeric" placeholder="e.g. 812345" value={form.fbrPosId || ""} onChange={(event) => setForm((f) => ({ ...f, fbrPosId: event.target.value.trim() }))} /></Field>
+          <Field label="FBR Access Token"><input style={inputStyle} type="password" autoComplete="off" value={form.fbrToken || ""} onChange={(event) => setForm((f) => ({ ...f, fbrToken: event.target.value.trim() }))} /></Field>
+          <Field label="PCT Code"><input style={inputStyle} placeholder="From your tax consultant" value={form.fbrPctCode || ""} onChange={(event) => setForm((f) => ({ ...f, fbrPctCode: event.target.value.trim() }))} /></Field>
+          <Field label="Sales Tax on Every Bill (%)">
+            <input style={inputStyle} type="number" min={0} max={100} step="0.01" placeholder="0"
+              value={form.fbrTaxPercent || ""}
+              onChange={(event) => setForm((f) => ({ ...f, fbrTaxPercent: Math.min(100, Math.max(0, Number(event.target.value) || 0)) }))} />
+            <div style={{ fontSize: 11, color: "#9999b0", marginTop: 5 }}>Added to every bill at checkout and reported to FBR. Leave 0 if your prices already include tax.</div>
+          </Field>
+          <Field label="Mode" full>
+            <select style={inputStyle} value={form.fbrSandbox === false ? "live" : "sandbox"} onChange={(event) => setForm((f) => ({ ...f, fbrSandbox: event.target.value !== "live" }))}>
+              <option value="sandbox">Test (sandbox) — nothing is really reported</option>
+              <option value="live">Live — sales are reported to FBR</option>
+            </select>
+          </Field>
+        </>}
       </div>
 
       {saved && <div style={{ marginTop: 16 }}><SavedBanner /></div>}
