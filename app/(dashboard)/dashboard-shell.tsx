@@ -6,6 +6,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { AlertTriangle, CreditCard, LayoutDashboard, User, Users, ClipboardList, CheckCircle, XCircle, X, CalendarCheck, WifiOff, MapPin, Plus, Trash2 } from "lucide-react";
 import type { WaLogEntry } from "@/lib/whatsapp-scheduler";
 import Sidebar from "@/components/sidebar";
+import FloorTopBar from "@/components/floor-top-bar";
 import OfflineStatus from "@/components/offline-status";
 import { getCurrentUser, checkServerSession, signOut } from "@/lib/auth";
 import { applyAppearanceSettings, SETTINGS_CHANGED_EVENT, reloadSettings, settingsStore } from "@/lib/settings-store";
@@ -455,7 +456,7 @@ function DashboardLocationSwitcher({ onLocationChange }: { onLocationChange: (lo
 // Inventory, Clients, Appointments, POS) initializes from on mount. Only
 // rendered once at least one staff member or service is actually tagged, so
 // salons that don't use sections never see it.
-function DashboardSectionSwitcher({ onSectionChange }: { onSectionChange: (section: string) => void }) {
+function DashboardSectionSwitcher({ onSectionChange, compact = false }: { onSectionChange: (section: string) => void; compact?: boolean }) {
   const [options, setOptions] = useState<string[]>(() => getSectionOptions([...getStoredStaff(), ...getStoredServices()]));
   const [hasTagged, setHasTagged] = useState(() => [...getStoredStaff(), ...getStoredServices()].some((r) => r.section));
   const [activeSection, setActiveSectionState] = useState(() => getActiveSection());
@@ -482,6 +483,15 @@ function DashboardSectionSwitcher({ onSectionChange }: { onSectionChange: (secti
     setActiveSection(section);
     setActiveSectionState(section);
     onSectionChange(section);
+  }
+
+  if (compact) {
+    return (
+      <select value={activeSection} onChange={(e) => changeSection(e.target.value)} aria-label="Select active dashboard section">
+        <option value="all">All Sections</option>
+        {options.map((s) => <option key={s} value={s}>{s}</option>)}
+      </select>
+    );
   }
 
   return (
@@ -962,6 +972,9 @@ export default function DashboardShell({ children }: { children: React.ReactNode
   // global bottom-nav on top of it stacks two toolbars and eats screen space from
   // an already tight checkout flow, so it's hidden here specifically.
   const isPosPage = pathname === "/dashboard/pos";
+  // The Salon Floor is a full-width live map: a top header replaces the left
+  // sidebar there, and the sidebar only opens as a drawer from its ☰ button.
+  const isFloorPage = pathname === "/dashboard/floor";
 
   const bottomTabs = [
     { href: "/dashboard",             icon: LayoutDashboard, label: "Dashboard"    },
@@ -979,10 +992,18 @@ export default function DashboardShell({ children }: { children: React.ReactNode
       <div
         className={`mobile-overlay ${sidebarOpen ? "active" : ""}`}
         onClick={() => setSidebarOpen(false)}
+        style={isFloorPage && sidebarOpen ? { display: "block" } : undefined}
       />
 
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <main className={isPosPage ? "pos-page-main" : ""} style={{
+      {(!isFloorPage || sidebarOpen) && <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />}
+      <main className={isPosPage ? "pos-page-main" : ""} style={isFloorPage ? {
+        marginLeft: 0,
+        flex: 1,
+        minWidth: 0,
+        minHeight: "100vh",
+        background: "#eef0f6",
+        overflow: "auto",
+      } : {
         marginLeft: "var(--sidebar-width)",
         flex: 1,
         minHeight: "100vh",
@@ -991,6 +1012,12 @@ export default function DashboardShell({ children }: { children: React.ReactNode
         borderRadius: "20px 0 0 20px",
         boxShadow: "-4px 0 24px rgba(0,0,0,0.08)",
       }}>
+        {isFloorPage && (
+          <FloorTopBar
+            onMenu={() => setSidebarOpen(true)}
+            sectionSwitcher={!isAdmin && <DashboardSectionSwitcher compact onSectionChange={handleSectionChange} />}
+          />
+        )}
         {/* WhatsApp disconnection banner */}
         {waStatus === "disconnected" && !waBannerDismissed && (
           <div style={{
@@ -1024,10 +1051,10 @@ export default function DashboardShell({ children }: { children: React.ReactNode
             resolveActor()), so showing them a switcher that can't actually
             move their data anywhere would just be a dead, confusing control.
             Admins have no salon at all, so neither switcher is shown to them. */}
-        {getCurrentUser()?.role === "owner" && getCurrentPlanId() === "premium" && (
+        {!isFloorPage && getCurrentUser()?.role === "owner" && getCurrentPlanId() === "premium" && (
           <DashboardLocationSwitcher onLocationChange={handleLocationChange} />
         )}
-        {!isAdmin && <DashboardSectionSwitcher onSectionChange={handleSectionChange} />}
+        {!isAdmin && !isFloorPage && <DashboardSectionSwitcher onSectionChange={handleSectionChange} />}
         <div key={`${locationRenderKey}::${sectionRenderKey}`}>{children}</div>
       </main>
 

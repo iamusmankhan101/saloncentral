@@ -15,6 +15,7 @@ import { syncFromDB } from "@/lib/turso-sync";
 import { getActiveSection, inSection } from "@/lib/sections";
 import { fmtCurrency as fmt } from "@/lib/format";
 import { ACCENT, type ChairLabel, type FloorApi, type RosterPerson } from "@/components/salon-floor-3d";
+import { appointmentStaffIds } from "@/lib/appointment-staff";
 import type { Appointment, InventoryItem, Staff } from "@/lib/types";
 
 // three.js is large and browser-only — load it on this page alone.
@@ -42,6 +43,17 @@ const clockTime = (iso?: string) => {
   return d && !Number.isNaN(d.getTime()) ? d.toLocaleTimeString("en-PK", { hour: "numeric", minute: "2-digit" }) : "";
 };
 function yesterdayKey() { const d = new Date(); d.setDate(d.getDate() - 1); return localDateKey(d); }
+const dayLabel = (date: string) => new Date(`${date}T00:00:00`).toLocaleDateString("en-PK", { weekday: "short", day: "numeric", month: "short" });
+
+/** Whether the salon is inside today's business hours (Account → Business Hours). No hours set = always open. */
+function openNow(): boolean {
+  const hours = (settingsStore as { hours?: { day: string; open: boolean; from: string; to: string }[] }).hours;
+  if (!hours?.length) return true;
+  const today = hours.find((h) => h.day === new Date().toLocaleDateString("en-US", { weekday: "long" }));
+  if (!today?.open) return false;
+  const m = nowMin();
+  return m >= toMin(today.from) && m < toMin(today.to);
+}
 
 interface Toast { id: number; text: string }
 type Tab = "chairs" | "stylists" | "bookings";
@@ -62,7 +74,9 @@ export default function SalonFloorPage() {
   const [staff, setStaff] = useState<Staff[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [sales, setSales] = useState({ today: 0, yesterday: 0, paidAppts: new Map<string, string>() });
-  const [onDuty, setOnDuty] = useState<string[]>([]);
+  const [future, setFuture] = useState<Appointment[]>([]);
+  /** Marked absent / on leave / week off, or clocked out, on today's Attendance. */
+  const [offToday, setOffToday] = useState<string[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [pops, setPops] = useState<{ id: number; text: string }[]>([]);
@@ -92,7 +106,11 @@ export default function SalonFloorPage() {
   const load = useCallback(() => {
     const today = localDateKey();
     const section = getActiveSection();
-    const appts = getStoredAppointments().filter((a) => a.date === today && inSection(a, section));
+    const allAppts = getStoredAppointments().filter((a) => inSection(a, section));
+    const appts = allAppts.filter((a) => a.date === today);
+    setFuture(allAppts
+      .filter((a) => a.date > today && (a.status === "booked" || a.status === "confirmed"))
+      .sort((a, b) => a.date.localeCompare(b.date) || toMin(a.startTime) - toMin(b.startTime)));
     const allInvoices = getSalonInvoices().filter((i) => inSection(i, section));
     const todays = allInvoices.filter((i) => i.date === today);
     const attendance = getAttendance().filter((r) => r.date === today);
@@ -101,16 +119,16 @@ export default function SalonFloorPage() {
     setInventory(getStoredInventory().filter((i) => inSection(i, section)));
     setSales({
       today: todays.reduce((s, i) => s + revenueAmount(i), 0),
-      yesterday: allInvoices.filter((i) => i.date === yesterdayKey()).reduce((s, i) => s + revenueAmount(i), 0),
+      // Yesterday up to this same time of day, so early-morning numbers aren't compared with a full day.
+      yesterday: allInvoices.filter((i) => {
+        if (i.date !== yesterdayKey()) return false;
+        const at = new Date(i.createdAt);
+        return Number.isNaN(at.getTime()) || at.getHours() * 60 + at.getMinutes() <= nowMin();
+      }).reduce((s, i) => s + revenueAmount(i), 0),
       paidAppts: new Map(todays.filter((i) => i.appointmentId).map((i) => [i.appointmentId!, i.createdAt])),
     });
 
-    // Stylists on duty: anyone with a client today, plus anyone checked in; clocking out takes them off.
-    const out = new Set(attendance.filter((r) => r.checkOut).map((r) => r.staffId));
-    const duty = new Set(attendance.filter((r) => ["present", "late", "half-day"].includes(r.status)).map((r) => r.staffId));
-    for (const a of appts) if (!["cancelled", "no-show"].includes(a.status) && a.staffId) duty.add(a.staffId);
-    for (const id of out) duty.delete(id);
-    setOnDuty([...duty]);
+    setOffToday(attendance.filter((r) => r.checkOut || ["absent", "leave", "week-off"].includes(r.status)).map((r) => r.staffId));
 
     // Chairs: a seated client keeps their chair; newcomers take the lowest free one.
     const byStart = (a: Appointment, b: Appointment) => toMin(a.startTime) - toMin(b.startTime) || a.id.localeCompare(b.id);
@@ -169,11 +187,18 @@ export default function SalonFloorPage() {
   }, [appointments]);
   const inService = appointments.filter((a) => a.status === "in-progress").sort(byStart);
   const waiting = appointments.filter((a) => a.status === "arrived").sort(byStart);
-  const upcoming = appointments.filter((a) => (a.status === "booked" || a.status === "confirmed") && toMin(a.startTime) >= minute - 30).sort(byStart);
+  // Everything still booked for today, including clients running late (they haven't been marked Arrived yet).
+  const upcoming = appointments.filter((a) => a.status === "booked" || a.status === "confirmed").sort(byStart);
   const done = appointments.filter((a) => a.status === "completed");
-  const dutyStaff = staff.filter((s) => s.isActive && onDuty.includes(s.id)).slice(0, 12);
+  // Every stylist on a seated client's appointment is busy (two-stylist bookings count both).
   const busyStaff = new Map<string, { chair: number; appt: Appointment }>();
-  for (const [chair, a] of seated) if (a.staffId && !busyStaff.has(a.staffId)) busyStaff.set(a.staffId, { chair, appt: a });
+  for (const [chair, a] of seated) for (const id of appointmentStaffIds(a)) if (!busyStaff.has(id)) busyStaff.set(id, { chair, appt: a });
+  const section = getActiveSection();
+  const activeStaff = staff.filter((s) => s.isActive && inSection(s, section));
+  const isOpen = openNow();
+  const staffState = (s: Staff) => busyStaff.has(s.id) ? "busy" : offToday.includes(s.id) ? "off" : isOpen ? "free" : "closed";
+  // On the floor: everyone working today while the salon is open; after hours only those still with a client.
+  const dutyStaff = activeStaff.filter((s) => { const st = staffState(s); return st === "busy" || st === "free"; });
   const progressOf = (a: Appointment) => (minute - toMin(a.startTime)) / Math.max(1, toMin(a.endTime) - toMin(a.startTime));
 
   const roster = useMemo<RosterPerson[]>(() => {
@@ -186,16 +211,20 @@ export default function SalonFloorPage() {
     for (const a of waiting) people.push({ id: `appt:${a.id}`, kind: "client", color: "#eef1f6", spot: { type: "sofa", index: sofa++ }, bubble: bubbles[`appt:${a.id}`] });
     const freeChairs = Array.from({ length: chairCount }, (_, i) => i).filter((i) => !seated.has(i));
     let idle = 0;
-    for (const s of dutyStaff) {
+    const atStation = new Set<number>();
+    for (const s of dutyStaff.slice(0, 12)) {
       const busy = busyStaff.get(s.id);
-      const spot = busy ? { type: "station" as const, index: busy.chair }
+      // A second stylist on the same client waits nearby rather than standing in the first one's spot.
+      const lead = busy && !atStation.has(busy.chair);
+      if (busy && lead) atStation.add(busy.chair);
+      const spot = busy && lead ? { type: "station" as const, index: busy.chair }
         : idle < freeChairs.length ? { type: "station" as const, index: freeChairs[idle++] }
         : { type: "spare" as const, index: idle++ - freeChairs.length };
-      people.push({ id: `staff:${s.id}`, kind: "staff", color: s.color || ACCENT, spot, working: !!busy });
+      people.push({ id: `staff:${s.id}`, kind: "staff", color: s.color || ACCENT, spot, working: !!busy && !!lead });
     }
     return people;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appointments, staff, onDuty, bubbles, chairCount]);
+  }, [appointments, staff, offToday, bubbles, chairCount, isOpen]);
 
   const chairLabels: ChairLabel[] = Array.from({ length: chairCount }, (_, i) => {
     const a = seated.get(i);
@@ -243,7 +272,7 @@ export default function SalonFloorPage() {
   return (
     <div className="sf-root">
       <style>{`
-        .sf-root{position:relative;height:calc(100dvh - 32px);min-height:640px;border-radius:22px;overflow:hidden;background:${night ? "#1c2340" : "#eef1f8"};font-family:inherit}
+        .sf-root{position:relative;height:calc(100dvh - 84px);margin:12px;min-height:600px;border-radius:22px;overflow:hidden;background:${night ? "#1c2340" : "#eef1f8"};font-family:inherit}
         .sf-layer{position:absolute;z-index:2;box-sizing:border-box}
         .sf-root *{box-sizing:border-box}
         .sf-top{top:14px;left:14px;right:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;pointer-events:none}
@@ -261,7 +290,7 @@ export default function SalonFloorPage() {
         @keyframes sfIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
         @keyframes sfPulse{0%,100%{opacity:1}50%{opacity:.3}}
         @media (max-width: 1180px){
-          .sf-root{height:auto;min-height:0;overflow:visible;background:none;border-radius:0;display:flex;flex-direction:column;gap:12px}
+          .sf-root{height:auto;min-height:0;margin:12px;overflow:visible;background:none;border-radius:0;display:flex;flex-direction:column;gap:12px}
           .sf-map{position:relative!important;inset:auto!important;height:62vh;min-height:380px;border-radius:20px;overflow:hidden;background:${night ? "#1c2340" : "#eef1f8"};order:2}
           .sf-layer{position:static;width:auto!important;max-width:none!important;max-height:none!important}
           .sf-top{order:0}.sf-stats{order:1;flex-wrap:nowrap!important;overflow-x:auto;padding-bottom:4px}.sf-stats>*{flex:0 0 auto}.sf-panel{order:3}.sf-journey{order:4;flex-direction:column}.sf-table{order:5}
@@ -333,8 +362,8 @@ export default function SalonFloorPage() {
       <div className="sf-layer sf-stats">
         {[
           { icon: <Users size={18} />, label: "Clients today", value: String(done.length + inService.length + waiting.length), delta: `${inService.length + waiting.length} in salon`, sub: `${upcoming.length} still to come`, down: false },
-          { icon: <Armchair size={18} />, label: "Chairs busy", value: `${seated.size}/${chairCount}`, delta: waiting.length ? `${waiting.length} waiting` : "", sub: `${dutyStaff.length} stylists on floor`, down: false },
-          { icon: <Wallet size={18} />, label: "Sales today", value: fmt(sales.today), delta: salesDelta == null ? "" : `${salesDelta >= 0 ? "↑" : "↓"} ${Math.abs(salesDelta)}%`, sub: "vs yesterday", down: salesDelta != null && salesDelta < 0 },
+          { icon: <Armchair size={18} />, label: "Chairs busy", value: `${seated.size}/${chairCount}`, delta: waiting.length ? `${waiting.length} waiting` : "", sub: `${dutyStaff.length} of ${activeStaff.length} stylists on floor`, down: false },
+          { icon: <Wallet size={18} />, label: "Sales today", value: fmt(sales.today), delta: salesDelta == null ? "" : `${salesDelta >= 0 ? "↑" : "↓"} ${Math.abs(salesDelta)}%`, sub: "vs yesterday by now", down: salesDelta != null && salesDelta < 0 },
         ].map((c) => (
           <div key={c.label} style={{ ...card, display: "flex", gap: 12, alignItems: "center", padding: "12px 16px 12px 12px", minWidth: 200 }}>
             <div style={{ width: 42, height: 42, borderRadius: 12, background: "#eaf0ff", color: ACCENT, display: "grid", placeItems: "center", flexShrink: 0 }}>{c.icon}</div>
@@ -394,13 +423,13 @@ export default function SalonFloorPage() {
               </div>
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "12px 0" }}>
-              <span style={chipStyle(GREEN.bg, GREEN.fg)}>Open</span>
-              <span style={{ fontSize: 11, color: "#64748b" }}>{seated.size} in chairs · {waiting.length} waiting · {upcoming.length} coming</span>
+              <span style={isOpen ? chipStyle(GREEN.bg, GREEN.fg) : chipStyle(GREY.bg, GREY.fg)}>{isOpen ? "Open" : "Closed"}</span>
+              <span style={{ fontSize: 11, color: "#64748b" }}>{seated.size} in chairs · {waiting.length} waiting · {upcoming.length} more today · {future.length} upcoming</span>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               {[
                 { k: "Chairs busy", v: `${seated.size} / ${chairCount}`, pct: (seated.size / chairCount) * 100, color: ACCENT },
-                { k: "Stylists working", v: `${busyStaff.size} / ${dutyStaff.length}`, pct: dutyStaff.length ? (busyStaff.size / dutyStaff.length) * 100 : 0, color: "#22c55e" },
+                { k: "Stylists working", v: `${busyStaff.size} / ${activeStaff.length}`, pct: activeStaff.length ? (busyStaff.size / activeStaff.length) * 100 : 0, color: "#22c55e" },
                 { k: "Clients done", v: String(done.length), pct: null, color: "" },
                 { k: "Sales today", v: fmt(sales.today), pct: null, color: "" },
               ].map((x) => (
@@ -427,15 +456,16 @@ export default function SalonFloorPage() {
                 })}
               </>
             )}
-            <div style={{ display: "flex", justifyContent: "space-between", margin: "14px 0 6px", fontSize: 12, fontWeight: 800, color: "#0f172a" }}>Stylists <span style={{ fontWeight: 500, color: "#94a3b8" }}>{busyStaff.size}/{dutyStaff.length} working</span></div>
-            {dutyStaff.length === 0 && <div style={{ fontSize: 12, color: "#94a3b8" }}>No one on the floor yet</div>}
-            {dutyStaff.slice(0, 5).map((s) => {
+            <div style={{ display: "flex", justifyContent: "space-between", margin: "14px 0 6px", fontSize: 12, fontWeight: 800, color: "#0f172a" }}>Stylists <span style={{ fontWeight: 500, color: "#94a3b8" }}>{busyStaff.size}/{activeStaff.length} working</span></div>
+            {activeStaff.length === 0 && <div style={{ fontSize: 12, color: "#94a3b8" }}>No active staff</div>}
+            {activeStaff.slice(0, 6).map((s) => {
               const b = busyStaff.get(s.id);
+              const st = staffState(s);
               return (
                 <div key={s.id} style={{ display: "grid", gridTemplateColumns: "70px 1fr 64px", gap: 8, alignItems: "center", padding: "5px 0", fontSize: 12, cursor: b ? "pointer" : "default" }} onClick={() => b && pickChair(b.chair)}>
                   <b style={{ color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{firstName(s.name)}</b>
-                  <span style={{ color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b ? `${b.appt.serviceNames[0] || "Service"} · ${firstName(b.appt.clientName)} · Chair ${b.chair + 1}` : "Free"}</span>
-                  {b ? <Bar pct={progressOf(b.appt) * 100} color="#22c55e" /> : <span style={chipStyle(GREEN.bg, GREEN.fg)}>Free</span>}
+                  <span style={{ color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b ? `${b.appt.serviceNames[0] || "Service"} · ${firstName(b.appt.clientName)} · Chair ${b.chair + 1}` : `${appointments.filter((a) => appointmentStaffIds(a).includes(s.id) && (a.status === "booked" || a.status === "confirmed")).length} booked today`}</span>
+                  {b ? <Bar pct={progressOf(b.appt) * 100} color="#22c55e" /> : <span style={st === "free" ? chipStyle(GREEN.bg, GREEN.fg) : chipStyle(GREY.bg, GREY.fg)}>{st === "free" ? "Free" : st === "off" ? "Off" : "Closed"}</span>}
                 </div>
               );
             })}
@@ -493,8 +523,8 @@ export default function SalonFloorPage() {
         <div style={{ display: "flex", gap: 4, alignItems: "center", marginBottom: 6 }}>
           {([
             ["chairs", `Chairs ${seated.size}/${chairCount}`],
-            ["stylists", `Stylists ${busyStaff.size}/${dutyStaff.length}`],
-            ["bookings", `Bookings ${upcoming.length + waiting.length}`],
+            ["stylists", `Stylists ${busyStaff.size}/${activeStaff.length}`],
+            ["bookings", `Bookings ${upcoming.length + waiting.length + future.length}`],
           ] as [Tab, string][]).map(([k, label]) => (
             <button key={k} type="button" onClick={() => setTab(k)}
               style={{ border: tab === k ? "1px solid #e2e8f0" : "1px solid transparent", background: tab === k ? "#fff" : "transparent", boxShadow: tab === k ? "0 2px 8px rgba(15,23,42,.06)" : "none", borderRadius: 8, padding: "6px 10px", fontSize: 12, fontWeight: 700, color: tab === k ? "#0f172a" : "#64748b", cursor: "pointer" }}>{label}</button>
@@ -512,25 +542,36 @@ export default function SalonFloorPage() {
               </div>
             );
           })}
-          {tab === "stylists" && (dutyStaff.length ? dutyStaff.map((s) => {
+          {tab === "stylists" && (activeStaff.length ? activeStaff.map((s) => {
             const b = busyStaff.get(s.id);
+            const st = staffState(s);
             return (
               <div key={s.id} className="sf-row" onClick={() => b && pickChair(b.chair)}>
                 <b style={{ color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</b>
-                <span style={{ color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b ? `● ${b.appt.clientName} · Chair ${b.chair + 1}` : "Waiting for a client"}</span>
-                <span style={chipStyle(b ? BLUE.bg : GREEN.bg, b ? BLUE.fg : GREEN.fg)}>{b ? "With client" : "Free"}</span>
+                <span style={{ color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b ? `● ${b.appt.clientName} · Chair ${b.chair + 1}` : st === "free" ? "Waiting for a client" : st === "off" ? "Off today" : "Salon closed"}</span>
+                <span style={b ? chipStyle(BLUE.bg, BLUE.fg) : st === "free" ? chipStyle(GREEN.bg, GREEN.fg) : chipStyle(GREY.bg, GREY.fg)}>{b ? "With client" : st === "free" ? "Free" : st === "off" ? "Off" : "Closed"}</span>
                 <span style={{ width: 40 }}>{b ? <Bar pct={progressOf(b.appt) * 100} color="#22c55e" /> : null}</span>
               </div>
             );
-          }) : <div style={{ fontSize: 12, color: "#94a3b8", padding: 8 }}>No stylists on the floor</div>)}
-          {tab === "bookings" && ([...waiting, ...upcoming].length ? [...waiting, ...upcoming].map((a) => (
-            <div key={a.id} className="sf-row" onClick={() => goTo(a)}>
-              <b style={{ color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.clientName}</b>
-              <span style={{ color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{time12(a.startTime)} · {firstName(a.staffName)}</span>
-              {statusChip(a)}
-              <ChevronRight size={14} color="#94a3b8" />
-            </div>
-          )) : <div style={{ fontSize: 12, color: "#94a3b8", padding: 8 }}>Nothing else booked today</div>)}
+          }) : <div style={{ fontSize: 12, color: "#94a3b8", padding: 8 }}>No active staff</div>)}
+          {tab === "bookings" && ([...waiting, ...upcoming, ...future].length ? <>
+            {[...waiting, ...upcoming].map((a) => (
+              <div key={a.id} className="sf-row" onClick={() => goTo(a)}>
+                <b style={{ color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.clientName}</b>
+                <span style={{ color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Today {time12(a.startTime)} · {firstName(a.staffName)}</span>
+                {a.status !== "arrived" && toMin(a.startTime) < minute ? <span style={chipStyle(AMBER.bg, AMBER.fg)}>Late</span> : statusChip(a)}
+                <ChevronRight size={14} color="#94a3b8" />
+              </div>
+            ))}
+            {future.slice(0, 30).map((a) => (
+              <Link key={a.id} href="/dashboard/appointments" className="sf-row" style={{ textDecoration: "none" }}>
+                <b style={{ color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.clientName}</b>
+                <span style={{ color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{dayLabel(a.date)} {time12(a.startTime)} · {firstName(a.staffName)}</span>
+                {statusChip(a)}
+                <ChevronRight size={14} color="#94a3b8" />
+              </Link>
+            ))}
+          </> : <div style={{ fontSize: 12, color: "#94a3b8", padding: 8 }}>No upcoming bookings</div>)}
         </div>
       </div>
     </div>

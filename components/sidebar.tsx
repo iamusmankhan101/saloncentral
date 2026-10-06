@@ -15,7 +15,7 @@ import { SETTINGS_CHANGED_EVENT, settingsStore, reloadSettings } from "@/lib/set
 import { getCurrentPlan } from "@/lib/plan-limits";
 import { getActiveLocationFilter, getSalonLocations, setActiveLocationFilter, type SalonLocation } from "@/lib/locations";
 
-const NAV_GROUPS: {
+export const NAV_GROUPS: {
   label: string;
   items: { href: string; icon: React.ElementType; label: string; dynamicHref?: boolean; newTab?: boolean }[];
 }[] = [
@@ -60,6 +60,14 @@ const NAV_GROUPS: {
     ],
   },
 ];
+
+/** Whether this signed-in user may open the page — staff only see pages ticked in their permissions. */
+export function canAccessHref(user: AuthUser | null, href: string): boolean {
+  if (user?.role !== "staff") return true;
+  if (user.permissions?.includes("*")) return true;
+  const key = href === "/dashboard" ? "dashboard" : href.replace("/dashboard/", "").split("/")[0];
+  return user.permissions?.includes(key) ?? false;
+}
 
 const SETTINGS_NAV = [
   { href: "/dashboard/account", icon: CircleUserRound, label: "Account" },
@@ -149,14 +157,7 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
     window.location.reload();
   }
   
-  const canAccess = (href: string) => {
-    if (!isStaffUser) return true;
-    if (user.permissions?.includes("*")) return true;
-    const key = href === "/dashboard"
-      ? "dashboard"
-      : href.replace("/dashboard/", "").split("/")[0];
-    return user.permissions?.includes(key) ?? false;
-  };
+  const canAccess = (href: string) => canAccessHref(user, href);
 
   const NavItem = ({ href, icon: Icon, label, active: activeOverride, newTab }: { href: string; icon: React.ElementType; label: string; active?: boolean; newTab?: boolean }) => {
     const active = activeOverride !== undefined
