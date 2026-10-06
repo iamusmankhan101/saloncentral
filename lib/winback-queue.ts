@@ -95,8 +95,12 @@ function normalizePhone(raw: string): string {
   return digits;
 }
 
+// Owners often write "[Name]" instead of "{{name}}", so the bracket form is
+// filled too — but only for known variables, so other [text] is left alone.
 function fillTemplate(template: string, vars: Record<string, string>): string {
-  return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? "");
+  return template
+    .replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? "")
+    .replace(/\[([\w ]+)\]/g, (match, key: string) => vars[key.trim().toLowerCase().replace(/ +/g, "_")] ?? match);
 }
 
 function randBetween(minMs: number, maxMs: number): number {
