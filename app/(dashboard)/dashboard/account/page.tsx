@@ -35,6 +35,7 @@ interface SalonSettings {
   fbrPctCode?: string;
   fbrTaxPercent?: number;
   fbrPosFee?: boolean;
+  chairCount?: number;
 }
 
 interface BusinessHour {
@@ -415,6 +416,12 @@ function SalonProfile() {
           <div style={{ fontSize: 11, color: "#9999b0", marginTop: 5 }}>Added to the bill at checkout when Card is selected. Leave 0 for none.</div>
         </Field>
 
+        <Field label="Styling Chairs">
+          <input style={inputStyle} type="number" min={1} max={24} step={1} placeholder="4"
+            value={form.chairCount || ""}
+            onChange={(event) => setForm((f) => ({ ...f, chairCount: Math.min(24, Math.max(0, Math.round(Number(event.target.value) || 0))) }))} />
+          <div style={{ fontSize: 11, color: "#9999b0", marginTop: 5 }}>How many chairs the Salon Floor map shows.</div>
+        </Field>
         <Field label="FBR Invoicing" full>
           <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
             <input type="checkbox" checked={!!form.fbrEnabled} onChange={(event) => setForm((f) => ({ ...f, fbrEnabled: event.target.checked }))} />
@@ -2115,10 +2122,11 @@ interface RoleDraft {
   permissions: string[];
 }
 
-const DEFAULT_STAFF_PERMISSIONS = ["dashboard", "calendar", "appointments", "clients", "pos", "invoices"];
+const DEFAULT_STAFF_PERMISSIONS = ["dashboard", "calendar", "floor", "appointments", "clients", "pos", "invoices"];
 const PERMISSION_OPTIONS = [
   { key: "dashboard", label: "Dashboard" },
   { key: "calendar", label: "Calendar" },
+  { key: "floor", label: "Salon Floor" },
   { key: "appointments", label: "Appointments" },
   { key: "clients", label: "Clients" },
   { key: "pos", label: "POS" },
