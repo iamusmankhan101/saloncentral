@@ -2031,7 +2031,7 @@ function BackupsPanel() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
         <div style={{ fontSize: 13, color: "#6b6b8a", maxWidth: 560 }}>
           A full database archive plus one backup per salon (everything that salon has — clients, appointments, staff, and the rest — bundled together) run automatically every day at 4:15 AM.
-          Daily backups are kept for 30 days; manual snapshots are kept forever.
+          Daily backups and backups taken before an account is deleted are kept for 30 days; manual snapshots are kept forever.
         </div>
         <button onClick={runManualBackup} disabled={running}
           style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 16px", borderRadius: 10, border: "none", background: "#7C3AED", fontSize: 13, fontWeight: 700, color: "#fff", cursor: running ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}>

@@ -44,7 +44,7 @@ async function slotStillFree(salonId: string, appt: Appointment): Promise<boolea
 export async function POST(req: NextRequest) {
   // Public + unauthenticated by design (customer self-booking), but each
   // booking triggers a real WhatsApp send and a DB write — throttle abuse.
-  const limit = rateLimit("public-booking", clientIp(req), { maxAttempts: 8, windowMs: 10 * 60 * 1000, blockMs: 30 * 60 * 1000 });
+  const limit = await rateLimit("public-booking", clientIp(req), { maxAttempts: 8, windowMs: 10 * 60 * 1000, blockMs: 30 * 60 * 1000 });
   if (limit.blocked) {
     return Response.json(
       { ok: false, error: "Too many booking attempts. Please try again later.", retryAfter: limit.retryAfter },

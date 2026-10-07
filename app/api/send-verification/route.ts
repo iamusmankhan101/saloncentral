@@ -21,7 +21,7 @@ async function ensureTable() {
 export async function POST(req: NextRequest) {
   // No session exists yet at signup, so this stays public — cap how often one
   // IP can make us send mail.
-  const limit = rateLimit("send-verification", clientIp(req), { maxAttempts: 5, windowMs: 60 * 60 * 1000, blockMs: 60 * 60 * 1000 });
+  const limit = await rateLimit("send-verification", clientIp(req), { maxAttempts: 5, windowMs: 60 * 60 * 1000, blockMs: 60 * 60 * 1000 });
   if (limit.blocked) {
     return Response.json({ ok: false, error: "Too many requests. Please try again later." }, { status: 429 });
   }

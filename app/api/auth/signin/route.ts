@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
   const ip = clientIp(req);
 
   // Check rate limit before doing any work
-  const limit = rateLimit("signin", ip, { maxAttempts: 10, blockMs: BLOCK_MS });
+  const limit = await rateLimit("signin", ip, { maxAttempts: 10, blockMs: BLOCK_MS });
   if (limit.blocked) {
     await logSigninEvent(req, "server", "ip_rate_limited");
     const minutes = Math.ceil((limit.retryAfter ?? BLOCK_MS / 1000) / 60);
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
   // Per-account limit too: the per-IP one alone lets an attacker spreading
   // guesses across many IPs keep hammering a single account.
   const emailKey = email.trim().toLowerCase();
-  const emailLimit = rateLimit("signin-email", emailKey, { maxAttempts: 10, blockMs: BLOCK_MS });
+  const emailLimit = await rateLimit("signin-email", emailKey, { maxAttempts: 10, blockMs: BLOCK_MS });
   if (emailLimit.blocked) {
     await logSigninEvent(req, "server", "email_rate_limited", email);
     const minutes = Math.ceil((emailLimit.retryAfter ?? BLOCK_MS / 1000) / 60);
@@ -70,8 +70,8 @@ export async function POST(req: NextRequest) {
     }
 
     // Success — clear the rate-limit counter for this IP
-    rateLimitClear("signin", ip);
-    rateLimitClear("signin-email", emailKey);
+    await rateLimitClear("signin", ip);
+    await rateLimitClear("signin-email", emailKey);
 
     const res = NextResponse.json({
       ok: true,

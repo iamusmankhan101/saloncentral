@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Slow down repeated wrong-password guesses against a valid session.
-  const limit = rateLimit("change-password", userId, { maxAttempts: 8, windowMs: 15 * 60 * 1000, blockMs: 30 * 60 * 1000 });
+  const limit = await rateLimit("change-password", userId, { maxAttempts: 8, windowMs: 15 * 60 * 1000, blockMs: 30 * 60 * 1000 });
   if (limit.blocked) {
     return Response.json(
       { ok: false, error: "Too many attempts. Please try again later.", retryAfter: limit.retryAfter },
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
     const token = createSessionToken(userId);
     await createDbSession(tokenId(token), userId, new Date(Date.now() + cookieOptions.maxAge * 1000), sessionDeviceFromRequest(req));
 
-    rateLimitClear("change-password", userId);
+    await rateLimitClear("change-password", userId);
     const res = NextResponse.json({ ok: true });
     res.cookies.set(COOKIE_NAME, token, cookieOptions);
     return res;

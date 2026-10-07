@@ -11,7 +11,7 @@ import { clientIp, rateLimit } from "@/lib/rate-limit";
 const EVENTS = new Set(["page_loaded", "button_pressed", "success", "error", "timeout", "network_error", "js_error"]);
 
 export async function POST(req: NextRequest) {
-  const limit = rateLimit("signin-log", clientIp(req), { maxAttempts: 60, blockMs: 15 * 60 * 1000 });
+  const limit = await rateLimit("signin-log", clientIp(req), { maxAttempts: 60, blockMs: 15 * 60 * 1000 });
   if (limit.blocked) return new Response(null, { status: 204 });
 
   let body: { event?: unknown; email?: unknown; detail?: unknown };
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
 
 /** Hit by a plain <img> on the sign-in page — records the visit even when JS never runs. */
 export async function GET(req: NextRequest) {
-  const limit = rateLimit("signin-log", clientIp(req), { maxAttempts: 60, blockMs: 15 * 60 * 1000 });
+  const limit = await rateLimit("signin-log", clientIp(req), { maxAttempts: 60, blockMs: 15 * 60 * 1000 });
   if (!limit.blocked) await logSigninEvent(req, "client", "html_loaded");
   return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
 }

@@ -58,8 +58,8 @@ function clientSummary(c: Client) {
 }
 
 /** Per-key rate limit, checked at the top of every tool call. Returns error content if blocked, else null. */
-function checkKeyRateLimit(actor: McpKeyActor) {
-  const limit = rateLimit("mcp-api-key", actor.keyId, { maxAttempts: 60, windowMs: 60_000, blockMs: 5 * 60_000 });
+async function checkKeyRateLimit(actor: McpKeyActor) {
+  const limit = await rateLimit("mcp-api-key", actor.keyId, { maxAttempts: 60, windowMs: 60_000, blockMs: 5 * 60_000 });
   if (limit.blocked) {
     return errorContent(`Rate limit exceeded. Try again in ${limit.retryAfter ?? 60} seconds.`);
   }
@@ -151,7 +151,7 @@ const baseHandler = createMcpHandler(
       async (_args, extra) => {
         const actor = mcpActorFrom(extra.authInfo);
         if (!actor) return errorContent("Unauthorized.");
-        const limited = checkKeyRateLimit(actor);
+        const limited = await checkKeyRateLimit(actor);
         if (limited) return limited;
 
         await ensureSalonDataTable();
@@ -170,7 +170,7 @@ const baseHandler = createMcpHandler(
       async ({ includeInactive }, extra) => {
         const actor = mcpActorFrom(extra.authInfo);
         if (!actor) return errorContent("Unauthorized.");
-        const limited = checkKeyRateLimit(actor);
+        const limited = await checkKeyRateLimit(actor);
         if (limited) return limited;
 
         await ensureSalonDataTable();
@@ -191,7 +191,7 @@ const baseHandler = createMcpHandler(
       async ({ query }, extra) => {
         const actor = mcpActorFrom(extra.authInfo);
         if (!actor) return errorContent("Unauthorized.");
-        const limited = checkKeyRateLimit(actor);
+        const limited = await checkKeyRateLimit(actor);
         if (limited) return limited;
 
         await ensureSalonDataTable();
@@ -213,7 +213,7 @@ const baseHandler = createMcpHandler(
       async ({ limit, offset }, extra) => {
         const actor = mcpActorFrom(extra.authInfo);
         if (!actor) return errorContent("Unauthorized.");
-        const limited = checkKeyRateLimit(actor);
+        const limited = await checkKeyRateLimit(actor);
         if (limited) return limited;
 
         await ensureSalonDataTable();
@@ -232,7 +232,7 @@ const baseHandler = createMcpHandler(
       async ({ clientId }, extra) => {
         const actor = mcpActorFrom(extra.authInfo);
         if (!actor) return errorContent("Unauthorized.");
-        const limited = checkKeyRateLimit(actor);
+        const limited = await checkKeyRateLimit(actor);
         if (limited) return limited;
 
         await ensureSalonDataTable();
@@ -260,7 +260,7 @@ const baseHandler = createMcpHandler(
       async (_args, extra) => {
         const actor = mcpActorFrom(extra.authInfo);
         if (!actor) return errorContent("Unauthorized.");
-        const limited = checkKeyRateLimit(actor);
+        const limited = await checkKeyRateLimit(actor);
         if (limited) return limited;
 
         await ensureSalonDataTable();
@@ -281,7 +281,7 @@ const baseHandler = createMcpHandler(
       async ({ startDate, endDate, status }, extra) => {
         const actor = mcpActorFrom(extra.authInfo);
         if (!actor) return errorContent("Unauthorized.");
-        const limited = checkKeyRateLimit(actor);
+        const limited = await checkKeyRateLimit(actor);
         if (limited) return limited;
 
         const rangeEnd = endDate ?? startDate;
@@ -310,7 +310,7 @@ const baseHandler = createMcpHandler(
       async (_args, extra) => {
         const actor = mcpActorFrom(extra.authInfo);
         if (!actor) return errorContent("Unauthorized.");
-        const limited = checkKeyRateLimit(actor);
+        const limited = await checkKeyRateLimit(actor);
         if (limited) return limited;
 
         await ensureSalonDataTable();
@@ -342,7 +342,7 @@ const baseHandler = createMcpHandler(
       async ({ date, staffId, serviceId }, extra) => {
         const actor = mcpActorFrom(extra.authInfo);
         if (!actor) return errorContent("Unauthorized.");
-        const limited = checkKeyRateLimit(actor);
+        const limited = await checkKeyRateLimit(actor);
         if (limited) return limited;
 
         await ensureSalonDataTable();
@@ -363,7 +363,7 @@ const baseHandler = createMcpHandler(
       async ({ date, startDate, endDate, clientId }, extra) => {
         const actor = mcpActorFrom(extra.authInfo);
         if (!actor) return errorContent("Unauthorized.");
-        const limited = checkKeyRateLimit(actor);
+        const limited = await checkKeyRateLimit(actor);
         if (limited) return limited;
 
         await ensureSalonDataTable();
@@ -400,7 +400,7 @@ const baseHandler = createMcpHandler(
       async ({ startDate, endDate }, extra) => {
         const actor = mcpActorFrom(extra.authInfo);
         if (!actor) return errorContent("Unauthorized.");
-        const limited = checkKeyRateLimit(actor);
+        const limited = await checkKeyRateLimit(actor);
         if (limited) return limited;
 
         const rangeEnd = endDate ?? startDate;
@@ -458,7 +458,7 @@ const baseHandler = createMcpHandler(
       async ({ startDate, endDate }, extra) => {
         const actor = mcpActorFrom(extra.authInfo);
         if (!actor) return errorContent("Unauthorized.");
-        const limited = checkKeyRateLimit(actor);
+        const limited = await checkKeyRateLimit(actor);
         if (limited) return limited;
 
         const rangeEnd = endDate ?? startDate;
@@ -526,7 +526,7 @@ const baseHandler = createMcpHandler(
         const actor = mcpActorFrom(extra.authInfo);
         if (!actor) return errorContent("Unauthorized.");
         if (actor.scope !== "read_write") return errorContent("This key is read-only and cannot book appointments.");
-        const limited = checkKeyRateLimit(actor);
+        const limited = await checkKeyRateLimit(actor);
         if (limited) return limited;
 
         await ensureSalonDataTable();

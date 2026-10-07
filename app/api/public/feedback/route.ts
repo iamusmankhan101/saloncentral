@@ -80,7 +80,7 @@ interface SubmitBody {
 }
 
 export async function POST(req: NextRequest) {
-  const limit = rateLimit("public-feedback", clientIp(req), { maxAttempts: 8, windowMs: 10 * 60 * 1000, blockMs: 30 * 60 * 1000 });
+  const limit = await rateLimit("public-feedback", clientIp(req), { maxAttempts: 8, windowMs: 10 * 60 * 1000, blockMs: 30 * 60 * 1000 });
   if (limit.blocked) {
     return Response.json(
       { ok: false, error: "Too many attempts. Please try again later.", retryAfter: limit.retryAfter },

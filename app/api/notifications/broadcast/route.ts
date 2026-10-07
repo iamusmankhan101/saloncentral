@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
 
   // A broadcast reaches every customer device at once; cap how often one salon
   // can fire one so a stuck retry loop can't spam their client base.
-  const limited = rateLimit("push-broadcast", actor.userId, {
+  const limited = await rateLimit("push-broadcast", actor.userId, {
     windowMs: 60 * 60 * 1000,
     maxAttempts: 20,
     blockMs: 30 * 60 * 1000,

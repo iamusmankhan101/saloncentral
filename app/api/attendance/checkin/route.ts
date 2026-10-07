@@ -94,7 +94,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const limit = rateLimit("attendance-checkin", clientIp(req), { maxAttempts: 20, windowMs: 10 * 60 * 1000, blockMs: 10 * 60 * 1000 });
+  const limit = await rateLimit("attendance-checkin", clientIp(req), { maxAttempts: 20, windowMs: 10 * 60 * 1000, blockMs: 10 * 60 * 1000 });
   if (limit.blocked) return Response.json({ ok: false, error: "Too many attempts. Please wait a few minutes." }, { status: 429 });
 
   let body: { s?: string; t?: string; lat?: number; lng?: number; accuracy?: number };

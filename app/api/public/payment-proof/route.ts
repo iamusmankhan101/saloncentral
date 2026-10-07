@@ -19,7 +19,7 @@ const MAX_DATA_URL_CHARS = 2_500_000;
 const METHODS = new Set(["jazzcash", "easypaisa", "bank"]);
 
 export async function POST(req: NextRequest) {
-  const limit = rateLimit("public-payment-proof", clientIp(req), { maxAttempts: 10, windowMs: 10 * 60 * 1000, blockMs: 30 * 60 * 1000 });
+  const limit = await rateLimit("public-payment-proof", clientIp(req), { maxAttempts: 10, windowMs: 10 * 60 * 1000, blockMs: 30 * 60 * 1000 });
   if (limit.blocked) {
     return Response.json({ ok: false, error: "Too many uploads. Please try again later." }, { status: 429 });
   }

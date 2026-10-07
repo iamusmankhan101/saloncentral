@@ -17,7 +17,7 @@ import { rateLimit, clientIp } from "@/lib/rate-limit";
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
-  const limited = rateLimit("push-subscribe", clientIp(req), {
+  const limited = await rateLimit("push-subscribe", clientIp(req), {
     windowMs: 10 * 60 * 1000,
     maxAttempts: 30,
     blockMs: 15 * 60 * 1000,

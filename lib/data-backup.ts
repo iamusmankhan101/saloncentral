@@ -413,13 +413,15 @@ export async function restoreSalonBackupBundle(bundleId: string): Promise<Restor
   };
 }
 
-// Reasons intentionally excluded from auto-pruning: "manual-snapshot" (someone
-// deliberately took it) and "before-account-delete" (the one safety net for a
-// destructive, hard-to-notice-in-time action). Both stay forever. Everything
-// else grows unbounded otherwise — "before-write" alone was ~470 rows/week.
+// "manual-snapshot" is never auto-pruned (someone deliberately took it).
+// "before-account-delete" is the safety net for a destructive action, kept 30
+// days so a mistaken delete can still be undone — but a closed salon's data
+// isn't held forever. Everything else grows unbounded otherwise —
+// "before-write" alone was ~470 rows/week.
 const RETENTION_DAYS: Partial<Record<BackupReason, number>> = {
   "before-write": 7,
   "scheduled-snapshot": 30,
+  "before-account-delete": 30,
 };
 
 export interface BackupPruneResult {
