@@ -13,7 +13,7 @@
  */
 
 import { NextRequest } from "next/server";
-import { pruneOldBackups, snapshotAllSalonBundles, snapshotFullDatabase } from "@/lib/data-backup";
+import { encryptPlaintextRows, pruneOldBackups, snapshotAllSalonBundles, snapshotFullDatabase } from "@/lib/data-backup";
 
 // The first prune after a long gap can have thousands of expired rows to clear.
 export const maxDuration = 300;
@@ -34,12 +34,14 @@ export async function GET(req: NextRequest) {
     // snapshot also stopped expired backups from ever being cleared, so the
     // backup tables kept growing — which is what made the snapshot fail.
     const pruned = await pruneOldBackups();
+    // Rows from before encryption was switched on, a batch a night.
+    const encrypted = await encryptPlaintextRows();
     const [salonBundles, database] = await Promise.all([
       snapshotAllSalonBundles("scheduled-snapshot"),
       snapshotFullDatabase("scheduled-snapshot"),
     ]);
-    console.log("[backup] scheduled backup complete:", { salonBundles, database, pruned });
-    return Response.json({ ok: true, salonBundles, database, pruned });
+    console.log("[backup] scheduled backup complete:", { salonBundles, database, pruned, encrypted });
+    return Response.json({ ok: true, salonBundles, database, pruned, encrypted });
   } catch (err) {
     console.error("[backup] scheduled snapshot error:", err);
     return Response.json({ ok: false, error: err instanceof Error ? err.message : "Backup failed." }, { status: 500 });

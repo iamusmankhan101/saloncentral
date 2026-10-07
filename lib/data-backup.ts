@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { encryptValue, encryptionEnabled } from "@/lib/data-crypto";
 
 export type BackupReason =
   | "before-write"
@@ -459,4 +460,38 @@ export async function pruneOldBackups(): Promise<BackupPruneResult> {
   }
 
   return { salonDataBackupsDeleted, databaseBackupsDeleted, salonBundlesDeleted };
+}
+
+/**
+ * Encrypts rows written before DATA_ENCRYPTION_KEY was set (see
+ * lib/data-crypto.ts). Bounded per run so the nightly cron stays inside its
+ * time limit; whole-database archives are big, so few of those at a time.
+ * Active salons don't wait for this — their next save re-writes encrypted.
+ */
+export async function encryptPlaintextRows(): Promise<number> {
+  if (!encryptionEnabled()) return 0;
+  const tables: [table: string, key: string, column: string, limit: number][] = [
+    ["salon_data", "entity", "data", 1000],
+    ["salon_data_backups", "id", "data", 1000],
+    ["salon_backup_bundles", "id", "data", 200],
+    ["database_backups", "id", "data", 3],
+    ["wa_pos_receipt_queue", "id", "invoice_json", 1000],
+  ];
+  let encrypted = 0;
+  for (const [table, key, column, limit] of tables) {
+    try {
+      const rows = await db.execute({
+        sql: `SELECT ${key} AS k, ${column} AS v FROM ${table} WHERE ${column} NOT LIKE 'enc:v1:%' LIMIT ?`,
+        args: [limit],
+      });
+      for (const row of rows.rows) {
+        await db.execute({ sql: `UPDATE ${table} SET ${column} = ? WHERE ${key} = ?`, args: [encryptValue(String(row.v)), row.k] });
+        encrypted++;
+      }
+    } catch (err) {
+      // A table that doesn't exist yet has nothing to encrypt.
+      if (!String(err).includes("no such table")) throw err;
+    }
+  }
+  return encrypted;
 }
