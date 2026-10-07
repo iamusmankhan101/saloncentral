@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { getStoredServices, saveServices, getStoredStaff, getStoredInventory, subscribeToStoredData } from "@/lib/storage";
-import type { InventoryItem, Service, Staff } from "@/lib/types";
+import type { InventoryItem, InventoryUnit, Service, Staff } from "@/lib/types";
+import { compatibleUnits } from "@/lib/inventory-usage";
 import { X, Plus, Clock, Scissors, DollarSign, Users, Sparkles, Check, Pencil, Trash2, Package as PackageIcon, Search, Lock, Upload, Download, FileSpreadsheet, ChevronDown, Boxes } from "lucide-react";
 import { getSectionOptions, getActiveSection, inSection, defaultSectionForNewRecord } from "@/lib/sections";
 import PageTitle from "@/components/page-title";
@@ -337,6 +338,10 @@ function AddEditServiceModal({ onClose, onSave, staffList, servicesList, invento
     inventoryServicesPerUnit: Object.fromEntries(
       Object.entries(serviceToEdit?.inventoryServicesPerUnit ?? {}).map(([id, n]) => [id, String(n)]),
     ) as Record<string, string>,
+    /** itemId → recipe amount per service as typed, e.g. { qty: "80", unit: "ml" }. */
+    inventoryAmounts: Object.fromEntries(
+      Object.entries(serviceToEdit?.inventoryAmounts ?? {}).map(([id, r]) => [id, { qty: String(r.qty), unit: r.unit }]),
+    ) as Record<string, { qty: string; unit: InventoryUnit }>,
   });
   const set = (k: string, v: unknown) => setForm((f) => ({ ...f, [k]: v }));
   const [done, setDone] = useState(false);
@@ -446,6 +451,13 @@ function AddEditServiceModal({ onClose, onSave, staffList, servicesList, invento
           .map((id) => [id, Number(form.inventoryServicesPerUnit[id])] as [string, number])
           .filter(([, n]) => n > 0));
         return Object.keys(rates).length ? rates : undefined;
+      })(),
+      inventoryAmounts: (() => {
+        const amounts = Object.fromEntries(form.inventoryUsage
+          .map((id) => [id, form.inventoryAmounts[id]] as const)
+          .filter(([, r]) => r && Number(r.qty) > 0)
+          .map(([id, r]) => [id, { qty: Number(r!.qty), unit: r!.unit }]));
+        return Object.keys(amounts).length ? amounts : undefined;
       })(),
       isActive:         serviceToEdit?.isActive ?? true,
     });
@@ -638,7 +650,7 @@ function AddEditServiceModal({ onClose, onSave, staffList, servicesList, invento
           {!form.isPackage && (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <label style={{ fontSize: 11, fontWeight: 700, color: "#9898b0", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                Products Used <span style={{ textTransform: "none", fontWeight: 500, color: "#c0c0d0" }}>(optional — set how many services one unit lasts and stock goes down automatically)</span>
+                Products Used <span style={{ textTransform: "none", fontWeight: 500, color: "#c0c0d0" }}>(optional — set how much each service uses and stock goes down automatically when it is completed)</span>
               </label>
               {form.inventoryUsage.length > 0 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -650,18 +662,43 @@ function AddEditServiceModal({ onClose, onSave, staffList, servicesList, invento
                         <span style={{ fontSize: 13, fontWeight: 500, color: "#1a1a2e", flex: "1 1 100px", minWidth: 0 }}>
                           {item ? `${item.brand ? item.brand + " " : ""}${item.name}` : "Deleted product"}
                         </span>
-                        {item && (
-                          <label title="Stock goes down by 1/N of a unit each time this service is done"
-                            style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: "#6b6b8a", fontWeight: 600, whiteSpace: "nowrap" }}>
-                            1 {item.unit} lasts
-                            <input type="number" min="0" step="any" aria-label={`Services one ${item.unit} of ${item.name} lasts`}
-                              value={form.inventoryServicesPerUnit[itemId] ?? ""}
-                              placeholder={item.servicesPerUnit ? String(item.servicesPerUnit) : "e.g. 5"}
-                              onChange={(e) => set("inventoryServicesPerUnit", { ...form.inventoryServicesPerUnit, [itemId]: e.target.value })}
-                              style={{ width: 62, padding: "4px 6px", borderRadius: 6, border: "1px solid #ddd6fe", fontSize: 12, color: "#1a1a2e", background: "#fff" }} />
-                            services
-                          </label>
-                        )}
+                        {item && (() => {
+                          const amount = form.inventoryAmounts[itemId] ?? { qty: "", unit: item.unit };
+                          const setAmount = (next: Partial<typeof amount>) =>
+                            set("inventoryAmounts", { ...form.inventoryAmounts, [itemId]: { ...amount, ...next } });
+                          const units = compatibleUnits(item.unit);
+                          return (
+                            <>
+                              <label title="Taken off stock each time this service is completed"
+                                style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: "#6b6b8a", fontWeight: 600, whiteSpace: "nowrap" }}>
+                                Uses
+                                <input type="number" min="0" step="any" aria-label={`Amount of ${item.name} per service`}
+                                  value={amount.qty} placeholder="e.g. 80"
+                                  onChange={(e) => setAmount({ qty: e.target.value })}
+                                  style={{ width: 62, padding: "4px 6px", borderRadius: 6, border: "1px solid #ddd6fe", fontSize: 12, color: "#1a1a2e", background: "#fff" }} />
+                                {units.length > 1 ? (
+                                  <select aria-label={`Unit for ${item.name}`} value={units.includes(amount.unit) ? amount.unit : item.unit}
+                                    onChange={(e) => setAmount({ unit: e.target.value as InventoryUnit })}
+                                    style={{ padding: "4px 4px", borderRadius: 6, border: "1px solid #ddd6fe", fontSize: 12, color: "#1a1a2e", background: "#fff" }}>
+                                    {units.map((u) => <option key={u} value={u}>{u}</option>)}
+                                  </select>
+                                ) : item.unit}
+                              </label>
+                              {!(Number(amount.qty) > 0) && (
+                                <label title="Stock goes down by 1/N of a unit each time this service is done"
+                                  style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: "#6b6b8a", fontWeight: 600, whiteSpace: "nowrap" }}>
+                                  or 1 {item.unit} lasts
+                                  <input type="number" min="0" step="any" aria-label={`Services one ${item.unit} of ${item.name} lasts`}
+                                    value={form.inventoryServicesPerUnit[itemId] ?? ""}
+                                    placeholder={item.servicesPerUnit ? String(item.servicesPerUnit) : "e.g. 5"}
+                                    onChange={(e) => set("inventoryServicesPerUnit", { ...form.inventoryServicesPerUnit, [itemId]: e.target.value })}
+                                    style={{ width: 62, padding: "4px 6px", borderRadius: 6, border: "1px solid #ddd6fe", fontSize: 12, color: "#1a1a2e", background: "#fff" }} />
+                                  services
+                                </label>
+                              )}
+                            </>
+                          );
+                        })()}
                         <button type="button" onClick={() => removeUsage(itemId)} aria-label={`Remove ${item?.name ?? "product"}`}
                           style={{ background: "none", border: "none", cursor: "pointer", display: "flex", padding: 2 }}>
                           <X size={13} color="#7C3AED" />
@@ -676,7 +713,7 @@ function AddEditServiceModal({ onClose, onSave, staffList, servicesList, invento
                   style={{ flex: "3 1 180px", minWidth: 0, padding: "8px 10px", borderRadius: 8, border: "1px solid #e8e8f0", fontSize: 12, color: "#1a1a2e", outline: "none", background: "#fff" }}>
                   <option value="">Choose a product…</option>
                   {inventoryList
-                    .filter((item) => !form.inventoryUsage.includes(item.id))
+                    .filter((item) => item.isActive !== false && !form.inventoryUsage.includes(item.id))
                     .map((item) => (
                       <option key={item.id} value={item.id}>{item.brand ? `${item.brand} ` : ""}{item.name}</option>
                     ))}

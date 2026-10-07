@@ -108,14 +108,20 @@ export interface Service {
   customServices?: { name: string; price?: number; durationMin?: number }[];
   /**
    * Inventory item ids this service uses on the client — the colour a dye job
-   * opens, not something sold over the counter. Deliberately just a list, with
-   * no quantity: one tube lasts an unpredictable number of services, so what a
-   * single performance gets through is not a figure anyone can state, and asking
-   * for it produced guesses. What is countable is how often a product was
-   * reached for, which is what this drives. Retail sales stay on the invoice as
-   * product lines; this is the back-bar side, which never appears on a bill.
+   * opens, not something sold over the counter. The list drives "how often was
+   * this reached for"; how much stock each performance takes is optional and
+   * comes from inventoryAmounts or inventoryServicesPerUnit below. Retail sales
+   * stay on the invoice as product lines; this is the back-bar side, which
+   * never appears on a bill.
    */
   inventoryUsage?: string[];
+  /**
+   * The service recipe: per product in inventoryUsage, the exact amount one
+   * performance uses — "80 ml of keratin cream". `unit` may differ from the
+   * item's own when they convert (ml ↔ l, g ↔ kg). Takes priority over
+   * inventoryServicesPerUnit for the same product.
+   */
+  inventoryAmounts?: Record<string, { qty: number; unit: InventoryUnit }>;
   /**
    * Per product in inventoryUsage: how many of *this* service one unit lasts
    * (e.g. a dye packet lasts 5 colour services). Each performance then takes
@@ -288,7 +294,7 @@ export interface DailyRevenue {
 }
 
 export type InventoryCategory = "hair-color" | "skin-care" | "nail" | "tools" | "consumables" | "retail";
-export type InventoryUnit = "ml" | "g" | "pcs" | "box" | "bottle" | "tube";
+export type InventoryUnit = "ml" | "l" | "g" | "kg" | "pcs" | "pair" | "box" | "bottle" | "tube";
 
 export interface InventoryItem {
   id: string;
@@ -318,4 +324,8 @@ export interface InventoryItem {
   servicesPerUnit?: number;
   /** ISO time currentStock was last counted or brought up to date; only services after it reduce stock. */
   stockCountedAt?: string;
+  /** YYYY-MM-DD. */
+  expiryDate?: string;
+  /** false hides the item from POS and from service recipes; unset means active. */
+  isActive?: boolean;
 }

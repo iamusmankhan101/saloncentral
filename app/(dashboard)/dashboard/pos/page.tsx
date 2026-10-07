@@ -359,7 +359,7 @@ export default function POSPage() {
         variablePrice: s.variablePrice, priceRangeMin: s.priceRangeMin, priceRangeMax: s.priceRangeMax,
       }));
     const prod: CatalogItem[] = (catalogTab !== "services" ? inventory : [])
-      .filter(i => (i.retailPrice ?? 0) > 0 || i.variablePrice)
+      .filter(i => i.isActive !== false && ((i.retailPrice ?? 0) > 0 || i.variablePrice))
       .filter(i => !q || i.name.toLowerCase().includes(q) || i.brand.toLowerCase().includes(q))
       .filter(i => inSection(i, catalogSectionFilter))
       .map(i => ({
@@ -777,10 +777,9 @@ export default function POSPage() {
         saveAppointments(updatedAppointments);
       }
 
-      // Only retail lines move stock. Back-bar products are tracked by how often
-      // a service reaches for them (lib/inventory-usage.ts), not by quantity —
-      // one bottle covers an unpredictable number of clients — so there is no
-      // amount to take off here. Stock for those is corrected by counting.
+      // Only retail lines move stock here. Back-bar products a service uses are
+      // taken off by settleServiceConsumption() below, from the service recipe
+      // (lib/inventory-consumption.ts).
       const soldProducts = cart.filter(e => e.type === "product");
       if (soldProducts.length > 0) {
         const updated = inventory.map(item => {

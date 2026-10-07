@@ -2,10 +2,8 @@
 // How often each stock item gets reached for performing services on clients, as
 // opposed to being sold over the counter.
 //
-// Counted in uses, not quantity. A tube or bottle lasts an unpredictable number
-// of services, so "how much does one haircut consume" has no answer anyone can
-// give — but "this colour was used on 43 clients this month" is exact, and it is
-// what tells the salon which products are actually earning their shelf space.
+// Counted in uses ("this colour was used on 43 clients this month"), and — where
+// a service recipe gives an amount (Service.inventoryAmounts) — in quantity too.
 //
 // Nothing here is a separate log. A service records what it consumes per
 // performance (Service.inventoryUsage), and the work already leaves two records
@@ -15,7 +13,7 @@
 // mapping was made, and it cannot drift out of step with the sales it is
 // derived from.
 
-import type { Appointment, Service } from "@/lib/types";
+import type { Appointment, InventoryItem, InventoryUnit, Service } from "@/lib/types";
 import type { SalonInvoice } from "@/lib/salon-invoices";
 
 export interface ServiceUsageBreakdown {
@@ -60,6 +58,8 @@ interface Performance {
   date: string;
   /** When it happened (ms): the POS sale's time, else the appointment's end time. */
   at: number;
+  /** Client name, for the usage history. */
+  who: string;
 }
 
 /**
@@ -138,6 +138,7 @@ function collectPerformances(
   const byId = new Map(services.map((s) => [s.id, s]));
   const byName = new Map(services.map((s) => [s.name.trim().toLowerCase(), s]));
   const performances: Performance[] = [];
+  const appointmentById = new Map(appointments.map((a) => [a.id, a]));
 
   // Invoices, at any status: an unpaid sale is work that was still performed,
   // and the products it used are gone whether or not the client has paid yet.
@@ -149,9 +150,18 @@ function collectPerformances(
       if (line.type !== "service") continue;
       const sold = resolveService(line, byId, byName);
       if (!sold) continue;
+      let at = Date.parse(invoice.createdAt) || new Date(`${invoice.date}T12:00:00`).getTime();
+      // An appointment marked completed and checked out later: its booked
+      // services were used up when it was completed, and stock may already
+      // have been settled for that. Timing them at the later sale would take
+      // them off a second time.
+      const appointment = invoice.appointmentId ? appointmentById.get(invoice.appointmentId) : undefined;
+      const doneAt = Date.parse(appointment?.completedAt ?? "");
+      if (doneAt && (appointment!.serviceIds.includes(sold.id) || appointment!.guests?.some((g) => g.serviceIds.includes(sold.id)))) {
+        at = Math.min(at, doneAt);
+      }
       for (const service of performedServices(sold, byId)) {
-        const at = Date.parse(invoice.createdAt) || new Date(`${invoice.date}T12:00:00`).getTime();
-        performances.push({ service, count: Math.max(1, line.qty), date: invoice.date, at });
+        performances.push({ service, count: Math.max(1, line.qty), date: invoice.date, at, who: invoice.clientName ?? "" });
       }
     }
   }
@@ -167,7 +177,7 @@ function collectPerformances(
         // When it was marked completed; older records fall back to the booked end time.
         const at = Date.parse(appointment.completedAt ?? "")
           || new Date(`${appointment.date}T${appointment.endTime || appointment.startTime || "23:59"}:00`).getTime();
-        performances.push({ service, count: 1, date: appointment.date, at });
+        performances.push({ service, count: 1, date: appointment.date, at, who: appointment.clientName });
       }
     }
   }
@@ -223,18 +233,76 @@ export function servicesUsingItem(services: Service[], itemId: string): Service[
   return services.filter((s) => usedItemIds(s).includes(itemId));
 }
 
+/** Units that convert into each other: [family, size in the family's smallest unit]. */
+const UNIT_SCALE: Partial<Record<InventoryUnit, [string, number]>> = {
+  ml: ["volume", 1], l: ["volume", 1000], g: ["mass", 1], kg: ["mass", 1000],
+};
+
+/** `qty` of `from` expressed in `to`, or undefined when they don't convert (ml → pcs). */
+export function convertUnits(qty: number, from: InventoryUnit, to: InventoryUnit): number | undefined {
+  if (from === to) return qty;
+  const a = UNIT_SCALE[from];
+  const b = UNIT_SCALE[to];
+  return a && b && a[0] === b[0] ? (qty * a[1]) / b[1] : undefined;
+}
+
+/** Units a recipe amount for an item stocked in `unit` can be entered in. */
+export function compatibleUnits(unit: InventoryUnit): InventoryUnit[] {
+  const units = (Object.keys(UNIT_SCALE) as InventoryUnit[]).filter((u) => convertUnits(1, u, unit) !== undefined);
+  return units.length ? units : [unit];
+}
+
+/**
+ * How much of `item`'s stock, in its own unit, one performance of `service`
+ * takes: the recipe amount when one is set, else 1/N from "one unit lasts N
+ * services" (the service's own figure, then the item's). 0 = not consumed.
+ */
+export function amountPerPerformance(service: Service, item: InventoryItem): number {
+  const recipe = service.inventoryAmounts?.[item.id];
+  if (recipe && recipe.qty > 0) return convertUnits(recipe.qty, recipe.unit, item.unit) ?? 0;
+  const perUnit = Number(service.inventoryServicesPerUnit?.[item.id]) || Number(item.servicesPerUnit) || 0;
+  return perUnit > 0 ? 1 / perUnit : 0;
+}
+
+export interface ConsumptionEntry {
+  at: number;
+  date: string;
+  serviceName: string;
+  who: string;
+  /** In the item's own unit. */
+  qty: number;
+}
+
+/**
+ * Every performance that used `item`, newest first, with the amount it took —
+ * the item's consumption history. Derived from the same sales and completed
+ * appointments the stock deduction is, so the two always agree.
+ */
+export function consumptionHistory(
+  invoices: SalonInvoice[],
+  appointments: Appointment[],
+  services: Service[],
+  item: InventoryItem,
+): ConsumptionEntry[] {
+  const out: ConsumptionEntry[] = [];
+  for (const { service, count, date, at, who } of collectPerformances(invoices, appointments, services, {})) {
+    if (!usedItemIds(service).includes(item.id)) continue;
+    const qty = amountPerPerformance(service, item) * count;
+    if (qty > 0) out.push({ at, date, serviceName: service.name, who, qty });
+  }
+  return out.sort((a, b) => b.at - a.at);
+}
+
 /**
  * Units of stock used up per item strictly after its `since` time: each
- * performance of a service that uses the item takes 1/N of a unit, N being
- * the service's own figure for that product (inventoryServicesPerUnit) or else
- * the item's default (`defaultPerUnit`). Items with neither aren't consumed.
+ * performance of a service that uses the item takes amountPerPerformance().
  */
 export function unitsConsumedSince(
   invoices: SalonInvoice[],
   appointments: Appointment[],
   services: Service[],
   sinceMsByItem: Map<string, number>,
-  defaultPerUnit: Map<string, number>,
+  itemsById: Map<string, InventoryItem>,
   nowMs: number = Date.now(),
 ): Map<string, number> {
   const earliest = Math.min(...sinceMsByItem.values());
@@ -248,20 +316,24 @@ export function unitsConsumedSince(
       // Nothing timed in the future (a booking completed ahead of its slot with
       // no completion time): it counts once its time has passed, never twice.
       if (since === undefined || at <= since || at > nowMs) continue;
-      const perUnit = Number(service.inventoryServicesPerUnit?.[itemId]) || defaultPerUnit.get(itemId) || 0;
-      if (perUnit <= 0) continue;
-      out.set(itemId, (out.get(itemId) ?? 0) + count / perUnit);
+      const item = itemsById.get(itemId);
+      const amount = item ? amountPerPerformance(service, item) : 0;
+      if (amount <= 0) continue;
+      out.set(itemId, (out.get(itemId) ?? 0) + count * amount);
     }
   }
   return out;
 }
 
-/** Items some service consumes by a per-service "lasts N services" figure. */
+/** Items some service consumes by a recipe amount or a per-service "lasts N services" figure. */
 export function itemsWithServiceRates(services: Service[]): Set<string> {
   const ids = new Set<string>();
   for (const s of services) {
     for (const [itemId, n] of Object.entries(s.inventoryServicesPerUnit ?? {})) {
       if (Number(n) > 0 && usedItemIds(s).includes(itemId)) ids.add(itemId);
+    }
+    for (const [itemId, r] of Object.entries(s.inventoryAmounts ?? {})) {
+      if (Number(r?.qty) > 0 && usedItemIds(s).includes(itemId)) ids.add(itemId);
     }
   }
   return ids;

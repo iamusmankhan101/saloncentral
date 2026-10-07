@@ -1,7 +1,7 @@
 /**
- * Service-based stock consumption: an item that lasts `servicesPerUnit`
- * services loses 1/servicesPerUnit of a unit each time a service that uses it
- * is performed (Service.inventoryUsage).
+ * Service-based stock consumption: each time a service that uses an item is
+ * performed, the item loses the service's recipe amount (Service.inventoryAmounts,
+ * "80 ml") or, failing that, 1/N of a unit for "one unit lasts N services".
  *
  * Stock isn't decremented sale by sale — a booked client checked out at POS
  * leaves both an invoice and a completed appointment, and edits/deletes would
@@ -9,7 +9,9 @@
  * since the item's `stockCountedAt` (lib/inventory-usage.ts, which already
  * avoids that double count), takes them off `currentStock` and moves the mark
  * to now. Running it again finds nothing new, so it is safe to call often:
- * on load, after a sale, after completing an appointment.
+ * on load, after a sale, after completing an appointment. A performance is
+ * timed when it first completed (Appointment.completedAt is never moved), so
+ * flipping an appointment's status back and forth can't deduct it twice.
  */
 
 import { getStoredAppointments, getStoredInventory, getStoredServices, saveInventory } from "./storage";
@@ -17,8 +19,8 @@ import { getSalonInvoices } from "./salon-invoices";
 import { itemsWithServiceRates, unitsConsumedSince } from "./inventory-usage";
 import type { InventoryItem } from "./types";
 
-/** Stock is kept to 2 decimals — "4.6 tubes" — so a fifth of a tube stays exact enough. */
-const round2 = (n: number) => Math.round(n * 100) / 100;
+/** Stock is kept to 4 decimals, so 15 g off a kg-stocked item (0.015) isn't rounded away. */
+const round4 = (n: number) => Math.round(n * 10_000) / 10_000;
 
 export function consumesByService(item: InventoryItem, serviceRated?: Set<string>): boolean {
   return Number(item.servicesPerUnit) > 0 || !!serviceRated?.has(item.id);
@@ -33,18 +35,16 @@ export function settleServiceConsumption(): number {
   const nowMs = Date.now();
   const now = new Date(nowMs).toISOString();
   const since = new Map<string, number>();
-  const defaults = new Map<string, number>();
   let needsMark = false;
   for (const item of inventory) {
     if (!consumesByService(item, rated)) continue;
-    if (Number(item.servicesPerUnit) > 0) defaults.set(item.id, Number(item.servicesPerUnit));
     if (!item.stockCountedAt) { needsMark = true; continue; } // starts counting from now
     since.set(item.id, Date.parse(item.stockCountedAt) || nowMs);
   }
   if (since.size === 0 && !needsMark) return 0;
 
   const used = since.size
-    ? unitsConsumedSince(getSalonInvoices(), getStoredAppointments(), services, since, defaults, nowMs)
+    ? unitsConsumedSince(getSalonInvoices(), getStoredAppointments(), services, since, new Map(inventory.map((i) => [i.id, i])), nowMs)
     : new Map<string, number>();
   let changed = 0;
   const next = inventory.map((item) => {
@@ -53,7 +53,7 @@ export function settleServiceConsumption(): number {
     const units = used.get(item.id) ?? 0;
     if (!units) return item;
     changed++;
-    return { ...item, currentStock: Math.max(0, round2(item.currentStock - units)), stockCountedAt: now };
+    return { ...item, currentStock: Math.max(0, round4(item.currentStock - units)), stockCountedAt: now };
   });
   if (changed) saveInventory(next);
   return changed;

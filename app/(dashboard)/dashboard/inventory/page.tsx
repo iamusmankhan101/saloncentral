@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { getStoredInventory, saveInventory, getStoredServices, getStoredAppointments } from "@/lib/storage";
 import { getSalonInvoices } from "@/lib/salon-invoices";
-import { computeInventoryUsage, usageFor, type ItemUsage } from "@/lib/inventory-usage";
+import { computeInventoryUsage, consumptionHistory, itemsWithServiceRates, usageFor, type ItemUsage } from "@/lib/inventory-usage";
 import { checkLowStockAlerts } from "@/lib/whatsapp-scheduler";
 import { settingsStore } from "@/lib/settings-store";
 import type { InventoryItem, InventoryCategory, InventoryUnit, Service } from "@/lib/types";
@@ -27,7 +27,7 @@ const CATEGORY_CONFIG: Record<InventoryCategory, { label: string; color: string;
   "retail":      { label: "Retail",       color: "#6b7280", bg: "#f9fafb" },
 };
 
-const UNITS: InventoryUnit[]      = ["ml", "g", "pcs", "box", "bottle", "tube"];
+const UNITS: InventoryUnit[]      = ["ml", "l", "g", "kg", "pcs", "pair", "box", "bottle", "tube"];
 const CATEGORIES = Object.keys(CATEGORY_CONFIG) as InventoryCategory[];
 
 import { fmtCurrency as fmt } from "@/lib/format";
@@ -85,6 +85,7 @@ type ItemForm = {
   barcode: string;
   variablePrice: boolean; priceRangeMin: string; priceRangeMax: string;
   servicesPerUnit: string;
+  expiryDate: string; isActive: boolean;
 };
 
 const EMPTY_FORM: ItemForm = {
@@ -93,6 +94,7 @@ const EMPTY_FORM: ItemForm = {
   retailPrice: "", barcode: "", supplier: "", notes: "",
   variablePrice: false, priceRangeMin: "", priceRangeMax: "",
   servicesPerUnit: "",
+  expiryDate: "", isActive: true,
 };
 
 function itemToForm(item: InventoryItem): ItemForm {
@@ -107,19 +109,23 @@ function itemToForm(item: InventoryItem): ItemForm {
     priceRangeMin: item.priceRangeMin ? String(item.priceRangeMin) : "",
     priceRangeMax: item.priceRangeMax ? String(item.priceRangeMax) : "",
     servicesPerUnit: item.servicesPerUnit ? String(item.servicesPerUnit) : "",
+    expiryDate: item.expiryDate ?? "", isActive: item.isActive !== false,
   };
 }
 
 /**
  * "Lasts about N services" plus the mark service consumption counts from. A
- * stock figure typed in (or the setting switched on) is a fresh count, so
- * consumption restarts from now; otherwise the existing mark is kept.
+ * stock figure typed in (or consumption switched on) is a fresh count, so
+ * consumption restarts from now; otherwise the existing mark is kept — also
+ * for an item consumed only through a service recipe, so editing its name
+ * doesn't drop services done since the last settle.
  */
 function consumptionFields(form: ItemForm, existing?: InventoryItem): Pick<InventoryItem, "servicesPerUnit" | "stockCountedAt"> {
   const perUnit = Number(form.servicesPerUnit);
-  if (!(perUnit > 0)) return { servicesPerUnit: undefined, stockCountedAt: undefined };
-  const recounted = !existing || Number(form.currentStock) !== existing.currentStock || !existing.servicesPerUnit;
-  return { servicesPerUnit: perUnit, stockCountedAt: recounted ? new Date().toISOString() : existing.stockCountedAt };
+  const byRecipe = !!existing && itemsWithServiceRates(getStoredServices()).has(existing.id);
+  if (!(perUnit > 0) && !byRecipe) return { servicesPerUnit: undefined, stockCountedAt: undefined };
+  const recounted = !existing || Number(form.currentStock) !== existing.currentStock || !existing.stockCountedAt;
+  return { servicesPerUnit: perUnit > 0 ? perUnit : undefined, stockCountedAt: recounted ? new Date().toISOString() : existing.stockCountedAt };
 }
 
 function formToItem(form: ItemForm, existing?: InventoryItem): InventoryItem {
@@ -142,6 +148,8 @@ function formToItem(form: ItemForm, existing?: InventoryItem): InventoryItem {
     supplier: form.supplier || undefined,
     notes: form.notes || undefined,
     lastRestocked: existing?.lastRestocked ?? new Date().toLocaleDateString("en-CA"),
+    expiryDate: form.expiryDate || undefined,
+    isActive: form.isActive ? undefined : false,
     ...consumptionFields(form, existing),
   };
 }
@@ -208,6 +216,14 @@ function ItemFormFields({ form, set, items }: { form: ItemForm; set: (k: keyof I
         <input value={form.barcode} onChange={(e) => set("barcode", e.target.value.trim())} placeholder="Scan or enter barcode" style={INP} inputMode="numeric" />
       </Field>
       <Field label="Supplier"><input value={form.supplier} onChange={(e) => set("supplier", e.target.value)} placeholder="e.g. Wella Pakistan" style={INP} /></Field>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, alignItems: "end" }}>
+        <Field label="Expiry Date"><input type="date" value={form.expiryDate} onChange={(e) => set("expiryDate", e.target.value)} style={INP} /></Field>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", paddingBottom: 10 }}>
+          <input type="checkbox" checked={form.isActive} onChange={(e) => set("isActive", e.target.checked)}
+            style={{ width: 14, height: 14, accentColor: "#7C3AED", cursor: "pointer" }} />
+          <span style={{ fontSize: 12, color: "#6b6b8a", fontWeight: 500 }}>Active (shown in POS and service recipes)</span>
+        </label>
+      </div>
       <Field label="Notes"><textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Any notes…" rows={2} style={{ ...INP, resize: "none", lineHeight: 1.5 }} /></Field>
     </div>
   );
@@ -765,6 +781,11 @@ function UsageModal({ item, usage, services, onClose }: {
   const unused = services.filter(
     (sv) => !counted.has(sv.id) && (sv.inventoryUsage ?? []).includes(item.id),
   );
+  const history = useMemo(
+    () => consumptionHistory(getSalonInvoices(), getStoredAppointments(), services, item),
+    [services, item],
+  );
+  const amt = (n: number) => `${Math.round(n * 100) / 100} ${item.unit}`;
 
   return (
     <Overlay onClose={onClose}>
@@ -781,6 +802,12 @@ function UsageModal({ item, usage, services, onClose }: {
                 {new Date(usage.lastUsedDate + "T12:00:00").toLocaleDateString("en-PK", { day: "numeric", month: "short" })}
               </div>
               <div style={{ fontSize: 10, fontWeight: 800, color: "#9898b0", marginTop: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Last Used</div>
+            </div>
+          )}
+          {history.length > 0 && (
+            <div>
+              <div style={{ fontSize: 22, fontWeight: 850, color: "#1a1a2e", lineHeight: 1.1 }}>{amt(history.reduce((sum, h) => sum + h.qty, 0))}</div>
+              <div style={{ fontSize: 10, fontWeight: 800, color: "#9898b0", marginTop: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Total Used</div>
             </div>
           )}
         </div>
@@ -807,6 +834,28 @@ function UsageModal({ item, usage, services, onClose }: {
               </div>
             ))}
           </div>
+        )}
+
+        {history.length > 0 && (
+          <>
+            <div style={{ fontSize: 11, fontWeight: 800, color: "#9898b0", margin: "18px 0 8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              Consumption History
+            </div>
+            <div style={{ maxHeight: 260, overflowY: "auto", border: "1px solid #f0f0f8", borderRadius: 12 }}>
+              {history.slice(0, 200).map((h, idx) => (
+                <div key={idx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "9px 14px", borderBottom: "1px solid #f8f8fc" }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "#1a1a2e" }}>{h.serviceName}</div>
+                    <div style={{ fontSize: 11, color: "#9898b0" }}>
+                      {new Date(h.at).toLocaleString("en-PK", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}
+                      {h.who ? ` · ${h.who}` : ""}
+                    </div>
+                  </div>
+                  <span style={{ fontSize: 12, color: "#dc2626", fontWeight: 750, whiteSpace: "nowrap" }}>−{amt(h.qty)}</span>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
     </Overlay>
@@ -844,6 +893,8 @@ function ItemRow({ item, isLast, usage, onEdit, onDelete, onShowUsage }: {
         <div style={{ fontSize: 11, color: "#9898b0", marginTop: 1 }}>
           {item.brand}{item.supplier ? ` · ${item.supplier}` : ""}
           {item.servicesPerUnit ? <span style={{ color: "#7C3AED", fontWeight: 600 }}> · 1 {item.unit} ≈ {item.servicesPerUnit} services</span> : null}
+          {item.isActive === false && <span style={{ color: "#9898b0", fontWeight: 700 }}> · Inactive</span>}
+          {item.expiryDate && <span style={{ color: item.expiryDate < new Date().toLocaleDateString("en-CA") ? "#dc2626" : "#9898b0", fontWeight: 600 }}> · Exp {item.expiryDate}</span>}
         </div>
       </div>
 

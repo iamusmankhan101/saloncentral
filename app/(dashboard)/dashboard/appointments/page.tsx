@@ -2110,8 +2110,10 @@ export default function AppointmentsPage() {
           }}
           onStatusChange={(apptId, newStatus) => {
             setAppointments((prev) => {
+              // The first completion time is kept: re-completing must not
+              // re-time the visit after stock was settled, or it deducts twice.
               const completedAt = newStatus === "completed" ? new Date().toISOString() : undefined;
-              const updated = prev.map((a) => a.id === apptId ? { ...a, status: newStatus, completedAt: completedAt ?? a.completedAt } : a);
+              const updated = prev.map((a) => a.id === apptId ? { ...a, status: newStatus, completedAt: a.completedAt ?? completedAt } : a);
               saveAppointments(updated);
               return updated;
             });
