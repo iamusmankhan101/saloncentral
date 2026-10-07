@@ -151,14 +151,19 @@ function collectPerformances(
       const sold = resolveService(line, byId, byName);
       if (!sold) continue;
       let at = Date.parse(invoice.createdAt) || new Date(`${invoice.date}T12:00:00`).getTime();
-      // An appointment marked completed and checked out later: its booked
-      // services were used up when it was completed, and stock may already
-      // have been settled for that. Timing them at the later sale would take
-      // them off a second time.
       const appointment = invoice.appointmentId ? appointmentById.get(invoice.appointmentId) : undefined;
+      // An advance taken on a booking: nothing has been performed yet. It
+      // counts once the appointment is completed.
+      if (appointment && appointment.status !== "completed") continue;
+      // Linked work is timed at its completion, not the sale: an appointment
+      // completed and checked out later must not be taken off a second time at
+      // the later sale, and one paid in advance is used up when it is done.
+      // Lines added at the desk weren't booked, so they count from whichever
+      // came last.
       const doneAt = Date.parse(appointment?.completedAt ?? "");
-      if (doneAt && (appointment!.serviceIds.includes(sold.id) || appointment!.guests?.some((g) => g.serviceIds.includes(sold.id)))) {
-        at = Math.min(at, doneAt);
+      if (doneAt) {
+        const booked = appointment!.serviceIds.includes(sold.id) || appointment!.guests?.some((g) => g.serviceIds.includes(sold.id));
+        at = booked ? doneAt : Math.max(at, doneAt);
       }
       for (const service of performedServices(sold, byId)) {
         performances.push({ service, count: Math.max(1, line.qty), date: invoice.date, at, who: invoice.clientName ?? "" });

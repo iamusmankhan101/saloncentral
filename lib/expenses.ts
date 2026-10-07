@@ -106,7 +106,7 @@ export function linkExpenseItemsToInventory(items: ExpenseItem[], section?: stri
     }
     return { ...item, inventoryItemId: id };
   });
-  if (created.length) saveInventory([...inventory, ...created]);
+  if (created.length) saveInventory([...inventory, ...created], { reason: "purchase" });
   return linked;
 }
 
@@ -132,5 +132,5 @@ export function applyExpenseStock(before: ExpenseItem[] | undefined, after: Expe
     const d = delta.get(inv.id) ?? 0;
     if (d === 0) return inv;
     return { ...inv, currentStock: Math.max(0, inv.currentStock + d), ...(d > 0 ? { lastRestocked: today } : {}) };
-  }));
+  }), { reason: "purchase" });
 }

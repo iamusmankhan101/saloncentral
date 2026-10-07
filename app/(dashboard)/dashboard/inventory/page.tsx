@@ -33,6 +33,7 @@ const CATEGORIES = Object.keys(CATEGORY_CONFIG) as InventoryCategory[];
 import { fmtCurrency as fmt } from "@/lib/format";
 import { whatsAppConnected } from "@/lib/whatsapp-scheduler";
 import { settleServiceConsumption } from "@/lib/inventory-consumption";
+import { getInventoryLog, STOCK_REASON_LABEL, type StockChange } from "@/lib/inventory-log";
 const fmtV = (n: number) => {
   const currency = settingsStore.salon.currency || "PKR";
   return n >= 1_000_000 ? `${currency} ${(n / 1_000_000).toFixed(1)}M`
@@ -86,6 +87,8 @@ type ItemForm = {
   variablePrice: boolean; priceRangeMin: string; priceRangeMax: string;
   servicesPerUnit: string;
   expiryDate: string; isActive: boolean;
+  /** Why a typed-in stock figure changed — only asked when editing. */
+  stockReason: "" | "restock" | "wastage" | "correction";
 };
 
 const EMPTY_FORM: ItemForm = {
@@ -94,7 +97,7 @@ const EMPTY_FORM: ItemForm = {
   retailPrice: "", barcode: "", supplier: "", notes: "",
   variablePrice: false, priceRangeMin: "", priceRangeMax: "",
   servicesPerUnit: "",
-  expiryDate: "", isActive: true,
+  expiryDate: "", isActive: true, stockReason: "",
 };
 
 function itemToForm(item: InventoryItem): ItemForm {
@@ -109,7 +112,7 @@ function itemToForm(item: InventoryItem): ItemForm {
     priceRangeMin: item.priceRangeMin ? String(item.priceRangeMin) : "",
     priceRangeMax: item.priceRangeMax ? String(item.priceRangeMax) : "",
     servicesPerUnit: item.servicesPerUnit ? String(item.servicesPerUnit) : "",
-    expiryDate: item.expiryDate ?? "", isActive: item.isActive !== false,
+    expiryDate: item.expiryDate ?? "", isActive: item.isActive !== false, stockReason: "",
   };
 }
 
@@ -126,6 +129,11 @@ function consumptionFields(form: ItemForm, existing?: InventoryItem): Pick<Inven
   if (!(perUnit > 0) && !byRecipe) return { servicesPerUnit: undefined, stockCountedAt: undefined };
   const recounted = !existing || Number(form.currentStock) !== existing.currentStock || !existing.stockCountedAt;
   return { servicesPerUnit: perUnit > 0 ? perUnit : undefined, stockCountedAt: recounted ? new Date().toISOString() : existing.stockCountedAt };
+}
+
+/** The edit's stock change reason: as picked, else restock for an increase and a count correction for a decrease. */
+function stockChange(form: ItemForm, existing: InventoryItem): StockChange {
+  return { reason: form.stockReason || (Number(form.currentStock) > existing.currentStock ? "restock" : "correction") };
 }
 
 function formToItem(form: ItemForm, existing?: InventoryItem): InventoryItem {
@@ -147,14 +155,17 @@ function formToItem(form: ItemForm, existing?: InventoryItem): InventoryItem {
     barcode: form.barcode.trim() || undefined,
     supplier: form.supplier || undefined,
     notes: form.notes || undefined,
-    lastRestocked: existing?.lastRestocked ?? new Date().toLocaleDateString("en-CA"),
+    lastRestocked: existing && Number(form.currentStock) !== existing.currentStock && stockChange(form, existing).reason === "restock"
+      ? new Date().toLocaleDateString("en-CA")
+      : existing?.lastRestocked ?? new Date().toLocaleDateString("en-CA"),
     expiryDate: form.expiryDate || undefined,
     isActive: form.isActive ? undefined : false,
     ...consumptionFields(form, existing),
   };
 }
 
-function ItemFormFields({ form, set, items }: { form: ItemForm; set: (k: keyof ItemForm, v: string | boolean) => void; items: InventoryItem[] }) {
+function ItemFormFields({ form, set, items, original }: { form: ItemForm; set: (k: keyof ItemForm, v: string | boolean) => void; items: InventoryItem[]; original?: InventoryItem }) {
+  const stockMoved = !!original && form.currentStock !== "" && Number(form.currentStock) !== original.currentStock;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -184,6 +195,15 @@ function ItemFormFields({ form, set, items }: { form: ItemForm; set: (k: keyof I
         <Field label="Current Stock *"><input type="number" min="0" step="any" value={form.currentStock} onChange={(e) => set("currentStock", e.target.value)} placeholder="0" style={INP} /></Field>
         <Field label="Min Stock (alert threshold) *"><input type="number" min="0" value={form.minStock} onChange={(e) => set("minStock", e.target.value)} placeholder="0" style={INP} /></Field>
       </div>
+      {stockMoved && (
+        <Field label={`Why did stock change? (${Number(form.currentStock) > original!.currentStock ? "+" : ""}${Math.round((Number(form.currentStock) - original!.currentStock) * 10_000) / 10_000} ${form.unit})`}>
+          <select value={form.stockReason || stockChange(form, original!).reason} onChange={(e) => set("stockReason", e.target.value)} style={INP}>
+            <option value="restock">Restocked (new stock arrived)</option>
+            <option value="wastage">Wastage (broken, spilled, expired)</option>
+            <option value="correction">Correction (counted the shelf)</option>
+          </select>
+        </Field>
+      )}
       <Field label={`Used in services — 1 ${form.unit || "unit"} lasts about`}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <input type="number" min="0" step="any" value={form.servicesPerUnit} onChange={(e) => set("servicesPerUnit", e.target.value)} placeholder="e.g. 5" style={{ ...INP, maxWidth: 120 }} />
@@ -240,6 +260,7 @@ function priceFieldsValid(form: ItemForm): boolean {
 const INVENTORY_EXPORT_COLS = [
   "Item ID", "Name", "Brand", "Category", "Section", "Unit", "Current Stock", "Min Stock",
   "Cost Price", "Variable Price", "Retail Price", "Min Price", "Max Price", "Barcode", "Supplier", "Last Restocked", "Notes",
+  "Expiry Date", "Active",
 ];
 
 type InventoryImportRecord = { item: InventoryItem; mode: "add" | "update" };
@@ -252,6 +273,16 @@ function parseBool(value: unknown): boolean {
 function normalizeCategory(value: unknown): InventoryCategory {
   const raw = String(value ?? "").trim().toLowerCase().replace(/\s+/g, "-");
   return (CATEGORIES as string[]).includes(raw) ? (raw as InventoryCategory) : "consumables";
+}
+
+/** YYYY-MM-DD from a sheet cell: Excel stores dates as day serials, CSV as text. */
+function parseSheetDate(value: unknown): string | undefined {
+  if (typeof value === "number" && value > 0) return new Date(Math.round((value - 25569) * 86_400_000)).toISOString().slice(0, 10);
+  const raw = String(value ?? "").trim();
+  if (!raw) return undefined;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const ms = Date.parse(raw);
+  return Number.isNaN(ms) ? undefined : new Date(ms).toLocaleDateString("en-CA");
 }
 
 function normalizeUnit(value: unknown): InventoryUnit {
@@ -278,6 +309,8 @@ function itemsToRows(list: InventoryItem[]) {
     "Supplier": item.supplier ?? "",
     "Last Restocked": item.lastRestocked ?? "",
     "Notes": item.notes ?? "",
+    "Expiry Date": item.expiryDate ?? "",
+    "Active": item.isActive === false ? "No" : "Yes",
   }));
 }
 
@@ -359,9 +392,17 @@ function InventoryImportModal({ existing, onClose, onImport }: {
         const minStock = Number(row["Min Stock"] ?? "");
         const costPrice = Number(row["Cost Price"] ?? row["Cost"] ?? "");
 
+        const activeRaw = String(row["Active"] ?? "").trim();
+        const stock = Number.isFinite(currentStock) ? currentStock : (existingItem?.currentStock ?? 0);
         records.push({
           mode: existingItem ? "update" : "add",
           item: {
+            // Fields the sheet doesn't carry (service consumption settings) survive an update.
+            ...existingItem,
+            // A new stock figure is a fresh count for service consumption.
+            ...(existingItem?.stockCountedAt && stock !== existingItem.currentStock ? { stockCountedAt: new Date().toISOString() } : {}),
+            expiryDate: row["Expiry Date"] !== undefined ? parseSheetDate(row["Expiry Date"]) : existingItem?.expiryDate,
+            isActive: activeRaw ? (parseBool(activeRaw) || activeRaw.toLowerCase() === "active" ? undefined : false) : existingItem?.isActive,
             id,
             name,
             brand: brand || existingItem?.brand || "",
@@ -370,7 +411,7 @@ function InventoryImportModal({ existing, onClose, onImport }: {
               || defaultSectionForNewRecord()
               || undefined,
             unit: normalizeUnit(row["Unit"] ?? row["unit"]),
-            currentStock: Number.isFinite(currentStock) ? currentStock : (existingItem?.currentStock ?? 0),
+            currentStock: stock,
             minStock: Number.isFinite(minStock) ? minStock : (existingItem?.minStock ?? 0),
             costPrice: Number.isFinite(costPrice) ? costPrice : (existingItem?.costPrice ?? 0),
             retailPrice: variablePrice
@@ -416,6 +457,8 @@ function InventoryImportModal({ existing, onClose, onImport }: {
       "Supplier": "Wella Pakistan",
       "Last Restocked": "",
       "Notes": "",
+      "Expiry Date": "2027-06-30",
+      "Active": "Yes",
     }];
     const ws = XLSX.utils.json_to_sheet(sample, { header: INVENTORY_EXPORT_COLS });
     const wb = XLSX.utils.book_new();
@@ -549,7 +592,7 @@ function AddModal({ onClose, onAdd, items }: { onClose: () => void; onAdd: (item
 }
 
 // ── Edit Modal ────────────────────────────────────────────────────────────────
-function EditModal({ item, onClose, onSave, items }: { item: InventoryItem; onClose: () => void; onSave: (updated: InventoryItem) => void; items: InventoryItem[] }) {
+function EditModal({ item, onClose, onSave, onShowHistory, items }: { item: InventoryItem; onClose: () => void; onSave: (updated: InventoryItem, change: StockChange) => void; onShowHistory: () => void; items: InventoryItem[] }) {
   const [form, setForm] = useState<ItemForm>(() => itemToForm(item));
   const [saved, setSaved] = useState(false);
   const set = useCallback((k: keyof ItemForm, v: string | boolean) => setForm((f) => ({ ...f, [k]: v })), []);
@@ -570,11 +613,15 @@ function EditModal({ item, onClose, onSave, items }: { item: InventoryItem; onCl
     <Overlay onClose={onClose}>
       <ModalHeader title={`Edit — ${item.name}`} onClose={onClose} />
       <div style={{ padding: "22px 24px" }}>
-        <ItemFormFields form={form} set={set} items={items} />
+        <button type="button" onClick={onShowHistory}
+          style={{ marginBottom: 14, padding: 0, border: "none", background: "none", color: "var(--accent)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+          View stock history →
+        </button>
+        <ItemFormFields form={form} set={set} items={items} original={item} />
         <div style={{ display: "flex", gap: 10, paddingTop: 18, marginTop: 6, borderTop: "1px solid #f0f0f8" }}>
           <button onClick={onClose} style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid #e8e8f0", background: "#fff", fontSize: 13, fontWeight: 600, color: "#6b6b8a", cursor: "pointer" }}>Cancel</button>
           <button
-            onClick={() => { if (canSubmit) { onSave(formToItem(form, item)); setSaved(true); } }}
+            onClick={() => { if (canSubmit) { onSave(formToItem(form, item), stockChange(form, item)); setSaved(true); } }}
             style={{ flex: 2, padding: "11px 0", borderRadius: 10, border: "none", background: canSubmit ? "linear-gradient(135deg, #5B21B6, #9333EA)" : "#e8e8f0", fontSize: 13, fontWeight: 600, color: canSubmit ? "#fff" : "#b0b0c8", cursor: canSubmit ? "pointer" : "not-allowed" }}
           >
             Save Changes
@@ -781,15 +828,22 @@ function UsageModal({ item, usage, services, onClose }: {
   const unused = services.filter(
     (sv) => !counted.has(sv.id) && (sv.inventoryUsage ?? []).includes(item.id),
   );
-  const history = useMemo(
+  const used = useMemo(
     () => consumptionHistory(getSalonInvoices(), getStoredAppointments(), services, item),
     [services, item],
   );
+  // Services using it up (derived) merged with every other stock change (logged).
+  const history = useMemo(() => [
+    ...used.map((u) => ({ at: u.at, title: u.serviceName, sub: u.who, change: -u.qty })),
+    ...getInventoryLog().filter((l) => l.itemId === item.id).map((l) => ({
+      at: Date.parse(l.at), title: STOCK_REASON_LABEL[l.reason] ?? l.reason, sub: l.note ?? "", change: l.change,
+    })),
+  ].sort((a, b) => b.at - a.at), [used, item]);
   const amt = (n: number) => `${Math.round(n * 100) / 100} ${item.unit}`;
 
   return (
     <Overlay onClose={onClose}>
-      <ModalHeader title={`Used On Clients — ${item.name}`} onClose={onClose} />
+      <ModalHeader title={`Stock History — ${item.name}`} onClose={onClose} />
       <div style={{ padding: "18px 24px 24px" }}>
         <div style={{ display: "flex", gap: 24, padding: "14px 16px", borderRadius: 12, background: "#faf9fd", marginBottom: 18 }}>
           <div>
@@ -804,9 +858,9 @@ function UsageModal({ item, usage, services, onClose }: {
               <div style={{ fontSize: 10, fontWeight: 800, color: "#9898b0", marginTop: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Last Used</div>
             </div>
           )}
-          {history.length > 0 && (
+          {used.length > 0 && (
             <div>
-              <div style={{ fontSize: 22, fontWeight: 850, color: "#1a1a2e", lineHeight: 1.1 }}>{amt(history.reduce((sum, h) => sum + h.qty, 0))}</div>
+              <div style={{ fontSize: 22, fontWeight: 850, color: "#1a1a2e", lineHeight: 1.1 }}>{amt(used.reduce((sum, h) => sum + h.qty, 0))}</div>
               <div style={{ fontSize: 10, fontWeight: 800, color: "#9898b0", marginTop: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Total Used</div>
             </div>
           )}
@@ -839,19 +893,21 @@ function UsageModal({ item, usage, services, onClose }: {
         {history.length > 0 && (
           <>
             <div style={{ fontSize: 11, fontWeight: 800, color: "#9898b0", margin: "18px 0 8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-              Consumption History
+              Stock History
             </div>
             <div style={{ maxHeight: 260, overflowY: "auto", border: "1px solid #f0f0f8", borderRadius: 12 }}>
               {history.slice(0, 200).map((h, idx) => (
                 <div key={idx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "9px 14px", borderBottom: "1px solid #f8f8fc" }}>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: "#1a1a2e" }}>{h.serviceName}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "#1a1a2e" }}>{h.title}</div>
                     <div style={{ fontSize: 11, color: "#9898b0" }}>
                       {new Date(h.at).toLocaleString("en-PK", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}
-                      {h.who ? ` · ${h.who}` : ""}
+                      {h.sub ? ` · ${h.sub}` : ""}
                     </div>
                   </div>
-                  <span style={{ fontSize: 12, color: "#dc2626", fontWeight: 750, whiteSpace: "nowrap" }}>−{amt(h.qty)}</span>
+                  <span style={{ fontSize: 12, color: h.change < 0 ? "#dc2626" : "#059669", fontWeight: 750, whiteSpace: "nowrap" }}>
+                    {h.change < 0 ? "−" : "+"}{amt(Math.abs(h.change))}
+                  </span>
                 </div>
               ))}
             </div>
@@ -903,11 +959,12 @@ function ItemRow({ item, isLast, usage, onEdit, onDelete, onShowUsage }: {
         {cat.label}
       </span>
 
-      {/* Stock */}
+      {/* Stock — opens the stock history */}
       <div>
-        <span style={{ fontSize: 13, fontWeight: 700, color: status === "out" ? "#dc2626" : status === "low" ? "#d97706" : "#1a1a2e" }}>
+        <button type="button" onClick={onShowUsage} title={`Stock history for ${item.name}`}
+          style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 13, fontWeight: 700, color: status === "out" ? "#dc2626" : status === "low" ? "#d97706" : "#1a1a2e", textDecoration: "underline dotted" }}>
           {item.currentStock} {item.unit}
-        </span>
+        </button>
         <div style={{ fontSize: 10, color: "#b0b0c8", marginTop: 1 }}>
           Min: {item.minStock} {item.unit}
         </div>
@@ -999,9 +1056,9 @@ export default function InventoryPage() {
     if (item) setEditItem(item);
   }, [items]);
 
-  const persist = useCallback((updated: InventoryItem[]) => {
+  const persist = useCallback((updated: InventoryItem[], change: StockChange = { reason: "correction" }) => {
     setItems(updated);
-    saveInventory(updated);
+    saveInventory(updated, change);
     checkLowStockAlerts();
   }, []);
 
@@ -1026,7 +1083,7 @@ export default function InventoryPage() {
       byId.set(record.item.id, record.item);
     }
 
-    persist(Array.from(byId.values()));
+    persist(Array.from(byId.values()), { reason: "import" });
     return { added, updated, skipped, errors: [] };
   }, [items, persist]);
 
@@ -1063,7 +1120,8 @@ export default function InventoryPage() {
 
       {/* ── Modals (shared) ── */}
       {showAdd    && <AddModal    onClose={() => setShowAdd(false)}    onAdd={(item) => persist([item, ...items])} items={items} />}
-      {editItem   && <EditModal   item={editItem} onClose={() => setEditItem(null)} onSave={(updated) => persist(items.map((i) => i.id === updated.id ? updated : i))} items={items} />}
+      {editItem   && <EditModal   item={editItem} onClose={() => setEditItem(null)} onSave={(updated, change) => persist(items.map((i) => i.id === updated.id ? updated : i), change)}
+        onShowHistory={() => { setUsageItem(editItem); setEditItem(null); }} items={items} />}
       {deleteItem && <DeleteModal item={deleteItem} onClose={() => setDeleteItem(null)} onDelete={() => persist(getStoredInventory().filter((i) => i.id !== deleteItem.id))} />}
       {showReminder && <ReminderModal alertItems={alertItems} onClose={() => setShowReminder(false)} />}
       {usageItem && <UsageModal item={usageItem} usage={usageFor(usage, usageItem.id)} services={services} onClose={() => setUsageItem(null)} />}

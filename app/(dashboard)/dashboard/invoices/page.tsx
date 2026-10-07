@@ -11,6 +11,7 @@ import {
 } from "@/lib/salon-invoices";
 import type { PaymentMethod } from "@/lib/types";
 import { getStoredAppointments, saveAppointments, getStoredClients, saveClients } from "@/lib/storage";
+import { returnToStock, settledConsumption } from "@/lib/inventory-consumption";
 import { settingsStore } from "@/lib/settings-store";
 import { syncFromDB } from "@/lib/turso-sync";
 import SalonInvoicePrint from "@/components/salon-invoice-print";
@@ -264,12 +265,18 @@ export default function InvoicesPage() {
       setTimeout(() => setResendNotice(null), 8000);
       return;
     }
+    // The sale is undone, so the products its services used go back on the
+    // shelf — measured while the invoice and its appointment still exist.
+    const linked = getStoredAppointments().filter((appt) => appt.id === invoice?.appointmentId && appt.status === "completed");
+    const usedUp = invoice ? settledConsumption([invoice], linked) : new Map<string, number>();
     deleteSalonInvoice(id);
+    returnToStock(usedUp, `Invoice ${invoice?.number ?? ""} deleted`.trim());
     if (invoice?.appointmentId) {
       const appointments = getStoredAppointments();
+      // completedAt cleared too: completing it again is a new use of products.
       const updatedAppointments = appointments.map((appt) =>
         appt.id === invoice.appointmentId && appt.status === "completed"
-          ? { ...appt, status: "booked" as const, totalAmount: 0 }
+          ? { ...appt, status: "booked" as const, totalAmount: 0, completedAt: undefined }
           : appt
       );
       saveAppointments(updatedAppointments);

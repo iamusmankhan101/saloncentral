@@ -32,7 +32,7 @@ const ALL_STATUSES = Object.keys(STATUS) as AppointmentStatus[];
 
 import { fmtCurrency as fmt } from "@/lib/format";
 import { TimeSelect } from "@/components/time-select";
-import { settleServiceConsumption } from "@/lib/inventory-consumption";
+import { returnToStock, settleServiceConsumption, settledConsumption } from "@/lib/inventory-consumption";
 
 function fmtDate(s: string) {
   const [y, m, d] = s.split("-").map(Number);
@@ -2041,6 +2041,12 @@ export default function AppointmentsPage() {
     const deletedIds = new Set(checkedIds);
     purgeQueuedAppointmentMessages(deletedIds);
     const linkedInvoices = getSalonInvoices().filter((invoice) => invoice.appointmentId && deletedIds.has(invoice.appointmentId));
+    // Asked rather than assumed: deleting a mistaken visit should put its
+    // products back, but clearing out old history must not refill the shelf.
+    const usedUp = settledConsumption(linkedInvoices, appointments.filter((a) => deletedIds.has(a.id)));
+    if (usedUp.size > 0 && window.confirm("Put the products these appointments used back into stock?\n\nOK = yes, they weren't really used.\nCancel = no, keep stock as it is.")) {
+      returnToStock(usedUp, `${deletedIds.size} appointment${deletedIds.size > 1 ? "s" : ""} deleted`);
+    }
     if (linkedInvoices.length > 0) {
       // Tombstone them, or the shorter list below is undone by the next sync —
       // see lib/deleted-records.ts.

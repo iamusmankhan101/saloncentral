@@ -3,6 +3,7 @@ import type { Appointment, Client, Staff, Service, InventoryItem } from "./types
 import { persistEntity, DATA_SYNCED_EVENT } from "./turso-sync";
 import { userKey } from "./auth";
 import { getActiveLocationFilter, locationUserKey } from "./locations";
+import { logStockChanges, type StockChange } from "./inventory-log";
 
 const SCHEMA_VERSION = "v6";
 
@@ -155,9 +156,11 @@ export function getStoredInventory(): InventoryItem[] {
   return JSON.parse(saved);
 }
 
-export function saveInventory(items: InventoryItem[]) {
+/** @param change why stock moved, for the stock history; omit for service consumption, which is derived instead. */
+export function saveInventory(items: InventoryItem[], change?: StockChange) {
   if (typeof window !== "undefined") {
     checkSchema();
+    if (change) logStockChanges(getStoredInventory(), items, change);
     persistEntity("inventory", items);
   }
 }

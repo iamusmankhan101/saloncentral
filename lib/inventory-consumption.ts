@@ -16,8 +16,9 @@
 
 import { getStoredAppointments, getStoredInventory, getStoredServices, saveInventory } from "./storage";
 import { getSalonInvoices } from "./salon-invoices";
-import { itemsWithServiceRates, unitsConsumedSince } from "./inventory-usage";
-import type { InventoryItem } from "./types";
+import { consumptionHistory, itemsWithServiceRates, unitsConsumedSince } from "./inventory-usage";
+import type { SalonInvoice } from "./salon-invoices";
+import type { Appointment, InventoryItem } from "./types";
 
 /** Stock is kept to 4 decimals, so 15 g off a kg-stocked item (0.015) isn't rounded away. */
 const round4 = (n: number) => Math.round(n * 10_000) / 10_000;
@@ -57,4 +58,36 @@ export function settleServiceConsumption(): number {
   });
   if (changed) saveInventory(next);
   return changed;
+}
+
+/**
+ * What these sales/appointments have already taken off stock, per item — for
+ * putting it back when they are deleted or un-completed. Call it while they
+ * still exist. Only settled amounts count (performed before the item's
+ * stockCountedAt); anything not yet settled simply never gets deducted once
+ * the records are gone. Pass a linked appointment along with its invoice so
+ * the pair is counted once, at the time it was really deducted.
+ */
+export function settledConsumption(invoices: SalonInvoice[], appointments: Appointment[]): Map<string, number> {
+  const out = new Map<string, number>();
+  if (typeof window === "undefined" || (!invoices.length && !appointments.length)) return out;
+  const services = getStoredServices();
+  for (const item of getStoredInventory()) {
+    const mark = Date.parse(item.stockCountedAt ?? "");
+    if (!mark) continue;
+    const qty = consumptionHistory(invoices, appointments, services, item)
+      .filter((e) => e.at <= mark)
+      .reduce((sum, e) => sum + e.qty, 0);
+    if (qty > 0) out.set(item.id, round4(qty));
+  }
+  return out;
+}
+
+/** Adds `amounts` (from settledConsumption) back onto stock, logged as returned. */
+export function returnToStock(amounts: Map<string, number>, note: string): void {
+  if (!amounts.size) return;
+  saveInventory(getStoredInventory().map((item) => {
+    const qty = amounts.get(item.id);
+    return qty ? { ...item, currentStock: round4(item.currentStock + qty) } : item;
+  }), { reason: "returned", note });
 }

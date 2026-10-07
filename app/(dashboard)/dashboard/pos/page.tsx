@@ -767,11 +767,11 @@ export default function POSPage() {
           // days stay booked until they happen.
           ? freshAppointments.map(a =>
               !advanceOnly && checkoutGroupIds.includes(a.id) && a.date <= today && a.status !== "cancelled" && a.status !== "no-show"
-                ? { ...a, status: "completed" as const }
+                ? { ...a, status: "completed" as const, completedAt: a.completedAt ?? new Date().toISOString() }
                 : a)
           : freshAppointments.map(a =>
               a.id === checkoutAppointmentId
-                ? advanceOnly ? { ...a, totalAmount: total } : { ...a, status: "completed" as const, totalAmount: total }
+                ? advanceOnly ? { ...a, totalAmount: total } : { ...a, status: "completed" as const, completedAt: a.completedAt ?? new Date().toISOString(), totalAmount: total }
                 : a
             );
         saveAppointments(updatedAppointments);
@@ -787,7 +787,7 @@ export default function POSPage() {
           return sold ? { ...item, currentStock: Math.max(0, item.currentStock - sold.qty) } : item;
         });
         setInventory(updated);
-        saveInventory(updated);
+        saveInventory(updated, { reason: "sold" });
       }
 
       // Read fresh from localStorage so we never map over stale React state.
