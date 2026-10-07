@@ -56,10 +56,25 @@ interface AttendanceSettings {
   weeklyOffDays?: number[];
   peakDays?: number[];
   peakDayMultiplier?: number;
+  latesPerAbsent?: number;
+  unmarkedAsAbsent?: boolean;
 }
 
 function attendanceSettings(): AttendanceSettings {
   return (settingsStore.attendance as AttendanceSettings | undefined) ?? {};
+}
+
+/** Every how many lates count as one absence; 0 when the rule is off. */
+export function latesPerAbsent(): number {
+  const n = Number(attendanceSettings().latesPerAbsent);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 0;
+}
+
+/** Whether the salon's Business Hours have it closed on YYYY-MM-DD's weekday. */
+function salonClosedOn(date: string): boolean {
+  const weekday = new Date(date + "T12:00:00").toLocaleDateString("en-US", { weekday: "long" });
+  const hours = settingsStore.hours as { day: string; open: boolean }[] | undefined;
+  return hours?.find((h) => h.day === weekday)?.open === false;
 }
 
 /** Which weekdays are charged double, and by how much. */
@@ -231,6 +246,10 @@ export interface AttendanceSummary {
   leaveRemaining: number;
   /** Leave days taken beyond the allowance — the unpaid ones. */
   leaveOverBy: number;
+  /** Of the `late` count, how many were paid as absences under latesPerAbsent(). */
+  latesAsAbsent: number;
+  /** Working days nobody marked, paid as absences (Settings: unmarkedAsAbsent). Not in `absent`. */
+  unmarkedAbsent: number;
   /** Days explicitly marked as a weekly off. Excluded from markedDays. */
   weekOff: number;
   /** Extra days the peak-day rule charged on top of the raw day counts. */
@@ -338,9 +357,14 @@ export function getAttendanceSummary(
   standardHours = DEFAULT_STANDARD_HOURS,
   staff?: StaffLike,
 ): AttendanceSummary {
-  const inRange = (records ?? getAttendance()).filter((r) => r.staffId === staffId && r.date >= start && r.date <= end);
+  // Date order, so "every 3rd late" picks the same days every time.
+  const all = records ?? getAttendance();
+  const inRange = all
+    .filter((r) => r.staffId === staffId && r.date >= start && r.date <= end)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const lateRule = latesPerAbsent();
   const summary: AttendanceSummary = {
-    present: 0, absent: 0, late: 0, halfDay: 0, leave: 0, paidLeave: 0,
+    present: 0, absent: 0, late: 0, halfDay: 0, leave: 0, paidLeave: 0, latesAsAbsent: 0, unmarkedAbsent: 0,
     leaveAllowance: paidLeaveAllowance, leaveRemaining: paidLeaveAllowance, leaveOverBy: 0,
     weekOff: 0, peakExtraDays: 0,
     scheduledOffDays: staff === undefined ? 0 : countScheduledOffDays(staff, start, end),
@@ -378,6 +402,12 @@ export function getAttendanceSummary(
       else if (r.status === "late") summary.late++;
       else if (r.status === "half-day") summary.halfDay++;
 
+      // Every Nth late is paid as an absence: no credit, whatever was clocked.
+      if (r.status === "late" && lateRule > 0 && summary.late % lateRule === 0) {
+        summary.latesAsAbsent++;
+        continue;
+      }
+
       // A day with both times clocked is measured, not assumed: credit becomes
       // the fraction of a standard day actually worked. Absent days are skipped
       // — a stray pair of times on a day marked absent shouldn't pay out.
@@ -391,6 +421,25 @@ export function getAttendanceSummary(
         credit += Math.min(1, worked / perDay);
       } else {
         credit += CREDIT_WEIGHT[r.status];
+      }
+    }
+  }
+  // Unmarked working days as absences. Only from this person's first record
+  // ever — before it they weren't on the register (new joiner, or the salon
+  // hadn't started using it) — and only up to yesterday, since today can still
+  // be marked. Weekly offs and days the salon is closed aren't working days.
+  if (attendanceSettings().unmarkedAsAbsent) {
+    const first = all.reduce<string | null>((min, r) => r.staffId === staffId && (!min || r.date < min) ? r.date : min, null);
+    const today = new Date().toLocaleDateString("en-CA");
+    const marked = new Set(inRange.map((r) => r.date));
+    if (first) {
+      const day = new Date((first > start ? first : start) + "T12:00:00");
+      for (let date = day.toLocaleDateString("en-CA"); date <= end && date < today; day.setDate(day.getDate() + 1), date = day.toLocaleDateString("en-CA")) {
+        if (marked.has(date) || isWeeklyOff(staff, date) || salonClosedOn(date)) continue;
+        const weight = dayWeightFor(date);
+        summary.unmarkedAbsent++;
+        summary.markedDays += weight;
+        summary.peakExtraDays += weight - 1;
       }
     }
   }

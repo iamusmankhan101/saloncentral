@@ -579,6 +579,10 @@ function BusinessHours() {
   });
   const [peakMultiplier, setPeakMultiplier] = useState(() =>
     String((settingsStore.attendance as { peakDayMultiplier?: number } | undefined)?.peakDayMultiplier ?? DEFAULT_PEAK_DAY_MULTIPLIER));
+  const [lateRule, setLateRule] = useState(() =>
+    String((settingsStore.attendance as { latesPerAbsent?: number } | undefined)?.latesPerAbsent ?? 0));
+  const [unmarkedAbsent, setUnmarkedAbsent] = useState(() =>
+    Boolean((settingsStore.attendance as { unmarkedAsAbsent?: boolean } | undefined)?.unmarkedAsAbsent));
   const [saved, setSaved] = useState(false);
 
   const togglePeakDay = (day: number) =>
@@ -596,7 +600,7 @@ function BusinessHours() {
     const parsed = Number(standardHours);
     const attendance = settingsStore.attendance as {
       standardHoursPerDay: number; leavesPerMonth: number; weeklyOffDays: number[];
-      peakDays: number[]; peakDayMultiplier: number;
+      peakDays: number[]; peakDayMultiplier: number; latesPerAbsent: number; unmarkedAsAbsent: boolean;
     };
     attendance.standardHoursPerDay = Number.isFinite(parsed) && parsed > 0 ? parsed : 8;
     const leaves = Number(leavesPerMonth);
@@ -607,6 +611,9 @@ function BusinessHours() {
     attendance.peakDays = [...peakDays].sort();
     const multiplier = Number(peakMultiplier);
     attendance.peakDayMultiplier = Number.isFinite(multiplier) && multiplier >= 1 ? multiplier : DEFAULT_PEAK_DAY_MULTIPLIER;
+    const lates = Number(lateRule);
+    attendance.latesPerAbsent = Number.isFinite(lates) && lates >= 1 ? Math.floor(lates) : 0;
+    attendance.unmarkedAsAbsent = unmarkedAbsent;
     saveSettings();
     setSaved(true);
     window.setTimeout(() => setSaved(false), 2200);
@@ -687,6 +694,37 @@ function BusinessHours() {
         <div style={{ fontSize: 11.5, color: "#9999b0", marginTop: 8, lineHeight: 1.6 }}>
           The default for staff with no figure of their own. Leave days within the allowance are paid in full;
           anything beyond it is unpaid. Set it per person on the Attendance register or their Staff record.
+        </div>
+      </div>
+
+      <div style={{ marginTop: 16, padding: "16px 18px", background: "#fafafd", border: "1px solid #eeeeF6", borderRadius: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "#242438" }}>Unmarked Days Count as Absent</div>
+          <Toggle value={unmarkedAbsent} onChange={() => setUnmarkedAbsent((v) => !v)} />
+        </div>
+        <div style={{ fontSize: 11.5, color: "#9999b0", marginTop: 8, lineHeight: 1.6 }}>
+          {unmarkedAbsent
+            ? "On — a working day with nothing marked on the Attendance register is paid as an absence in Payouts. Weekly offs and days the salon is closed are skipped, and counting starts from each person's first attendance entry."
+            : "Off — days nobody marked are simply left out of the pay calculation."}
+        </div>
+      </div>
+
+      <div style={{ marginTop: 16, padding: "16px 18px", background: "#fafafd", border: "1px solid #eeeeF6", borderRadius: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: "#242438", marginBottom: 6 }}>Lates Count as Absent</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 12, color: "#9999b0" }}>Every</span>
+          <input
+            type="number" min="0" step="1"
+            style={{ ...inputStyle, width: 90 }}
+            value={lateRule}
+            onChange={(event) => setLateRule(event.target.value)}
+          />
+          <span style={{ fontSize: 12, color: "#9999b0" }}>lates count as 1 absent</span>
+        </div>
+        <div style={{ fontSize: 11.5, color: "#9999b0", marginTop: 8, lineHeight: 1.6 }}>
+          {Number(lateRule) >= 1
+            ? `Each pay period, every ${Math.floor(Number(lateRule))} late days cost one day's pay in Payouts — e.g. ${Math.floor(Number(lateRule)) * 2 + 1} lates means ${2} days unpaid.`
+            : "Off — being late never reduces pay. Set e.g. 3 so every 3 lates cost one day's pay."}
         </div>
       </div>
 

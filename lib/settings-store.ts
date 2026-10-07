@@ -116,6 +116,11 @@ const defaults = {
     // rule off without clearing the day list.
     peakDays: [0, 6],
     peakDayMultiplier: 2,
+    // Every Nth late in a pay period is paid as an absence. 0 = lates never cost pay.
+    latesPerAbsent: 0,
+    // Working days nobody marked are paid as absences. Off by default: a salon
+    // that doesn't keep the register would otherwise pay everyone nothing.
+    unmarkedAsAbsent: false,
   },
   notifications: {
     apptReminder: true,

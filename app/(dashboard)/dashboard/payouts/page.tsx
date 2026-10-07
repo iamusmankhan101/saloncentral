@@ -95,8 +95,9 @@ function ProcessPayoutModal({ staff, appointments, services, payouts, onClose, o
       staff.id, form.periodStart, form.periodEnd, undefined,
       leaveAllowanceFor({ paidLeavesPerMonth: staff.paidLeavesPerMonth }),
       standardHoursFor({ standardHoursPerDay: staff.standardHoursPerDay }),
+      { weeklyOffDays: staff.weeklyOffDays },
     ),
-    [staff.id, form.periodStart, form.periodEnd, staff.paidLeavesPerMonth, staff.standardHoursPerDay],
+    [staff.id, form.periodStart, form.periodEnd, staff.paidLeavesPerMonth, staff.standardHoursPerDay, staff.weeklyOffDays],
   );
   const proratedSalary = attendance.markedDays > 0 ? Math.round(salaryAmount * attendance.creditFactor) : salaryAmount;
 
@@ -264,6 +265,8 @@ function ProcessPayoutModal({ staff, appointments, services, payouts, onClose, o
                   <>
                     <div style={{ fontSize: 12, color: "#6b6b8a" }}>
                       {attendance.present} present · {attendance.late} late · {attendance.halfDay} half-day · {attendance.absent} absent · {attendance.leave} leave
+                      {attendance.unmarkedAbsent > 0 && <span style={{ color: "#dc2626", fontWeight: 700 }}> · {attendance.unmarkedAbsent} unmarked day{attendance.unmarkedAbsent === 1 ? "" : "s"} counted as absent</span>}
+                      {attendance.latesAsAbsent > 0 && <span style={{ color: "#dc2626", fontWeight: 700 }}> · {attendance.latesAsAbsent} late{attendance.latesAsAbsent === 1 ? "" : "s"} counted as absent</span>}
                       {attendance.leave > 0 && <span style={{ color: "#b0b0c8" }}> ({attendance.paidLeave} paid{attendance.leaveAllowance ? ` of ${attendance.leaveAllowance} allowed` : ""})</span>}
                       <span style={{ color: "#b0b0c8" }}> · {attendance.markedDays} day{attendance.markedDays === 1 ? "" : "s"} marked</span>
                     </div>
@@ -567,7 +570,7 @@ export default function PayoutsPage() {
             const lastEnd = lastPayoutEnd(s.id, payouts);
             const periodStart = lastEnd ? addDays(lastEnd, 1) : startOfMonth();
             const revenue = revenueInPeriod(s, appointments, services, periodStart, todayStr(), invoices);
-            const estAttendance = getAttendanceSummary(s.id, periodStart, todayStr(), undefined, leaveAllowanceFor(s), standardHoursFor(s));
+            const estAttendance = getAttendanceSummary(s.id, periodStart, todayStr(), undefined, leaveAllowanceFor(s), standardHoursFor(s), s);
             const estSalary = estAttendance.markedDays > 0 ? Math.round((s.baseSalary ?? 0) * estAttendance.creditFactor) : (s.baseSalary ?? 0);
             const estUpsell = upsellIncentive(
               upsellInPeriod(s, invoices, appointments, services, periodStart, todayStr()).value,
