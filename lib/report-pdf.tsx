@@ -21,12 +21,24 @@ export interface DailyReportData {
   ownerName: string;
   date: string;                // YYYY-MM-DD
   invoices: ReportInvoice[];
+  /** Day book for `date` — same rules as the Revenue page's Ledger tab. */
+  ledger?: {
+    opening: number;
+    totalIn: number;
+    totalOut: number;
+    rows: { description: string; detail: string; moneyIn: number; moneyOut: number }[];
+  };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function pkr(n: number) {
   return "PKR " + Math.round(n).toLocaleString("en-PK");
+}
+
+// Plain "-": the built-in Helvetica has no U+2212 minus glyph.
+function signedPkr(n: number) {
+  return (n < 0 ? "-" : "") + pkr(Math.abs(n));
 }
 
 function fmtDate(d: string) {
@@ -152,7 +164,7 @@ function StatCard({ label, value, sub, color }: { label: string; value: string; 
 // ─── Main PDF Document ────────────────────────────────────────────────────────
 
 function DailyReportPDF({ data }: { data: DailyReportData }) {
-  const { salonName, ownerName, date, invoices } = data;
+  const { salonName, ownerName, date, invoices, ledger } = data;
 
   const paid     = invoices.filter((i) => i.status === "paid");
   const unpaid   = invoices.filter((i) => i.status === "unpaid");
@@ -345,6 +357,52 @@ function DailyReportPDF({ data }: { data: DailyReportData }) {
               </View>
             </View>
           )}
+
+          {/* Ledger (day book) */}
+          {ledger && (() => {
+            let balance = ledger.opening;
+            const closing = ledger.opening + ledger.totalIn - ledger.totalOut;
+            const totalRow = (label: string, value: string, color: string) => (
+              <View style={[s.tableRow, { backgroundColor: "#f5f3ff" }]} wrap={false}>
+                <Text style={[s.tableCellBold, { flex: 4 }]}>{label}</Text>
+                <Text style={[s.tableCellBold, { flex: 2, textAlign: "right", color }]}>{value}</Text>
+              </View>
+            );
+            return (
+              // Own page: react-pdf otherwise strands the heading at the foot of page 1
+              <View break>
+                <SectionHead title="Ledger · Day Book" />
+                <View style={s.table}>
+                  <View style={s.tableHeaderRow}>
+                    <Text style={[s.tableHeaderCell, { flex: 4 }]}>Entry</Text>
+                    <Text style={[s.tableHeaderCell, { flex: 1.5, textAlign: "right" }]}>Money In</Text>
+                    <Text style={[s.tableHeaderCell, { flex: 1.5, textAlign: "right" }]}>Money Out</Text>
+                    <Text style={[s.tableHeaderCell, { flex: 1.8, textAlign: "right" }]}>Balance</Text>
+                  </View>
+                  {totalRow("Opening balance", signedPkr(ledger.opening), "#6b6b8a")}
+                  {ledger.rows.length === 0 && (
+                    <View style={s.tableRow}><Text style={[s.tableCell, { flex: 1, textAlign: "center" }]}>No entries today</Text></View>
+                  )}
+                  {ledger.rows.map((r, i) => {
+                    balance += r.moneyIn - r.moneyOut;
+                    return (
+                      <View key={i} style={i % 2 === 0 ? s.tableRow : s.tableRowAlt} wrap={false}>
+                        <View style={{ flex: 4, padding: "6 10" }}>
+                          <Text style={{ fontSize: 9, fontFamily: "Helvetica-Bold" }}>{r.description}</Text>
+                          <Text style={{ fontSize: 7, color: "#9898b0", marginTop: 1, textTransform: "capitalize" }}>{r.detail}</Text>
+                        </View>
+                        <Text style={[s.tableCellGreen, { flex: 1.5, textAlign: "right" }]}>{r.moneyIn ? pkr(r.moneyIn) : ""}</Text>
+                        <Text style={[s.tableCellBold, { flex: 1.5, textAlign: "right", color: "#dc2626" }]}>{r.moneyOut ? pkr(r.moneyOut) : ""}</Text>
+                        <Text style={[s.tableCell, { flex: 1.8, textAlign: "right" }]}>{signedPkr(balance)}</Text>
+                      </View>
+                    );
+                  })}
+                  {totalRow(`Today: ${pkr(ledger.totalIn)} in · ${pkr(ledger.totalOut)} out`, signedPkr(ledger.totalIn - ledger.totalOut), "#1a1a2e")}
+                  {totalRow("Closing balance", signedPkr(closing), closing >= 0 ? "#7C3AED" : "#dc2626")}
+                </View>
+              </View>
+            );
+          })()}
         </View>
 
         {/* Footer */}

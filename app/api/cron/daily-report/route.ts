@@ -48,6 +48,31 @@ interface SalonInvoice {
   source?: "pos" | "manual";
 }
 
+interface Appointment {
+  id: string;
+  date: string;
+  startTime?: string;
+  status: string;
+  clientName?: string;
+  serviceNames?: string[];
+  totalAmount: number;
+}
+
+interface CashEntry {
+  id: string;
+  date: string;
+  createdAt?: string;
+  category?: string;
+  description?: string;
+  amount: number;
+  paymentMethod?: string;
+  paymentStatus?: "paid" | "pending";
+}
+
+interface LedgerRow { sortKey: string; date: string; description: string; detail: string; moneyIn: number; moneyOut: number }
+
+interface Ledger { opening: number; rows: LedgerRow[]; totalIn: number; totalOut: number }
+
 interface SalonSettings {
   salon?: {
     name?: string;
@@ -72,7 +97,75 @@ async function getSalonData<T>(userId: string, entity: string): Promise<T | null
   }
 }
 
+/** Ids tombstoned as deleted (lib/deleted-records.ts) — the raw rows still hold them until the next dashboard read. */
+async function getDeletedIds(userId: string): Promise<Set<string>> {
+  const rows = await getSalonData<{ id?: string; entity?: string }[]>(userId, "deleted_records");
+  return new Set((Array.isArray(rows) ? rows : []).map((r) => `${r.entity}:${r.id}`));
+}
+
+// ─── Ledger (day book) ────────────────────────────────────────────────────────
+
+/**
+ * Same sources and rules as the Revenue page's Ledger tab: completed
+ * appointments without a POS checkout, paid POS invoices, imported income
+ * (minus petty cash), and every expense that isn't still pending.
+ */
+function buildLedger(
+  date: string,
+  posInvoices: SalonInvoice[],
+  appointments: Appointment[],
+  income: CashEntry[],
+  expenses: CashEntry[],
+): Ledger {
+  const linked = new Set(posInvoices.map((inv) => (inv as { appointmentId?: string }).appointmentId).filter(Boolean));
+  const time = (iso?: string) => (iso ?? "").slice(11, 16) || "00:00";
+  const all: LedgerRow[] = [
+    ...appointments
+      .filter((a) => a.status === "completed" && !linked.has(a.id))
+      .map((a) => ({ sortKey: a.date + "T" + (a.startTime || "00:00"), date: a.date,
+        description: a.clientName || "Appointment", detail: a.serviceNames?.join(", ") || "Appointment",
+        moneyIn: a.totalAmount || 0, moneyOut: 0 })),
+    ...posInvoices
+      .filter((inv) => inv.status === "paid")
+      .map((inv) => ({ sortKey: inv.date + "T" + time((inv as { createdAt?: string }).createdAt), date: inv.date,
+        description: inv.clientName || "POS Sale", detail: `POS · ${METHOD_LABELS[inv.paymentMethod] ?? inv.paymentMethod ?? "Cash"}`,
+        moneyIn: inv.total || 0, moneyOut: 0 })),
+    ...income
+      .filter((e) => e.category !== "Petty Cash")
+      .map((e) => ({ sortKey: e.date + "T" + time(e.createdAt), date: e.date,
+        description: e.description || "Income", detail: e.category || "Imported income",
+        moneyIn: e.amount || 0, moneyOut: 0 })),
+    ...expenses
+      .filter((e) => e.paymentStatus !== "pending")
+      .map((e) => {
+        const category = (e.category ?? "other").replace(/_/g, " ");
+        return { sortKey: e.date + "T" + time(e.createdAt), date: e.date,
+          description: e.description || category, detail: `${category} · ${METHOD_LABELS[e.paymentMethod ?? "cash"] ?? e.paymentMethod}`,
+          moneyIn: 0, moneyOut: e.amount || 0 };
+      }),
+  ].sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+
+  let opening = 0, totalIn = 0, totalOut = 0;
+  const rows: LedgerRow[] = [];
+  for (const row of all) {
+    if (row.date > date) break;
+    if (row.date < date) { opening += row.moneyIn - row.moneyOut; continue; }
+    totalIn += row.moneyIn; totalOut += row.moneyOut;
+    rows.push(row);
+  }
+  return { opening, rows, totalIn, totalOut };
+}
+
 // ─── Formatting ───────────────────────────────────────────────────────────────
+
+function esc(s: string) {
+  return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+}
+
+function signedPkr(n: number) {
+  return (n < 0 ? "−" : "") + pkr(Math.abs(n));
+}
+
 
 function pkr(n: number) {
   return "PKR " + Math.round(n).toLocaleString("en-PK");
@@ -96,6 +189,7 @@ function buildReportEmail(
   salonName: string,
   date: string,
   invoices: SalonInvoice[],
+  ledger: Ledger,
 ): { subject: string; html: string; text: string } {
   const paid   = invoices.filter((i) => i.status === "paid");
   const unpaid = invoices.filter((i) => i.status === "unpaid");
@@ -191,6 +285,29 @@ function buildReportEmail(
       ${title}
     </div>`;
 
+  const closing = ledger.opening + ledger.totalIn - ledger.totalOut;
+  const ledgerRowsHtml = ledger.rows.map((r, i) => `
+    <tr style="background:${i % 2 === 1 ? "#fafafa" : "#fff"}">
+      <td style="padding:9px 12px;font-size:13px;color:#1a1a2e;font-weight:600;border-bottom:1px solid #f4f4f8">${esc(r.description)}<div style="font-size:11px;color:#9898b0;font-weight:400;text-transform:capitalize">${esc(r.detail)}</div></td>
+      <td style="padding:9px 12px;font-size:13px;color:#059669;font-weight:700;text-align:right;border-bottom:1px solid #f4f4f8">${r.moneyIn ? pkr(r.moneyIn) : ""}</td>
+      <td style="padding:9px 12px;font-size:13px;color:#dc2626;font-weight:700;text-align:right;border-bottom:1px solid #f4f4f8">${r.moneyOut ? pkr(r.moneyOut) : ""}</td>
+    </tr>`)
+    .join("");
+  const ledgerTotalRow = (label: string, value: string, color: string) => `
+    <tr style="background:#f8f8fc">
+      <td style="padding:9px 12px;font-size:12px;font-weight:800;color:#4a4a6a;border-bottom:1px solid #f4f4f8">${label}</td>
+      <td colspan="2" style="padding:9px 12px;font-size:13px;font-weight:900;color:${color};text-align:right;border-bottom:1px solid #f4f4f8">${value}</td>
+    </tr>`;
+  const ledgerHtml = `
+      ${sectionHead("Ledger · Day Book")}
+      <table style="width:100%;border-collapse:collapse;border-radius:10px;overflow:hidden;border:1px solid #ebebf0">
+        ${tableHeader(["Entry", "Money In", "Money Out"])}
+        ${ledgerTotalRow("Opening balance", signedPkr(ledger.opening), "#6b6b8a")}
+        ${ledgerRowsHtml || `<tr><td colspan="3" style="padding:12px;font-size:13px;color:#9898b0;text-align:center">No entries today</td></tr>`}
+        ${ledgerTotalRow(`Today: ${pkr(ledger.totalIn)} in · ${pkr(ledger.totalOut)} out`, "", "#1a1a2e")}
+        ${ledgerTotalRow("Closing balance", signedPkr(closing), closing >= 0 ? "#7C3AED" : "#dc2626")}
+      </table>`;
+
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -263,6 +380,8 @@ function buildReportEmail(
       </div>
       `}
 
+      ${ledgerHtml}
+
       <p style="color:#9898b0;font-size:12px;line-height:1.7;margin:24px 0 0;padding-top:20px;border-top:1px solid #f0f0f8">
         Hi ${ownerName}, this is your automated end-of-day summary. Log in to your <strong>Salon Central dashboard</strong> for full reports and analytics.
       </p>
@@ -276,13 +395,19 @@ function buildReportEmail(
 </body>
 </html>`;
 
+  const ledgerText =
+    `Ledger (Day Book):\n  Opening balance: ${signedPkr(ledger.opening)}\n` +
+    ledger.rows.map((r) => `  • ${r.description} (${r.detail}): ${r.moneyIn ? `+${pkr(r.moneyIn)}` : `-${pkr(r.moneyOut)}`}`).join("\n") +
+    (ledger.rows.length ? "\n" : "") +
+    `  Money in: ${pkr(ledger.totalIn)} · Money out: ${pkr(ledger.totalOut)}\n  Closing balance: ${signedPkr(closing)}\n\n`;
+
   const text = hasData
     ? `Daily Sales Report — ${salonName}\n${fmtDate(date)}\n\n` +
       `Transactions: ${paid.length} (${unpaid.length} unpaid)\n` +
       `Revenue: ${pkr(revenue)}\nOutstanding: ${pkr(outstanding)}\nAvg Ticket: ${pkr(avgTicket)}\n\n` +
       `Top Items:\n${topItems.map(([n, d]) => `  • ${n}: ${d.qty}× — ${pkr(d.revenue)}`).join("\n")}\n\n` +
-      `— Salon Central`
-    : `Daily Sales Report — ${salonName}\n${fmtDate(date)}\n\nNo POS transactions recorded today.\n\n— Salon Central`;
+      ledgerText + `— Salon Central`
+    : `Daily Sales Report — ${salonName}\n${fmtDate(date)}\n\nNo POS transactions recorded today.\n\n` + ledgerText + `— Salon Central`;
 
   return { subject, html, text };
 }
@@ -309,10 +434,18 @@ export async function GET(req: NextRequest) {
   for (const user of users) {
     if (user.suspended) { skipped++; continue; }
 
-    // Load today's POS invoices from Turso
-    const allInvoices = await getSalonData<SalonInvoice[]>(user.id, "salon_invoices");
-    const invoices = (allInvoices ?? []).filter(
-      (inv) => inv.date === today && (!inv.source || inv.source === "pos"),
+    // Load POS invoices and the other ledger sources from Turso, minus anything deleted
+    const deleted = await getDeletedIds(user.id);
+    const load = async <T extends { id: string }>(entity: string) =>
+      ((await getSalonData<T[]>(user.id, entity)) ?? []).filter((r) => !deleted.has(`${entity}:${r.id}`));
+    const posInvoices = (await load<SalonInvoice>("salon_invoices")).filter((inv) => !inv.source || inv.source === "pos");
+    const invoices = posInvoices.filter((inv) => inv.date === today);
+    const ledger = buildLedger(
+      today,
+      posInvoices,
+      await load<Appointment>("appointments"),
+      await load<CashEntry>("cash_flow_income"),
+      await load<CashEntry>("expenses"),
     );
 
     // Load settings for possible custom salon name
@@ -322,12 +455,12 @@ export async function GET(req: NextRequest) {
     // Determine recipient: prefer settings email, fall back to billing email
     const toEmail = settings?.salon?.email || user.email;
 
-    const { subject, html, text } = buildReportEmail(user.ownerName, salonName, today, invoices);
+    const { subject, html, text } = buildReportEmail(user.ownerName, salonName, today, invoices, ledger);
 
     // Generate PDF attachment
     let pdfBuffer: Buffer | undefined;
     try {
-      pdfBuffer = await generateDailyReportPdf({ salonName, ownerName: user.ownerName, date: today, invoices });
+      pdfBuffer = await generateDailyReportPdf({ salonName, ownerName: user.ownerName, date: today, invoices, ledger });
     } catch (e) {
       console.error(`[daily-report] PDF generation failed for ${user.email}:`, e);
     }
