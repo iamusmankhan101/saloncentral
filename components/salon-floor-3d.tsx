@@ -25,6 +25,8 @@ export interface RosterPerson {
   spot: Spot;
   /** Stylist with a client in their chair — plays the cutting animation. */
   working?: boolean;
+  /** Name tag floating over the head (stylists: "Saba · Idle" / "Saba · Working"). */
+  label?: { text: string; busy: boolean };
   /** Emoji shown over the head until this time (ms). */
   bubble?: { text: string; until: number };
 }
@@ -231,6 +233,7 @@ interface Ent {
   leaving: boolean;
   working: boolean;
   bubble?: CSS2DObject;
+  tag?: HTMLDivElement;
 }
 
 export default function SalonFloor3D(props: Props) {
@@ -496,6 +499,16 @@ export default function SalonFloor3D(props: Props) {
         }
         e.spot = p.spot;
         e.working = !!p.working;
+        if (p.label) {
+          if (!e.tag) {
+            e.tag = chip("sf-name");
+            const o = new CSS2DObject(e.tag);
+            o.position.set(0, 2.05, 0);
+            e.rig.group.add(o);
+          }
+          if (e.tag.textContent !== p.label.text) e.tag.textContent = p.label.text;
+          e.tag.dataset.busy = String(p.label.busy);
+        }
         e.rig.bodyMat.color.set(p.color);
         if (p.bubble && p.bubble.until > Date.now() && !e.bubble) {
           const el = chip("sf-bubble");
@@ -623,6 +636,7 @@ export default function SalonFloor3D(props: Props) {
         if (e.leaving && !e.path.length) {
           scene.remove(e.rig.group);
           if (e.bubble) e.bubble.element.remove();
+          e.tag?.remove();
           ents.delete(e.id);
           continue;
         }
@@ -736,6 +750,10 @@ export default function SalonFloor3D(props: Props) {
         .sf-chip[data-tone=warn]{background:#f59e0b;color:#fff;border-color:#f59e0b}
         .sf-chip-dark{background:#0f172a;color:#fff;border-color:#0f172a}
         .sf-chip:empty{display:none}
+        .sf-name{padding:2px 8px;border-radius:999px;font:700 10px/1.4 -apple-system,Segoe UI,Helvetica,Arial,sans-serif;white-space:nowrap;background:rgba(255,255,255,.95);color:#475569;border:1px solid #e2e8f0;box-shadow:0 2px 8px rgba(15,23,42,.12)}
+        .sf-name::before{content:"";display:inline-block;width:6px;height:6px;border-radius:3px;background:#94a3b8;margin-right:5px;vertical-align:1px}
+        .sf-name[data-busy=true]{background:#0f172a;color:#fff;border-color:#0f172a}
+        .sf-name[data-busy=true]::before{background:#22c55e}
         .sf-bubble{font-size:20px;filter:drop-shadow(0 2px 3px rgba(0,0,0,.2))}
         .sf-pop{font:900 17px/1 -apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#16a34a;text-shadow:0 0 3px #fff,0 0 6px #fff}
       `}</style>

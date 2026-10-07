@@ -196,9 +196,10 @@ export default function SalonFloorPage() {
   const section = getActiveSection();
   const activeStaff = staff.filter((s) => s.isActive && inSection(s, section));
   const isOpen = openNow();
-  const staffState = (s: Staff) => busyStaff.has(s.id) ? "busy" : offToday.includes(s.id) ? "off" : isOpen ? "free" : "closed";
-  // On the floor: everyone working today while the salon is open; after hours only those still with a client.
-  const dutyStaff = activeStaff.filter((s) => { const st = staffState(s); return st === "busy" || st === "free"; });
+  // Working = with a client in a chair; Off = marked absent / leave / week off or clocked out; otherwise Idle.
+  const staffState = (s: Staff) => busyStaff.has(s.id) ? "busy" : offToday.includes(s.id) ? "off" : "idle";
+  // Every active stylist is on the floor, idle or working, unless they're off today.
+  const dutyStaff = activeStaff.filter((s) => staffState(s) !== "off");
   const progressOf = (a: Appointment) => (minute - toMin(a.startTime)) / Math.max(1, toMin(a.endTime) - toMin(a.startTime));
 
   const roster = useMemo<RosterPerson[]>(() => {
@@ -220,7 +221,7 @@ export default function SalonFloorPage() {
       const spot = busy && lead ? { type: "station" as const, index: busy.chair }
         : idle < freeChairs.length ? { type: "station" as const, index: freeChairs[idle++] }
         : { type: "spare" as const, index: idle++ - freeChairs.length };
-      people.push({ id: `staff:${s.id}`, kind: "staff", color: s.color || ACCENT, spot, working: !!busy && !!lead });
+      people.push({ id: `staff:${s.id}`, kind: "staff", color: s.color || ACCENT, spot, working: !!busy && !!lead, label: { text: `${firstName(s.name)} · ${busy ? "Working" : "Idle"}`, busy: !!busy } });
     }
     return people;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -465,7 +466,7 @@ export default function SalonFloorPage() {
                 <div key={s.id} style={{ display: "grid", gridTemplateColumns: "70px 1fr 64px", gap: 8, alignItems: "center", padding: "5px 0", fontSize: 12, cursor: b ? "pointer" : "default" }} onClick={() => b && pickChair(b.chair)}>
                   <b style={{ color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{firstName(s.name)}</b>
                   <span style={{ color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b ? `${b.appt.serviceNames[0] || "Service"} · ${firstName(b.appt.clientName)} · Chair ${b.chair + 1}` : `${appointments.filter((a) => appointmentStaffIds(a).includes(s.id) && (a.status === "booked" || a.status === "confirmed")).length} booked today`}</span>
-                  {b ? <Bar pct={progressOf(b.appt) * 100} color="#22c55e" /> : <span style={st === "free" ? chipStyle(GREEN.bg, GREEN.fg) : chipStyle(GREY.bg, GREY.fg)}>{st === "free" ? "Free" : st === "off" ? "Off" : "Closed"}</span>}
+                  {b ? <Bar pct={progressOf(b.appt) * 100} color="#22c55e" /> : <span style={st === "idle" ? chipStyle(GREEN.bg, GREEN.fg) : chipStyle(GREY.bg, GREY.fg)}>{st === "idle" ? "Idle" : "Off"}</span>}
                 </div>
               );
             })}
@@ -548,8 +549,8 @@ export default function SalonFloorPage() {
             return (
               <div key={s.id} className="sf-row" onClick={() => b && pickChair(b.chair)}>
                 <b style={{ color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</b>
-                <span style={{ color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b ? `● ${b.appt.clientName} · Chair ${b.chair + 1}` : st === "free" ? "Waiting for a client" : st === "off" ? "Off today" : "Salon closed"}</span>
-                <span style={b ? chipStyle(BLUE.bg, BLUE.fg) : st === "free" ? chipStyle(GREEN.bg, GREEN.fg) : chipStyle(GREY.bg, GREY.fg)}>{b ? "With client" : st === "free" ? "Free" : st === "off" ? "Off" : "Closed"}</span>
+                <span style={{ color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b ? `● ${b.appt.clientName} · Chair ${b.chair + 1}` : st === "idle" ? "Waiting for a client" : "Off today"}</span>
+                <span style={b ? chipStyle(BLUE.bg, BLUE.fg) : st === "idle" ? chipStyle(GREEN.bg, GREEN.fg) : chipStyle(GREY.bg, GREY.fg)}>{b ? "Working" : st === "idle" ? "Idle" : "Off"}</span>
                 <span style={{ width: 40 }}>{b ? <Bar pct={progressOf(b.appt) * 100} color="#22c55e" /> : null}</span>
               </div>
             );
