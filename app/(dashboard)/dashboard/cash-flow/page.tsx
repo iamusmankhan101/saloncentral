@@ -39,6 +39,7 @@ export const EXPENSE_CATEGORIES: { key: ExpenseCategory; label: string; color: s
   { key: "equipment",     label: "Equipment",           color: "#3b82f6" },
   { key: "marketing",     label: "Marketing",           color: "#8b5cf6" },
   { key: "food",          label: "Food & Tea",          color: "#ec4899" },
+  { key: "refunds",       label: "Refunds",             color: "#be123c" },
   { key: "miscellaneous", label: "Miscellaneous",       color: "#6b7280" },
 ];
 

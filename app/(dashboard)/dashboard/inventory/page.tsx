@@ -6,7 +6,8 @@ import { getSalonInvoices } from "@/lib/salon-invoices";
 import { computeInventoryUsage, consumptionHistory, itemsWithServiceRates, usageFor, type ItemUsage } from "@/lib/inventory-usage";
 import { checkLowStockAlerts } from "@/lib/whatsapp-scheduler";
 import { settingsStore } from "@/lib/settings-store";
-import type { InventoryItem, InventoryCategory, InventoryUnit, Service } from "@/lib/types";
+import type { InventoryBatch, InventoryItem, InventoryCategory, InventoryUnit, Service } from "@/lib/types";
+import { batchUsage, getTreatmentCharts, newId, todayKey } from "@/lib/clinic";
 import { getSectionOptions, getActiveSection, inSection, defaultSectionForNewRecord } from "@/lib/sections";
 import MobilePageHeader from "@/components/mobile-page-header";
 import PageTitle from "@/components/page-title";
@@ -27,7 +28,7 @@ const CATEGORY_CONFIG: Record<InventoryCategory, { label: string; color: string;
   "retail":      { label: "Retail",       color: "#6b7280", bg: "#f9fafb" },
 };
 
-const UNITS: InventoryUnit[]      = ["ml", "l", "g", "kg", "pcs", "pair", "box", "bottle", "tube"];
+const UNITS: InventoryUnit[]      = ["ml", "l", "g", "kg", "pcs", "units", "pair", "box", "bottle", "vial", "tube"];
 const CATEGORIES = Object.keys(CATEGORY_CONFIG) as InventoryCategory[];
 
 import { fmtCurrency as fmt } from "@/lib/format";
@@ -594,6 +595,7 @@ function AddModal({ onClose, onAdd, items }: { onClose: () => void; onAdd: (item
 // ── Edit Modal ────────────────────────────────────────────────────────────────
 function EditModal({ item, onClose, onSave, onShowHistory, items }: { item: InventoryItem; onClose: () => void; onSave: (updated: InventoryItem, change: StockChange) => void; onShowHistory: () => void; items: InventoryItem[] }) {
   const [form, setForm] = useState<ItemForm>(() => itemToForm(item));
+  const [batches, setBatches] = useState<InventoryBatch[]>(() => item.batches ?? []);
   const [saved, setSaved] = useState(false);
   const set = useCallback((k: keyof ItemForm, v: string | boolean) => setForm((f) => ({ ...f, [k]: v })), []);
   const canSubmit = form.name && form.brand && form.category && form.currentStock && form.minStock && form.costPrice && priceFieldsValid(form);
@@ -618,10 +620,11 @@ function EditModal({ item, onClose, onSave, onShowHistory, items }: { item: Inve
           View stock history →
         </button>
         <ItemFormFields form={form} set={set} items={items} original={item} />
+        <BatchesEditor item={item} batches={batches} onChange={setBatches} />
         <div style={{ display: "flex", gap: 10, paddingTop: 18, marginTop: 6, borderTop: "1px solid #f0f0f8" }}>
           <button onClick={onClose} style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid #e8e8f0", background: "#fff", fontSize: 13, fontWeight: 600, color: "#6b6b8a", cursor: "pointer" }}>Cancel</button>
           <button
-            onClick={() => { if (canSubmit) { onSave(formToItem(form, item), stockChange(form, item)); setSaved(true); } }}
+            onClick={() => { if (canSubmit) { onSave({ ...formToItem(form, item), batches: batches.filter((b) => b.number.trim()).length ? batches.filter((b) => b.number.trim()) : undefined }, stockChange(form, item)); setSaved(true); } }}
             style={{ flex: 2, padding: "11px 0", borderRadius: 10, border: "none", background: canSubmit ? "linear-gradient(135deg, #5B21B6, #9333EA)" : "#e8e8f0", fontSize: 13, fontWeight: 600, color: canSubmit ? "#fff" : "#b0b0c8", cursor: canSubmit ? "pointer" : "not-allowed" }}
           >
             Save Changes
@@ -629,6 +632,54 @@ function EditModal({ item, onClose, onSave, onShowHistory, items }: { item: Inve
         </div>
       </div>
     </Overlay>
+  );
+}
+
+// ── Batches / lots ────────────────────────────────────────────────────────────
+/**
+ * Lot numbers and expiry per delivery. What's left of each batch is counted
+ * from the treatment records that used it (lib/clinic.ts batchUsage), so it
+ * stays traceable to the patients who received it.
+ */
+function BatchesEditor({ item, batches, onChange }: { item: InventoryItem; batches: InventoryBatch[]; onChange: (b: InventoryBatch[]) => void }) {
+  const [used] = useState(() => batchUsage(getTreatmentCharts(), [item]));
+  // Which patients each batch went to — the point of tracking lots.
+  const [patients] = useState(() => {
+    const m = new Map<string, Set<string>>();
+    for (const c of getTreatmentCharts()) for (const p of c.products) if (p.batchId) m.set(p.batchId, (m.get(p.batchId) ?? new Set()).add(c.clientId));
+    return m;
+  });
+  const today = todayKey();
+  const set = (id: string, patch: Partial<InventoryBatch>) => onChange(batches.map((b) => b.id === id ? { ...b, ...patch } : b));
+  const cell: React.CSSProperties = { ...INP, padding: "7px 9px", fontSize: 12 };
+  return (
+    <div style={{ marginTop: 16, padding: "12px 14px", borderRadius: 12, border: "1px solid #ececf4", background: "#fafafd" }}>
+      <div style={{ fontSize: 12, fontWeight: 800, color: "#1a1a2e", marginBottom: 4 }}>Batches / lots</div>
+      <div style={{ fontSize: 11, color: "#9898b0", marginBottom: 10, lineHeight: 1.5 }}>
+        Record each delivery&rsquo;s lot number and expiry. Treatment records then pick the batch used, so you can see who received which batch.
+      </div>
+      {batches.map((b) => {
+        const left = Math.round((b.qty - (used.get(b.id) ?? 0)) * 100) / 100;
+        const expired = !!b.expiry && b.expiry < today;
+        return (
+          <div key={b.id} style={{ display: "grid", gridTemplateColumns: "1.3fr 1.2fr 0.8fr 1fr 28px", gap: 6, alignItems: "center", marginBottom: 6 }}>
+            <input value={b.number} placeholder="Lot / batch no." onChange={(e) => set(b.id, { number: e.target.value })} style={cell} aria-label="Batch number" />
+            <input type="date" value={b.expiry ?? ""} onChange={(e) => set(b.id, { expiry: e.target.value || undefined })} style={{ ...cell, borderColor: expired ? "#fca5a5" : undefined }} aria-label="Expiry" />
+            <input type="number" min={0} step="any" value={b.qty || ""} placeholder="Qty" onChange={(e) => set(b.id, { qty: Number(e.target.value) || 0 })} style={cell} aria-label={`Quantity received (${item.unit})`} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: expired ? "#dc2626" : left <= 0 ? "#9898b0" : "#059669" }}>
+              {expired ? "Expired · " : ""}{left} {item.unit} left
+              {patients.get(b.id)?.size ? <span style={{ color: "#7C3AED" }}> · {patients.get(b.id)!.size} patient{patients.get(b.id)!.size === 1 ? "" : "s"}</span> : null}
+            </span>
+            <button type="button" aria-label="Remove batch" onClick={() => onChange(batches.filter((x) => x.id !== b.id))}
+              style={{ border: "none", background: "#fef2f2", borderRadius: 6, height: 28, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={11} color="#dc2626" /></button>
+          </div>
+        );
+      })}
+      <button type="button" onClick={() => onChange([...batches, { id: newId("batch"), number: "", qty: 0, receivedAt: today }])}
+        style={{ marginTop: 4, display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 10px", borderRadius: 8, border: "1px solid #e4e4ee", background: "#fff", fontSize: 12, fontWeight: 700, color: "#6b6b8a", cursor: "pointer" }}>
+        <Plus size={12} /> Add batch
+      </button>
+    </div>
   );
 }
 
@@ -950,6 +1001,7 @@ function ItemRow({ item, isLast, usage, onEdit, onDelete, onShowUsage }: {
           {item.brand}{item.supplier ? ` · ${item.supplier}` : ""}
           {item.servicesPerUnit ? <span style={{ color: "#7C3AED", fontWeight: 600 }}> · 1 {item.unit} ≈ {item.servicesPerUnit} services</span> : null}
           {item.isActive === false && <span style={{ color: "#9898b0", fontWeight: 700 }}> · Inactive</span>}
+          {item.batches?.some((b) => b.expiry && b.expiry < new Date().toLocaleDateString("en-CA")) && <span style={{ color: "#dc2626", fontWeight: 700 }}> · Expired batch</span>}
           {item.expiryDate && <span style={{ color: item.expiryDate < new Date().toLocaleDateString("en-CA") ? "#dc2626" : "#9898b0", fontWeight: 600 }}> · Exp {item.expiryDate}</span>}
         </div>
       </div>

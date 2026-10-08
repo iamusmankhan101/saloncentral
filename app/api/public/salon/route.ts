@@ -75,7 +75,7 @@ function publicServices(services: unknown): Json[] {
     .map((s) => pick(s, [
       "id", "name", "description", "category", "subcategory", "section", "durationMin", "price",
       "variablePrice", "priceRangeMin", "priceRangeMax", "packageServiceIds",
-      "customServices", "assignedStaffIds", "multiStylist", "isActive",
+      "customServices", "assignedStaffIds", "multiStylist", "isActive", "resourceIds",
     ]));
 }
 

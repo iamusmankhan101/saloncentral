@@ -17,6 +17,8 @@ export interface BusySlot {
   end: string;
   /** Stylists held by this booking; empty for an "Any stylist" booking. */
   staffIds: string[];
+  /** Rooms/machines it holds (clinics, lib/clinic-resources.ts). */
+  resourceIds?: string[];
 }
 
 /** Statuses that no longer hold a chair. */
@@ -32,7 +34,28 @@ export function busySlots(appointments: Appointment[], fromDate: string): BusySl
       start: a.startTime,
       end: a.endTime,
       staffIds: appointmentStaffIds(a).filter((id) => id !== "any"),
+      ...(a.resourceIds?.length ? { resourceIds: a.resourceIds } : {}),
     }));
+}
+
+/**
+ * Are the rooms/machines these treatments need free for the slot? `wanted` is
+ * every resource the chosen treatments can use; it needs one free of each kind
+ * (any free room, plus the laser) — the same rule booking applies.
+ */
+export function resourcesFree(
+  busy: BusySlot[],
+  slot: { date: string; start: string; end: string },
+  wanted: string[],
+  kindOf: Record<string, string>,
+): boolean {
+  if (wanted.length === 0) return true;
+  const s = toMin(slot.start);
+  const e = toMin(slot.end);
+  const held = new Set(busy.filter((b) => b.date === slot.date && toMin(b.start) < e && s < toMin(b.end)).flatMap((b) => b.resourceIds ?? []));
+  const groups = new Map<string, string[]>();
+  for (const id of wanted) if (kindOf[id]) groups.set(kindOf[id], [...(groups.get(kindOf[id]) ?? []), id]);
+  return [...groups.values()].every((options) => options.some((id) => !held.has(id)));
 }
 
 /**

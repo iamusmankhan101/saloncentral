@@ -11,6 +11,17 @@ import { db } from "@/lib/db";
 import { busySlots } from "@/lib/availability";
 import type { Appointment } from "@/lib/types";
 
+/** Room/machine id → kind, so the booking page can check them (no names or bookings). */
+async function resourceKinds(salonId: string): Promise<Record<string, string>> {
+  try {
+    const r = await db.execute({ sql: "SELECT data FROM salon_data WHERE entity = ?", args: [`${salonId}_settings`] });
+    const list = r.rows.length ? (JSON.parse(r.rows[0].data as string)?.clinic?.resources ?? []) : [];
+    return Object.fromEntries((Array.isArray(list) ? list : []).map((x: { id: string; kind: string }) => [x.id, x.kind]));
+  } catch {
+    return {};
+  }
+}
+
 export async function GET(req: NextRequest) {
   const salonId = req.nextUrl.searchParams.get("salonId");
   if (!salonId) return Response.json({ ok: false, error: "Missing salonId" }, { status: 400 });
@@ -26,7 +37,7 @@ export async function GET(req: NextRequest) {
     // A day of slack behind UTC "today" so salons ahead of UTC still get their own today.
     const from = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     return Response.json(
-      { ok: true, busy: busySlots(appointments, from) },
+      { ok: true, busy: busySlots(appointments, from), resourceKinds: await resourceKinds(salonId) },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (err) {

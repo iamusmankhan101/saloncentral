@@ -41,7 +41,7 @@ export function fillTemplate(template: string, vars: Record<string, string>): st
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? "");
 }
 
-export type WaMsgType = "reminder" | "confirmation" | "followup" | "cancellation" | "lowstock" | "manual" | "birthday" | "winback" | "thankyou" | "newbooking" | "invoice";
+export type WaMsgType = "reminder" | "confirmation" | "followup" | "cancellation" | "lowstock" | "manual" | "birthday" | "winback" | "thankyou" | "newbooking" | "invoice" | "aftercare";
 export type WaMsgStatus = "sent" | "failed";
 
 export interface WaLogEntry {

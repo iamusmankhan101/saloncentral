@@ -36,6 +36,7 @@ const TYPE_META: Record<WaMsgType, { label: string; color: string; bg: string; i
   thankyou:     { label: "Thank You",    color: "#c026d3", bg: "rgba(192,38,211,0.1)",  icon: Heart },
   newbooking:   { label: "New Booking",  color: "#6366f1", bg: "rgba(99,102,241,0.1)",  icon: CalendarDays },
   invoice:      { label: "Invoice",      color: "#2563eb", bg: "rgba(37,99,235,0.1)",   icon: MessageSquare },
+  aftercare:    { label: "Aftercare",    color: "#7c3aed", bg: "rgba(124,58,237,0.1)",  icon: Heart },
 };
 
 const SAMPLE_VARS: Record<string, string> = {

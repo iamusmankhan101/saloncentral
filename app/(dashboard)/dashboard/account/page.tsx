@@ -2196,6 +2196,17 @@ const PERMISSION_OPTIONS = [
   { key: "consent-forms", label: "Consent Forms (clinic)" },
   { key: "leads", label: "Leads (clinic)" },
   { key: "rooms", label: "Rooms & Machines (clinic)" },
+  { key: "aftercare", label: "Aftercare (clinic)" },
+  { key: "waitlist", label: "Waiting List" },
+  { key: "clinic-reports", label: "Clinic Reports (clinic)" },
+];
+
+/** One-tap starting points for common clinic and salon jobs; ticks can still be changed after. */
+const ROLE_PRESETS: { label: string; permissions: string[] }[] = [
+  { label: "Doctor / Practitioner", permissions: ["dashboard", "calendar", "appointments", "clients", "medical", "consent-forms", "services", "waitlist"] },
+  { label: "Receptionist", permissions: ["dashboard", "calendar", "floor", "appointments", "clients", "pos", "invoices", "loyalty", "waitlist", "leads", "messages"] },
+  { label: "Inventory Manager", permissions: ["dashboard", "inventory", "services", "cash-flow"] },
+  { label: "Stylist", permissions: DEFAULT_STAFF_PERMISSIONS },
 ];
 
 function RolesPermissionsSection() {
@@ -2406,6 +2417,14 @@ function RolesPermissionsSection() {
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
                     <div style={{ color: "#29263d", fontSize: 12, fontWeight: 900, letterSpacing: ".04em", textTransform: "uppercase" }}>Page permissions</div>
                     {isManager && <span style={{ color: "#059669", fontSize: 12, fontWeight: 800 }}>Full access enabled</span>}
+                    {!isManager && (
+                      <select aria-label="Apply a role preset" value=""
+                        onChange={(e) => { const p = ROLE_PRESETS.find((x) => x.label === e.target.value); if (p) updateDraft(member.id, { permissions: [...p.permissions] }); }}
+                        style={{ ...inputStyle, width: "auto", padding: "6px 10px", fontSize: 12 }}>
+                        <option value="">Apply preset…</option>
+                        {ROLE_PRESETS.map((p) => <option key={p.label}>{p.label}</option>)}
+                      </select>
+                    )}
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 8, opacity: isManager ? 0.45 : 1 }}>
                     {PERMISSION_OPTIONS.map((permission) => {

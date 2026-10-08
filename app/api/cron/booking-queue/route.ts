@@ -181,7 +181,7 @@ async function ensureTables() {
   `);
 }
 
-type QueueKind = "confirmation" | "groupalert" | "followup" | "cancellation" | "reminder" | "birthday" | "winback" | "lowstock" | "manual";
+type QueueKind = "confirmation" | "groupalert" | "followup" | "cancellation" | "reminder" | "birthday" | "winback" | "lowstock" | "manual" | "aftercare";
 type LogKind = QueueKind | "invoice";
 
 interface QueueRow {
@@ -290,6 +290,7 @@ function logTypeForKind(kind: LogKind): string {
 function messageTypeForKind(kind: QueueKind): "reminder" | "confirmation" | "followup" | "cancellation" | "manual" | "birthday" | "winback" {
   if (kind === "groupalert") return "manual";
   if (kind === "lowstock") return "manual";
+  if (kind === "aftercare") return "manual";
   return kind;
 }
 
@@ -303,7 +304,7 @@ function intentForKind(kind: QueueKind): WhatsAppMessageIntent {
 // that back defeats the point). Everything else in this set has no time
 // pressure, so it waits for the salon to actually be open rather than landing
 // in a client's chat, or the owner's low-stock alert, while the salon is closed.
-const SALON_HOURS_GATED_KINDS = new Set<QueueKind>(["reminder", "followup", "cancellation", "birthday", "winback", "lowstock"]);
+const SALON_HOURS_GATED_KINDS = new Set<QueueKind>(["reminder", "followup", "cancellation", "birthday", "winback", "lowstock", "aftercare"]);
 
 function autoSettingEnabled(settings: Record<string, unknown> | null, kind: QueueKind): boolean {
   const wasender = settings?.wasender as {
@@ -323,6 +324,11 @@ function autoSettingEnabled(settings: Record<string, unknown> | null, kind: Queu
   // Win-back lives in its own settings block (not wasender) and is opt-in, so
   // unlike every other kind here an absent value means off, not on.
   if (kind === "winback") return (settings?.winback as { autoWinback?: boolean } | undefined)?.autoWinback === true;
+  // Clinic aftercare/reminders: queued by /api/cron/clinic-aftercare, which
+  // already checks each of its own switches; this is the overall one.
+  if (kind === "aftercare") return (settings?.clinic as { autoAftercare?: boolean } | undefined)?.autoAftercare !== false
+    || (settings?.clinic as { packageReminders?: boolean; planReminders?: boolean } | undefined)?.packageReminders !== false
+    || (settings?.clinic as { planReminders?: boolean } | undefined)?.planReminders !== false;
   return true;
 }
 

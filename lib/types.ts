@@ -131,7 +131,7 @@ export interface Service {
   /** Rooms/machines this treatment can use — one free of each kind is booked with it (lib/clinic-resources.ts). */
   resourceIds?: string[];
   /** Makes this a membership: selling it makes the client a member for `months` (lib/clinic.ts). */
-  membership?: { months: number; discountPercent: number; perks?: string };
+  membership?: { months: number; discountPercent: number; perks?: string; included?: MembershipInclusion[] };
   /**
    * Per product in inventoryUsage: how many of *this* service one unit lasts
    * (e.g. a dye packet lasts 5 colour services). Each performance then takes
@@ -175,6 +175,9 @@ export interface Client {
   /** ISO time that credit was given — set once, so it's never paid twice. */
   referralRewardedAt?: string;
 }
+
+/** A treatment a membership includes, so many times per calendar month. */
+export interface MembershipInclusion { serviceId: string; perMonth: number }
 
 /** Fitzpatrick skin phototype, I (always burns) to VI (never burns). */
 export type FitzpatrickType = "I" | "II" | "III" | "IV" | "V" | "VI";
@@ -332,7 +335,7 @@ export interface DailyRevenue {
 }
 
 export type InventoryCategory = "hair-color" | "skin-care" | "nail" | "tools" | "consumables" | "retail";
-export type InventoryUnit = "ml" | "l" | "g" | "kg" | "pcs" | "pair" | "box" | "bottle" | "tube";
+export type InventoryUnit = "ml" | "l" | "g" | "kg" | "pcs" | "units" | "pair" | "box" | "bottle" | "vial" | "tube";
 
 export interface InventoryItem {
   id: string;
@@ -366,4 +369,22 @@ export interface InventoryItem {
   expiryDate?: string;
   /** false hides the item from POS and from service recipes; unset means active. */
   isActive?: boolean;
+  /**
+   * Batches / lots received (aesthetic clinics). What's left of each is counted
+   * from the treatment charts that used it (lib/clinic.ts batchUsage), so a
+   * batch can be traced to every patient who received it.
+   */
+  batches?: InventoryBatch[];
+}
+
+export interface InventoryBatch {
+  id: string;
+  /** Lot / batch number printed on the product. */
+  number: string;
+  /** YYYY-MM-DD. */
+  expiry?: string;
+  /** Amount received, in the item's unit. */
+  qty: number;
+  /** YYYY-MM-DD. */
+  receivedAt: string;
 }

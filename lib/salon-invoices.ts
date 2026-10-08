@@ -40,7 +40,9 @@ export interface SalonInvoiceItem {
    */
   packagePurchase?: { serviceId: string; sessions: number; expiresAt?: string };
   /** On the line that sells a membership: the cover it bought (lib/clinic.ts activeMembership). */
-  membershipPurchase?: { serviceId: string; discountPercent: number; perks?: string; from: string; until: string };
+  membershipPurchase?: { serviceId: string; discountPercent: number; perks?: string; from: string; until: string; included?: { serviceId: string; perMonth: number }[] };
+  /** On a line covered by a membership's included treatments: the membership (`${invoiceId}:${lineId}`). */
+  membershipUse?: string;
   packageId?: string;
   description: string;
   qty: number;
@@ -113,6 +115,13 @@ export interface SalonInvoice {
   advanceAmount?: number;
   notes?: string;
   createdAt: string;        // ISO timestamp
+  /**
+   * Money given back on this sale. Each refund is also an expense (category
+   * "refunds", expenseId) so cash flow and profit fall by it everywhere without
+   * changing what the sale itself was. `lineIds` lists package/membership lines
+   * the refund cancels (lib/clinic-core.ts).
+   */
+  refunds?: InvoiceRefund[];
   source?: "pos" | "manual";
   /** Which salon section this sale belongs to (e.g. "Men's", "Women's"). Free text, cosmetic only. */
   section?: string;
@@ -188,6 +197,20 @@ export function fbrRelevantChange(a: SalonInvoice, b: SalonInvoice): boolean {
   const key = (i: SalonInvoice) => JSON.stringify([i.total, i.taxAmount, i.paymentMethod, i.items.map((x) => [x.description, x.qty, x.total])]);
   return key(a) !== key(b);
 }
+
+export interface InvoiceRefund {
+  id: string;
+  amount: number;
+  method: string;
+  reason?: string;
+  /** ISO time. */
+  at: string;
+  lineIds?: string[];
+  expenseId?: string;
+  by?: string;
+}
+
+export const refundedTotal = (inv: Pick<SalonInvoice, "refunds">) => (inv.refunds ?? []).reduce((s, r) => s + r.amount, 0);
 
 /**
  * What this sale contributes to revenue totals.

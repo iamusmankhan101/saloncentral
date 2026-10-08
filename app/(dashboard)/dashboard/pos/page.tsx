@@ -34,7 +34,7 @@ import { getDefaultLocationId } from "@/lib/locations";
 import { getSectionOptions, getActiveSection, inSection } from "@/lib/sections";
 import type { Service, Client, InventoryItem, Staff, PaymentMethod } from "@/lib/types";
 import { settleServiceConsumption } from "@/lib/inventory-consumption";
-import { activeMembership, addDays, getConsents, membershipUntil, missingConsents, term, usablePackages, useIsClinic } from "@/lib/clinic";
+import { activeMembership, addDays, getConsents, membershipAllowanceLeft, membershipUntil, missingConsents, term, usablePackages, useIsClinic } from "@/lib/clinic";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -75,6 +75,8 @@ interface CartEntry {
   priceRangeMax?: number;
   /** Paid for by a session package the client already bought (lib/clinic.ts) — priced at 0. */
   packageId?: string;
+  /** Covered by the client's membership's included treatments — priced at 0. */
+  membershipUse?: string;
 }
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -391,6 +393,7 @@ export default function POSPage() {
       qty: e.qty, unitPrice: wholePkr(e.unitPrice), total: wholePkr(e.total),
       ...(e.guestName ? { guestName: e.guestName } : {}),
       ...(e.packageId ? { packageId: e.packageId } : {}),
+      ...(e.membershipUse ? { membershipUse: e.membershipUse } : {}),
       // Selling a membership: it runs from today, or on from the end of the
       // one the client already has, so renewing early loses nothing.
       ...((() => {
@@ -400,6 +403,7 @@ export default function POSPage() {
         const from = current ? addDays(current.until, 1) : localDateKey();
         return { membershipPurchase: {
           serviceId: e.itemId, discountPercent: m.discountPercent, ...(m.perks ? { perks: m.perks } : {}),
+          ...(m.included?.length ? { included: m.included } : {}),
           from, until: membershipUntil(from, m.months * Math.max(1, e.qty)),
         } };
       })()),
@@ -478,7 +482,7 @@ export default function POSPage() {
   const balanceAmount = isAdvance ? Math.max(0, total - advanceAmount) : 0;
   const totalQty = cart.reduce((s, e) => s + e.qty, 0);
   // Prices are editable per line, so guard every line — not just the variable-priced ones.
-  const hasUnpricedLine = cart.some(e => e.unitPrice <= 0 && !e.packageId);
+  const hasUnpricedLine = cart.some(e => e.unitPrice <= 0 && !e.packageId && !e.membershipUse);
   // ── Session packages (aesthetic clinics) ──
   const clinic = useIsClinic();
   // Re-read after each sale so a session just used is no longer offered.
@@ -507,6 +511,20 @@ export default function POSPage() {
   });
   const packageWithoutClient = !selectedClient?.id && cart.some(e => e.type === "service" && (!!services.find(sv => sv.id === e.itemId)?.sessionPackage || !!services.find(sv => sv.id === e.itemId)?.membership));
   const membership = selectedClient?.id ? activeMembership(selectedClient.id, clientInvoices) : null;
+  /** Included uses of this line's treatment left this month, after other lines in the cart. */
+  const includedLeft = (entry: CartEntry) => {
+    if (!membership || entry.type !== "service" || entry.guestName) return 0;
+    const inCart = cart.filter(e => e.membershipUse === membership.id && e.itemId === entry.itemId && e.cartId !== entry.cartId).reduce((n, e) => n + e.qty, 0);
+    return membershipAllowanceLeft(membership, entry.itemId, clientInvoices) - inCart;
+  };
+  function toggleMembershipUse(entry: CartEntry) {
+    const left = entry.membershipUse ? 0 : includedLeft(entry);
+    setCart(prev => prev.map(e => e.cartId !== entry.cartId ? e
+      : !entry.membershipUse && membership && left > 0 ? { ...e, membershipUse: membership.id, packageId: undefined, qty: Math.min(e.qty, left), unitPrice: 0, total: 0 }
+      : { ...e, membershipUse: undefined, unitPrice: e.basePrice, total: e.basePrice * e.qty }));
+  }
+  const membershipOverdrawn = cart.some(e => e.membershipUse && (!membership || e.membershipUse !== membership.id
+    || cart.filter(x => x.membershipUse === e.membershipUse && x.itemId === e.itemId).reduce((n, x) => n + x.qty, 0) > membershipAllowanceLeft(membership, e.itemId, clientInvoices)));
   const consentGaps = clinic && selectedClient?.id
     ? missingConsents(selectedClient.id, cart.filter(e => e.type === "service" && !e.guestName).map(e => ({ id: e.itemId, name: e.name })), getConsents())
     : [];
@@ -751,7 +769,7 @@ export default function POSPage() {
     // explicit Pay Later/Credit) must be chosen, never silently defaulted.
     if (!isCredit && !payMethod) return;
     if (cardNoTerminal) return;
-    if (packageWithoutClient || packageOverdrawn) return;
+    if (packageWithoutClient || packageOverdrawn || membershipOverdrawn) return;
     setCompleting(true);
     try {
       const today = localDateKey();
@@ -1752,7 +1770,15 @@ export default function POSPage() {
                               For {entry.guestName}
                             </div>
                           )}
+                          {!entry.packageId && (entry.membershipUse || includedLeft(entry) > 0) && (
+                            <button type="button" onClick={() => toggleMembershipUse(entry)}
+                              style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 5, marginRight: 5, padding: "3px 9px", borderRadius: 20, cursor: "pointer", fontSize: 10.5, fontWeight: 800,
+                                border: `1px solid ${entry.membershipUse ? "#b45309" : "#fde68a"}`, background: entry.membershipUse ? "#b45309" : "#fffbeb", color: entry.membershipUse ? "#fff" : "#92400e" }}>
+                              {entry.membershipUse ? "✓ Included in membership · tap to undo" : `👑 Included in membership (${includedLeft(entry)} left this month)`}
+                            </button>
+                          )}
                           {(() => {
+                            if (entry.membershipUse) return null;
                             const pkg = entry.packageId ? null : packageFor(entry);
                             if (!entry.packageId && !pkg) return null;
                             return (
@@ -1765,7 +1791,7 @@ export default function POSPage() {
                           })()}
                           {/* Every line is priced at the till — hair volume, length and
                               condition move the real price off the catalog number. */}
-                          {!entry.packageId && <div style={{ marginTop: 4 }}>
+                          {!entry.packageId && !entry.membershipUse && <div style={{ marginTop: 4 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                               <span style={{ fontSize: 11, color: "#b0b0c8" }}>PKR</span>
                               <input type="number" min={0} step={50} inputMode="numeric"
@@ -2178,6 +2204,11 @@ export default function POSPage() {
                   <AlertCircle size={13} /> Select the {term("client", clinic)} first — a session package has to belong to someone
                 </div>
               )}
+              {membershipOverdrawn && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, fontSize: 11, fontWeight: 700, color: "#d97706" }}>
+                  <AlertCircle size={13} /> More membership-included treatments than are left this month — lower the quantity
+                </div>
+              )}
               {packageOverdrawn && (
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, fontSize: 11, fontWeight: 700, color: "#d97706" }}>
                   <AlertCircle size={13} /> More package sessions on the bill than the package has left — lower the quantity
@@ -2194,14 +2225,14 @@ export default function POSPage() {
                 </div>
               )}
               {/* Complete button */}
-              <button type="button" onClick={completeSale} disabled={completing || hasUnpricedLine || noPaymentSelected || advanceNoPhone || packageWithoutClient || packageOverdrawn}
+              <button type="button" onClick={completeSale} disabled={completing || hasUnpricedLine || noPaymentSelected || advanceNoPhone || packageWithoutClient || packageOverdrawn || membershipOverdrawn}
                 style={{
                   width: "100%", padding: "14px 0", borderRadius: 13, border: "none",
-                  background: (completing || hasUnpricedLine || noPaymentSelected || advanceNoPhone || cardNoTerminal || packageWithoutClient || packageOverdrawn) ? "#e8e8f0" : isCredit ? "linear-gradient(135deg,#d97706,#f59e0b)" : "linear-gradient(135deg,#5B21B6,#9333EA)",
-                  color: (completing || hasUnpricedLine || noPaymentSelected || advanceNoPhone || cardNoTerminal || packageWithoutClient || packageOverdrawn) ? "#aaaabc" : "#fff",
-                  fontSize: 15, fontWeight: 900, cursor: (completing || hasUnpricedLine || noPaymentSelected || advanceNoPhone || cardNoTerminal || packageWithoutClient || packageOverdrawn) ? "not-allowed" : "pointer",
+                  background: (completing || hasUnpricedLine || noPaymentSelected || advanceNoPhone || cardNoTerminal || packageWithoutClient || packageOverdrawn || membershipOverdrawn) ? "#e8e8f0" : isCredit ? "linear-gradient(135deg,#d97706,#f59e0b)" : "linear-gradient(135deg,#5B21B6,#9333EA)",
+                  color: (completing || hasUnpricedLine || noPaymentSelected || advanceNoPhone || cardNoTerminal || packageWithoutClient || packageOverdrawn || membershipOverdrawn) ? "#aaaabc" : "#fff",
+                  fontSize: 15, fontWeight: 900, cursor: (completing || hasUnpricedLine || noPaymentSelected || advanceNoPhone || cardNoTerminal || packageWithoutClient || packageOverdrawn || membershipOverdrawn) ? "not-allowed" : "pointer",
                   display: "flex", alignItems: "center", justifyContent: "center", gap: 9,
-                  boxShadow: (completing || hasUnpricedLine || noPaymentSelected || advanceNoPhone || cardNoTerminal || packageWithoutClient || packageOverdrawn) ? "none" : isCredit ? "0 5px 20px rgba(217,119,6,0.40)" : "0 5px 20px rgba(91,33,182,0.42)",
+                  boxShadow: (completing || hasUnpricedLine || noPaymentSelected || advanceNoPhone || cardNoTerminal || packageWithoutClient || packageOverdrawn || membershipOverdrawn) ? "none" : isCredit ? "0 5px 20px rgba(217,119,6,0.40)" : "0 5px 20px rgba(91,33,182,0.42)",
                   letterSpacing: "-0.01em", transition: "all 0.15s",
                 }}
                 onMouseEnter={e => { if (!completing) e.currentTarget.style.transform = "translateY(-1px)"; }}

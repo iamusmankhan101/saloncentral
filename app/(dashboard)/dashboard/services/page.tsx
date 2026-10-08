@@ -352,6 +352,7 @@ function AddEditServiceModal({ onClose, onSave, staffList, servicesList, invento
     membMonths:         serviceToEdit?.membership ? String(serviceToEdit.membership.months) : "1",
     membDiscount:       serviceToEdit?.membership ? String(serviceToEdit.membership.discountPercent) : "",
     membPerks:          serviceToEdit?.membership?.perks ?? "",
+    membIncluded:       serviceToEdit?.membership?.included ?? [] as { serviceId: string; perMonth: number }[],
     /** itemId → recipe amount per service as typed, e.g. { qty: "80", unit: "ml" }. */
     inventoryAmounts: Object.fromEntries(
       Object.entries(serviceToEdit?.inventoryAmounts ?? {}).map(([id, r]) => [id, { qty: String(r.qty), unit: r.unit }]),
@@ -475,7 +476,11 @@ function AddEditServiceModal({ onClose, onSave, staffList, servicesList, invento
         : undefined,
       resourceIds:      !form.isPackage && form.resourceIds.length ? form.resourceIds : undefined,
       membership: !form.isPackage && form.memb && Number(form.membMonths) > 0
-        ? { months: Math.round(Number(form.membMonths)), discountPercent: Math.min(100, Math.max(0, Number(form.membDiscount) || 0)), ...(form.membPerks.trim() ? { perks: form.membPerks.trim() } : {}) }
+        ? {
+            months: Math.round(Number(form.membMonths)), discountPercent: Math.min(100, Math.max(0, Number(form.membDiscount) || 0)),
+            ...(form.membPerks.trim() ? { perks: form.membPerks.trim() } : {}),
+            ...(form.membIncluded.filter((x) => x.serviceId && x.perMonth > 0).length ? { included: form.membIncluded.filter((x) => x.serviceId && x.perMonth > 0) } : {}),
+          }
         : undefined,
       inventoryAmounts: (() => {
         const amounts = Object.fromEntries(form.inventoryUsage
@@ -710,6 +715,26 @@ function AddEditServiceModal({ onClose, onSave, staffList, servicesList, invento
                     style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e8e8f0", fontSize: 12, minWidth: 0 }} />
                   <input value={form.membPerks} onChange={(e) => set("membPerks", e.target.value)} placeholder="Perks, e.g. free consultations, priority booking, 1 HydraFacial a month"
                     style={{ gridColumn: "1 / -1", padding: "8px 10px", borderRadius: 8, border: "1px solid #e8e8f0", fontSize: 12 }} />
+                  <div style={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: 6 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "#6b6b8a" }}>Included treatments (per calendar month)</span>
+                    {form.membIncluded.map((inc, i) => (
+                      <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 28px", gap: 6 }}>
+                        <select value={inc.serviceId} aria-label="Included treatment"
+                          onChange={(e) => set("membIncluded", form.membIncluded.map((x, idx) => idx === i ? { ...x, serviceId: e.target.value } : x))}
+                          style={{ padding: "7px 9px", borderRadius: 8, border: "1px solid #e8e8f0", fontSize: 12, background: "#fff", minWidth: 0 }}>
+                          <option value="">Treatment…</option>
+                          {servicesList.filter((sv) => sv.id !== serviceToEdit?.id && !sv.membership && !sv.sessionPackage).map((sv) => <option key={sv.id} value={sv.id}>{sv.name}</option>)}
+                        </select>
+                        <input type="number" min="1" value={inc.perMonth || ""} placeholder="Times / month" aria-label="Times per month"
+                          onChange={(e) => set("membIncluded", form.membIncluded.map((x, idx) => idx === i ? { ...x, perMonth: Math.max(0, Math.round(Number(e.target.value))) } : x))}
+                          style={{ padding: "7px 9px", borderRadius: 8, border: "1px solid #e8e8f0", fontSize: 12, minWidth: 0 }} />
+                        <button type="button" aria-label="Remove" onClick={() => set("membIncluded", form.membIncluded.filter((_, idx) => idx !== i))}
+                          style={{ border: "none", background: "#fef2f2", borderRadius: 6, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={11} color="#dc2626" /></button>
+                      </div>
+                    ))}
+                    <button type="button" onClick={() => set("membIncluded", [...form.membIncluded, { serviceId: "", perMonth: 1 }])}
+                      style={{ alignSelf: "flex-start", padding: "5px 10px", borderRadius: 8, border: "1px solid #e4e4ee", background: "#fff", fontSize: 11.5, fontWeight: 700, color: "#6b6b8a", cursor: "pointer" }}>+ Include a treatment</button>
+                  </div>
                   <div style={{ gridColumn: "1 / -1", fontSize: 11, color: "#6b6b8a", lineHeight: 1.5 }}>
                     The price below is per membership period. Selling it at POS makes the patient a member for that many months; while active, POS offers the member discount with one tap. Renew by selling it again.
                   </div>

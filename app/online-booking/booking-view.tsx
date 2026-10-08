@@ -20,7 +20,7 @@ import { salonNow } from "@/lib/appointment-time";
 import { fmtCurrency as fmt } from "@/lib/format";
 import { enqueueWhatsAppConfirmation, normalizePhone } from "@/lib/whatsapp-scheduler";
 import { getDefaultLocationId } from "@/lib/locations";
-import { busySlots, isSlotFree, type BusySlot } from "@/lib/availability";
+import { busySlots, isSlotFree, resourcesFree, type BusySlot } from "@/lib/availability";
 import { resolveSalonTheme, type SalonTheme } from "@/lib/salon-theme";
 import { categoryLabel, groupByCategory, groupBySubcategory } from "@/lib/service-groups";
 
@@ -140,6 +140,7 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
   // Categories the customer has expanded. All start folded so the menu fits on one screen.
   const [openCats, setOpenCats]                 = useState<Set<string>>(new Set());
   const [remoteBusy, setRemoteBusy]             = useState<BusySlot[]>([]);
+  const [remoteKinds, setRemoteKinds]           = useState<Record<string, string>>({});
 
   // Taken times for an external customer. Only dates and stylist ids come
   // back — never who booked. If this fails every slot shows, and the server
@@ -148,7 +149,7 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
     if (!salonId) return;
     fetch(`/api/public/availability?salonId=${encodeURIComponent(salonId)}`, { cache: "no-store" })
       .then((r) => r.json())
-      .then((d: { ok: boolean; busy?: BusySlot[] }) => { if (d.ok) setRemoteBusy(d.busy ?? []); })
+      .then((d: { ok: boolean; busy?: BusySlot[]; resourceKinds?: Record<string, string> }) => { if (d.ok) { setRemoteBusy(d.busy ?? []); setRemoteKinds(d.resourceKinds ?? {}); } })
       .catch(() => {});
   }, [salonId]);
   useEffect(() => { loadBusy(); }, [loadBusy]);
@@ -205,6 +206,12 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
   const eligibleStaff = activeStaff.filter((id) =>
     selectedServices.every((sv) => !sv.assignedStaffIds?.length || sv.assignedStaffIds.includes(id)));
 
+  // Clinics: rooms/machines the chosen treatments need, and what kind each is.
+  const resourceKinds: Record<string, string> = salonId
+    ? remoteKinds
+    : Object.fromEntries((((settingsStore as { clinic?: { resources?: { id: string; kind: string }[] } }).clinic?.resources) ?? []).map((r) => [r.id, r.kind]));
+  const wantedResources = [...new Set(selectedServices.flatMap((s) => (s as { resourceIds?: string[] }).resourceIds ?? []))];
+
   /** Free start times on `date` for the chosen services and stylist. */
   function slotsFor(date: string): string[] {
     const hours = getHoursForDate(date);
@@ -217,7 +224,8 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
         busy,
         { date, start: slot, end: addMinutes(slot, totalDuration) },
         selectedStaffId, eligibleStaff, activeStaff,
-      ));
+      ) &&
+      resourcesFree(busy, { date, start: slot, end: addMinutes(slot, totalDuration) }, wantedResources, resourceKinds));
   }
   const timeSlots = selectedDate ? slotsFor(selectedDate) : [];
 

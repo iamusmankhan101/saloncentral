@@ -62,6 +62,8 @@ interface Performance {
   who: string;
   /** The client it was performed on — absent for a line rung up for a named guest. */
   clientId?: string;
+  /** Stable id of this performance (invoice line or appointment service), for once-only follow-ups. */
+  ref: string;
 }
 
 /**
@@ -168,7 +170,7 @@ function collectPerformances(
         at = booked ? doneAt : Math.max(at, doneAt);
       }
       for (const service of performedServices(sold, byId)) {
-        performances.push({ service, count: Math.max(1, line.qty), date: invoice.date, at, who: line.guestName ?? invoice.clientName ?? "", clientId: line.guestName ? undefined : invoice.clientId });
+        performances.push({ service, count: Math.max(1, line.qty), date: invoice.date, at, who: line.guestName ?? invoice.clientName ?? "", clientId: line.guestName ? undefined : invoice.clientId, ref: `inv:${invoice.id}:${line.id}:${service.id}` });
       }
     }
   }
@@ -184,7 +186,7 @@ function collectPerformances(
         // When it was marked completed; older records fall back to the booked end time.
         const at = Date.parse(appointment.completedAt ?? "")
           || new Date(`${appointment.date}T${appointment.endTime || appointment.startTime || "23:59"}:00`).getTime();
-        performances.push({ service, count: 1, date: appointment.date, at, who: appointment.clientName, clientId: appointment.clientId });
+        performances.push({ service, count: 1, date: appointment.date, at, who: appointment.clientName, clientId: appointment.clientId, ref: `appt:${appointment.id}:${service.id}` });
       }
     }
   }
@@ -238,6 +240,11 @@ export function usageFor(usage: Map<string, ItemUsage>, itemId: string): ItemUsa
 /** Services that map to an item — for the inventory item's own detail view. */
 export function servicesUsingItem(services: Service[], itemId: string): Service[] {
   return services.filter((s) => usedItemIds(s).includes(itemId));
+}
+
+/** Every service performance in the window, one record of the work each (see collectPerformances). */
+export function listPerformances(invoices: SalonInvoice[], appointments: Appointment[], services: Service[], window: UsageWindow = {}) {
+  return collectPerformances(invoices, appointments, services, window);
 }
 
 /**

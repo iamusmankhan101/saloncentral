@@ -184,6 +184,10 @@ const defaults = {
     consentTemplates: null as null | import("./clinic").ConsentTemplate[],
     resources: [] as import("./clinic-resources").ClinicResource[],
     prescriptionTemplates: [] as import("./clinic").PrescriptionTemplate[],
+    autoAftercare: true,
+    packageReminders: true,
+    planReminders: true,
+    aftercareFlows: null as null | import("./clinic-aftercare").AftercareFlow[],
   },
   cashback: {
     enabled: false,

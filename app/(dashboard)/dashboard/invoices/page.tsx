@@ -3,11 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Search, Eye, Trash2, CheckCircle, Clock, Pencil, FileEdit,
-  ReceiptText, ShoppingCart, TrendingUp, Users, MessageSquare,
+  ReceiptText, ShoppingCart, TrendingUp, Users, MessageSquare, RotateCcw, X,
 } from "lucide-react";
+import { addExpense } from "@/lib/expenses";
+import { getCurrentUser } from "@/lib/auth";
 import {
   getSalonInvoices, deleteSalonInvoice, cancelInvoiceOnFbr, markSalonInvoicePaid, updateSalonInvoice, localDateKey, balanceDue, advancePercent,
-  paymentMethodLabel, type SalonInvoice,
+  paymentMethodLabel, refundedTotal, revenueAmount, type SalonInvoice,
 } from "@/lib/salon-invoices";
 import type { PaymentMethod } from "@/lib/types";
 import { getStoredAppointments, saveAppointments, getStoredClients, saveClients } from "@/lib/storage";
@@ -86,6 +88,7 @@ export default function InvoicesPage() {
   /** Invoice id currently sending on WhatsApp via the manual "Send WhatsApp" button. */
   const [sendingWaId, setSendingWaId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm]   = useState<string | null>(null);
+  const [refunding, setRefunding]           = useState<SalonInvoice | null>(null);
   const [markPaidPromptId, setMarkPaidPromptId] = useState<string | null>(null);
   const [markPaidDate, setMarkPaidDate] = useState(() => localDateKey());
   const [editDateInvoice, setEditDateInvoice] = useState<SalonInvoice | null>(null);
@@ -408,6 +411,10 @@ export default function InvoicesPage() {
           onSaved={handleInvoiceSaved}
         />
       )}
+      {refunding && (
+        <RefundModal invoice={refunding} onClose={() => setRefunding(null)}
+          onDone={(updated) => { setInvoices((list) => list.map((i) => i.id === updated.id ? updated : i)); setRefunding(null); }} />
+      )}
       {deleteConfirm && (
         <div onClick={() => setDeleteConfirm(null)} className="modal-overlay" style={{ zIndex: 250 }}>
           <div onClick={(e) => e.stopPropagation()} className="modal-sheet" style={{ background: "#fff", borderRadius: 16, padding: "28px 32px", maxWidth: 360, width: "100%", boxShadow: "0 16px 50px rgba(0,0,0,0.2)", textAlign: "center" }}>
@@ -644,6 +651,7 @@ export default function InvoicesPage() {
                       <div style={{ fontSize: 13, fontWeight: 800, color: "#1a1a2e" }}>{fmt(inv.total)}</div>
                       <div style={{ display: "inline-flex", alignItems: "center", gap: 4, marginTop: 4, padding: "3px 8px", borderRadius: 20, background: sm.bg, fontSize: 10, fontWeight: 750, color: sm.color, textTransform: "uppercase", letterSpacing: "0.03em" }}>
                         <StatusIcon size={10} /> {inv.status === "partial" ? `${sm.label} ${advancePercent(inv)}%` : sm.label}
+                        {refundedTotal(inv) > 0 && <> · Refunded {fmt(refundedTotal(inv))}</>}
                       </div>
                     </div>
 
@@ -684,6 +692,16 @@ export default function InvoicesPage() {
                           <CheckCircle size={14} color="#059669" />
                         </button>
                       )}
+                      {inv.status !== "unpaid" && revenueAmount(inv) - refundedTotal(inv) > 0 && (
+                        <button
+                          onClick={() => setRefunding(inv)}
+                          title="Refund"
+                          style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid #fde68a", background: "#fffbeb", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", transition: "all 0.15s" }}
+                          className="hover-scale"
+                        >
+                          <RotateCcw size={14} color="#b45309" />
+                        </button>
+                      )}
                       <button
                         onClick={() => setDeleteConfirm(inv.id)}
                         title="Delete"
@@ -699,6 +717,82 @@ export default function InvoicesPage() {
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Gives money back on a sale. The refund is stored on the invoice and also
+ * booked as a "Refunds" expense, so cash flow and profit drop by it on every
+ * screen while the sale itself stays as it was. Package and membership lines
+ * can be cancelled with it, which ends their remaining sessions / cover.
+ */
+function RefundModal({ invoice, onClose, onDone }: { invoice: SalonInvoice; onClose: () => void; onDone: (updated: SalonInvoice) => void }) {
+  const refundable = Math.max(0, revenueAmount(invoice) - refundedTotal(invoice));
+  const [amount, setAmount] = useState(String(refundable));
+  const [method, setMethod] = useState<string>(invoice.paymentMethod || "cash");
+  const [reason, setReason] = useState("");
+  const cancellable = invoice.items.filter((l) => l.packagePurchase || l.membershipPurchase);
+  const [cancelLines, setCancelLines] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const value = Math.round(Number(amount) || 0);
+  const valid = value > 0 && value <= refundable;
+
+  async function confirm() {
+    if (!valid) return;
+    setSaving(true);
+    const today = localDateKey();
+    const { expense } = await addExpense({
+      date: today, category: "refunds", description: `Refund · ${invoice.number} · ${invoice.clientName}`,
+      amount: value, paymentMethod: method, paymentStatus: "paid", notes: reason.trim() || undefined,
+    });
+    const latest = getSalonInvoices().find((i) => i.id === invoice.id) ?? invoice;
+    const updated: SalonInvoice = {
+      ...latest,
+      refunds: [...(latest.refunds ?? []), {
+        id: `ref_${Date.now()}`, amount: value, method, reason: reason.trim() || undefined, at: new Date().toISOString(),
+        ...(cancelLines.length ? { lineIds: cancelLines } : {}), expenseId: expense.id, by: getCurrentUser()?.ownerName,
+      }],
+    };
+    updateSalonInvoice(updated);
+    onDone(updated);
+  }
+
+  const inp: React.CSSProperties = { width: "100%", boxSizing: "border-box", padding: "9px 11px", borderRadius: 9, border: "1px solid #e4e4ee", fontSize: 13 };
+  return (
+    <div onClick={onClose} className="modal-overlay" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 120, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} className="modal-sheet" style={{ background: "#fff", borderRadius: 18, width: "100%", maxWidth: 440, padding: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
+          <div style={{ flex: 1, fontSize: 16, fontWeight: 900, color: "#1a1a2e" }}>Refund {invoice.number}</div>
+          <button type="button" onClick={onClose} aria-label="Close" style={{ border: "none", background: "rgba(0,0,0,0.06)", borderRadius: 8, padding: 7, cursor: "pointer", display: "flex" }}><X size={14} /></button>
+        </div>
+        <div style={{ fontSize: 12.5, color: "#6b6b8a", marginBottom: 14 }}>{invoice.clientName} · up to {fmt(refundable)} can be refunded</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <label><span style={{ display: "block", fontSize: 10.5, fontWeight: 800, color: "#9898b0", marginBottom: 5 }}>AMOUNT (PKR)</span>
+            <input type="number" min={1} max={refundable} value={amount} onChange={(e) => setAmount(e.target.value)} style={inp} /></label>
+          <label><span style={{ display: "block", fontSize: 10.5, fontWeight: 800, color: "#9898b0", marginBottom: 5 }}>PAID BACK BY</span>
+            <select value={method} onChange={(e) => setMethod(e.target.value)} style={inp}>
+              {[["cash", "Cash"], ["bank", "Bank transfer"], ["jazzcash", "JazzCash"], ["easypaisa", "Easypaisa"], ["card", "Card"]].map(([m, label]) => <option key={m} value={m}>{label}</option>)}
+            </select></label>
+          <label style={{ gridColumn: "1 / -1" }}><span style={{ display: "block", fontSize: 10.5, fontWeight: 800, color: "#9898b0", marginBottom: 5 }}>REASON</span>
+            <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Treatment cancelled, package not used" style={inp} /></label>
+        </div>
+        {cancellable.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            {cancellable.map((l) => (
+              <label key={l.id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12.5, color: "#1a1a2e", marginBottom: 6, cursor: "pointer" }}>
+                <input type="checkbox" checked={cancelLines.includes(l.id)} onChange={(e) => setCancelLines((c) => e.target.checked ? [...c, l.id] : c.filter((x) => x !== l.id))} />
+                Cancel {l.description} — {l.packagePurchase ? "remaining sessions end" : "membership ends"}
+              </label>
+            ))}
+          </div>
+        )}
+        <div style={{ fontSize: 11, color: "#9898b0", marginTop: 10, lineHeight: 1.5 }}>Recorded as a Refunds expense, so cash flow and profit go down by this amount. The sale itself stays on record.</div>
+        <button type="button" disabled={!valid || saving} onClick={confirm}
+          style={{ marginTop: 14, width: "100%", padding: "11px 0", borderRadius: 10, border: "none", background: valid ? "#b45309" : "#e8e8f0", color: valid ? "#fff" : "#9898b0", fontSize: 13, fontWeight: 800, cursor: valid ? "pointer" : "not-allowed" }}>
+          {saving ? "Refunding…" : `Refund ${value > 0 ? fmt(value) : ""}`}
+        </button>
       </div>
     </div>
   );

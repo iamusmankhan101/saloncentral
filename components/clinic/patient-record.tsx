@@ -10,13 +10,14 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle, CalendarDays, Camera, Check, ClipboardList, FileSignature, ListChecks,
-  Package, Plus, Stethoscope, Trash2, X, Columns2, Receipt, Images, Clock, Pill, Send, FileDown, Crown, Copy,
+  Package, Plus, Stethoscope, Trash2, X, Columns2, Receipt, Images, Clock, Pill, Send, FileDown, Crown, Copy, Syringe, ShieldCheck,
 } from "lucide-react";
+import ChartsTab from "@/components/clinic/charting";
 import { normalizePhone, whatsAppConnected } from "@/lib/whatsapp-scheduler";
 import { getCurrentPlan } from "@/lib/plan-limits";
 import { getActiveLocationFilter } from "@/lib/locations";
 import { saveSettings, settingsStore } from "@/lib/settings-store";
-import { getStoredAppointments, getStoredClients, getStoredServices, getStoredStaff, saveClients, subscribeToStoredData } from "@/lib/storage";
+import { getStoredAppointments, getStoredClients, getStoredInventory, getStoredServices, getStoredStaff, saveClients, subscribeToStoredData } from "@/lib/storage";
 import { getSalonInvoices } from "@/lib/salon-invoices";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessHref } from "@/components/sidebar";
@@ -26,11 +27,11 @@ import {
   CONCERNS, PHOTO_ANGLES, PHOTO_STAGES, consentIsValid, consentTemplates, getClinicPhotos, getConsents,
   getConsultations, getTreatmentPlans, newId, packagesForClient, patientTimeline, planProgress, removeRecord,
   saveClinicPhotos, saveConsents, saveConsultations, saveTreatmentPlans, todayKey, upsertRecord,
-  activeMembership, getPrescriptions, savePrescriptions, prescriptionTemplates, prescriptionText, REGIME_TIMES,
+  activeMembership, getPrescriptions, getTreatmentCharts, audit, type TreatmentChart, savePrescriptions, prescriptionTemplates, prescriptionText, REGIME_TIMES,
   type ClinicPhoto, type ConsentRecord, type ConsentTemplate, type Consultation, type TimelineKind, type TreatmentPlan,
   type Prescription, type PrescriptionItem, type PrescriptionTemplate,
 } from "@/lib/clinic";
-import type { Appointment, Client, FitzpatrickType, MedicalProfile, Service, Staff } from "@/lib/types";
+import type { Appointment, Client, FitzpatrickType, InventoryItem, MedicalProfile, Service, Staff } from "@/lib/types";
 import type { SalonInvoice } from "@/lib/salon-invoices";
 
 // ─── Shared bits ─────────────────────────────────────────────────────────────
@@ -134,12 +135,13 @@ function TreatmentPicker({ services, value, onChange }: { services: Service[]; v
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
-type Tab = "timeline" | "medical" | "consultations" | "plans" | "consent" | "prescriptions" | "photos";
+type Tab = "timeline" | "medical" | "consultations" | "plans" | "charting" | "consent" | "prescriptions" | "photos" | "access";
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "timeline", label: "Timeline", icon: Clock },
   { id: "medical", label: "Medical", icon: Stethoscope },
   { id: "consultations", label: "Consultations", icon: ClipboardList },
   { id: "plans", label: "Plans & Packages", icon: ListChecks },
+  { id: "charting", label: "Treatment Records", icon: Syringe },
   { id: "consent", label: "Consent", icon: FileSignature },
   { id: "prescriptions", label: "Prescriptions", icon: Pill },
   { id: "photos", label: "Photos", icon: Camera },
@@ -156,13 +158,15 @@ interface Data {
   photos: ClinicPhoto[];
   prescriptions: Prescription[];
   clients: Client[];
+  charts: TreatmentChart[];
+  inventory: InventoryItem[];
 }
 
 function loadData(): Data {
   return {
     appointments: getStoredAppointments(), invoices: getSalonInvoices(), services: getStoredServices(), staff: getStoredStaff(),
     consultations: getConsultations(), plans: getTreatmentPlans(), consents: getConsents(), photos: getClinicPhotos(),
-    prescriptions: getPrescriptions(), clients: getStoredClients(),
+    prescriptions: getPrescriptions(), clients: getStoredClients(), charts: getTreatmentCharts(), inventory: getStoredInventory(),
   };
 }
 
@@ -170,13 +174,18 @@ export default function PatientClinicalRecord({ client, onClientChange }: { clie
   const [tab, setTab] = useState<Tab>("timeline");
   const [data, setData] = useState<Data | null>(null);
   const [allowed, setAllowed] = useState(true);
+  const [canSeeLog, setCanSeeLog] = useState(false);
 
   useEffect(() => {
-    setAllowed(canAccessHref(getCurrentUser(), "/dashboard/medical"));
+    const user = getCurrentUser();
+    const ok = canAccessHref(user, "/dashboard/medical");
+    setAllowed(ok);
+    setCanSeeLog(!!user && user.role !== "staff");
+    if (ok) audit("view", "clinical record", client.id);
     const refresh = () => setData(loadData());
     refresh();
     return subscribeToStoredData(refresh);
-  }, []);
+  }, [client.id]);
 
   if (!data) return null;
   const refresh = () => setData(loadData());
@@ -204,7 +213,7 @@ export default function PatientClinicalRecord({ client, onClientChange }: { clie
         )}
         {allowed && (
           <div role="tablist" style={{ display: "flex", gap: 2, overflowX: "auto" }}>
-            {TABS.map(({ id, label, icon: Icon }) => (
+            {[...TABS, ...(canSeeLog ? [{ id: "access" as Tab, label: "Access Log", icon: ShieldCheck }] : [])].map(({ id, label, icon: Icon }) => (
               <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
                 style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 12px", border: "none", background: "none", cursor: "pointer", whiteSpace: "nowrap",
                   fontSize: 12.5, fontWeight: 800, color: tab === id ? ACCENT : "#8a8aa3", borderBottom: `2px solid ${tab === id ? ACCENT : "transparent"}` }}>
@@ -221,8 +230,10 @@ export default function PatientClinicalRecord({ client, onClientChange }: { clie
           : tab === "medical" ? <MedicalTab client={client} clients={data.clients} onSaved={onClientChange} />
           : tab === "consultations" ? <ConsultationsTab client={client} data={data} onChange={refresh} onPlanCreated={() => { refresh(); setTab("plans"); }} />
           : tab === "plans" ? <PlansTab client={client} data={data} onChange={refresh} />
+          : tab === "charting" ? <ChartsTab client={client} data={data} onChange={refresh} />
           : tab === "consent" ? <ConsentTab client={client} data={data} onChange={refresh} />
           : tab === "prescriptions" ? <PrescriptionsTab client={client} data={data} onChange={refresh} />
+          : tab === "access" ? <AccessLogTab client={client} />
           : <PhotosTab client={client} data={data} onChange={refresh} />}
       </div>
     </div>
@@ -242,6 +253,7 @@ const KIND_STYLE: Record<TimelineKind, { color: string; icon: React.ElementType 
   due: { color: "#d97706", icon: Clock },
   prescription: { color: "#0891b2", icon: Pill },
   membership: { color: "#b45309", icon: Crown },
+  chart: { color: "#7c3aed", icon: Syringe },
 };
 
 function TimelineTab({ client, data }: { client: Client; data: Data }) {
@@ -300,6 +312,7 @@ function MedicalTab({ client, clients, onSaved }: { client: Client; clients: Cli
       .map(([k, v]) => [k, typeof v === "string" ? v.trim() : v]).filter(([, v]) => v)) as MedicalProfile;
     const updated: Client = { ...client, medical, referredBy: referredBy || undefined };
     saveClients(getStoredClients().map((c) => c.id === client.id ? updated : c));
+    audit("edit", "medical profile", client.id);
     onSaved(updated);
     setSaved(true);
     window.setTimeout(() => setSaved(false), 2000);
@@ -640,12 +653,12 @@ function ConsentTab({ client, data, onChange }: { client: Client; data: Data; on
             </div>
           </div>
           <button type="button" style={{ ...BTN, marginTop: 14 }}
-            onClick={() => { setPdfError(""); downloadClinicPdf({ kind: "consent", consent: viewing }, `${viewing.title} - ${viewing.signedName}`).catch((e) => setPdfError(e.message)); }}>
+            onClick={() => { setPdfError(""); audit("download", "consent", client.id, viewing.title); downloadClinicPdf({ kind: "consent", consent: viewing }, `${viewing.title} - ${viewing.signedName}`).catch((e) => setPdfError(e.message)); }}>
             <FileDown size={14} /> Download PDF
           </button>
           {autoWhatsApp() && client.phone && (
             <button type="button" style={{ ...BTN, marginTop: 14, marginLeft: 8, background: "#16a34a" }} disabled={sendState[viewing.id] === "sending" || sendState[viewing.id] === "sent"}
-              onClick={() => runSend(viewing.id, () => sendClinicWhatsApp({ kind: "consent", phone: client.phone, consent: viewing }))}>
+              onClick={() => { audit("send", "consent", client.id, viewing.title); runSend(viewing.id, () => sendClinicWhatsApp({ kind: "consent", phone: client.phone, consent: viewing })); }}>
               <Send size={14} /> {sendState[viewing.id] === "sent" ? "Sent ✓" : sendState[viewing.id] === "sending" ? "Sending…" : "Send PDF on WhatsApp"}
             </button>
           )}
@@ -730,6 +743,34 @@ function SignConsent({ template, client, staff, onClose, onSigned }: {
   );
 }
 
+// ─── Access log ──────────────────────────────────────────────────────────────
+
+function AccessLogTab({ client }: { client: Client }) {
+  const [entries, setEntries] = useState<{ who: string; action: string; entity: string; detail?: string; at: string }[] | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    fetch(`/api/clinic/audit?clientId=${encodeURIComponent(client.id)}`)
+      .then((r) => r.json())
+      .then((d) => { if (d.ok) setEntries(d.entries); else setError(d.error || "Couldn't load the log."); })
+      .catch(() => setError("Couldn't load the log."));
+  }, [client.id]);
+  if (error) return <Empty>{error}</Empty>;
+  if (!entries) return <Empty>Loading…</Empty>;
+  if (entries.length === 0) return <Empty>No one has opened or changed this record yet.</Empty>;
+  return (
+    <div>
+      <div style={{ fontSize: 12, color: "#9898b0", marginBottom: 10 }}>Who opened or changed this patient&rsquo;s clinical record. Only owners and managers see this.</div>
+      {entries.map((e, i) => (
+        <div key={i} style={{ display: "flex", gap: 10, padding: "8px 0", borderBottom: "1px solid #f4f4f8", fontSize: 12.5 }}>
+          <span style={{ width: 150, flexShrink: 0, color: "#8a8aa3" }}>{new Date(e.at).toLocaleString("en-PK", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</span>
+          <span style={{ fontWeight: 800, color: "#1a1a2e" }}>{e.who}</span>
+          <span style={{ color: "#6b6b8a" }}>{e.action === "view" ? "opened" : e.action === "create" ? "added" : e.action === "edit" ? "edited" : e.action === "delete" ? "deleted" : e.action === "download" ? "downloaded" : e.action === "send" ? "sent" : e.action === "upload" ? "uploaded" : e.action} {e.entity}{e.detail ? ` — ${e.detail}` : ""}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Prescriptions ───────────────────────────────────────────────────────────
 
 function PrescriptionsTab({ client, data, onChange }: { client: Client; data: Data; onChange: () => void }) {
@@ -751,11 +792,11 @@ function PrescriptionsTab({ client, data, onChange }: { client: Client; data: Da
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <Pill size={15} color="#0891b2" />
             <div style={{ flex: 1, fontSize: 13.5, fontWeight: 800, color: "#1a1a2e" }}>{fmtDate(rx.date)}{rx.practitionerName ? ` · ${rx.practitionerName}` : ""}</div>
-            <button type="button" onClick={() => { setError(""); downloadClinicPdf({ kind: "prescription", prescription: rx, patientName: client.name }, `Prescription - ${client.name} - ${rx.date}`).catch((e) => setError(e.message)); }}
+            <button type="button" onClick={() => { setError(""); audit("download", "prescription", client.id); downloadClinicPdf({ kind: "prescription", prescription: rx, patientName: client.name }, `Prescription - ${client.name} - ${rx.date}`).catch((e) => setError(e.message)); }}
               style={{ ...BTN_GHOST, padding: "6px 10px", fontSize: 11.5 }}><FileDown size={13} /> PDF</button>
             {client.phone && auto && (
               <button type="button" disabled={sendState[rx.id] === "sending" || sendState[rx.id] === "sent"} title="Send the PDF and the plan to the patient's WhatsApp"
-                onClick={() => runSend(rx.id, () => sendClinicWhatsApp({ kind: "prescription", phone: client.phone, patientName: client.name, prescription: rx }))}
+                onClick={() => { audit("send", "prescription", client.id); runSend(rx.id, () => sendClinicWhatsApp({ kind: "prescription", phone: client.phone, patientName: client.name, prescription: rx })); }}
                 style={{ ...BTN_GHOST, padding: "6px 10px", fontSize: 11.5, color: "#16a34a" }}>
                 <Send size={13} /> {sendState[rx.id] === "sent" ? "Sent ✓" : sendState[rx.id] === "sending" ? "Sending…" : "WhatsApp"}
               </button>
@@ -876,6 +917,7 @@ function PhotosTab({ client, data, onChange }: { client: Client; data: Data; onC
           area: meta.area.trim() || undefined, serviceId: meta.serviceId || undefined, createdAt: new Date().toISOString() });
       }
       saveClinicPhotos([...added, ...getClinicPhotos()]);
+      audit("upload", "photo", client.id, `${added.length} ${meta.stage} photo(s)`);
       onChange();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Upload failed.");

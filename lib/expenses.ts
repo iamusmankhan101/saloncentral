@@ -15,6 +15,7 @@ export type ExpenseCategory =
   | "equipment"
   | "marketing"
   | "food"
+  | "refunds"
   | "miscellaneous";
 
 /** One product bought in an expense, e.g. Shampoo × 5 @ PKR 800. */

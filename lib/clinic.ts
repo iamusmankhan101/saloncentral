@@ -18,10 +18,12 @@ import { useEffect, useState } from "react";
 import { settingsStore, SETTINGS_CHANGED_EVENT } from "./settings-store";
 import { locationUserKey } from "./locations";
 import { persistEntity } from "./turso-sync";
-import { clientServiceDates } from "./inventory-usage";
-import type { Appointment, Service } from "./types";
+import type { Appointment, InventoryItem, InventoryUnit, Service } from "./types";
+import { convertUnits } from "./inventory-usage";
 import type { SalonInvoice } from "./salon-invoices";
 import type { PrescriptionItem, Prescription } from "./clinic-prescription";
+import { activeMembership, addDays, packagesForClient, planProgress, todayKey } from "./clinic-core";
+export * from "./clinic-core";
 
 // ─── Business type & wording ─────────────────────────────────────────────────
 
@@ -236,7 +238,125 @@ export interface Lead {
   updatedAt: string;
 }
 
-type ClinicEntity = "consultations" | "treatment_plans" | "consents" | "clinic_photos" | "prescriptions" | "leads";
+// ─── Treatment charting & face map ───────────────────────────────────────────
+
+export type ChartType = "botox" | "filler" | "laser" | "peel" | "general";
+
+/** Treatment-specific fields, so each record captures what matters for that treatment. */
+export const CHART_TYPES: { id: ChartType; label: string; faceMap?: "units" | "ml"; fields: { key: string; label: string; placeholder?: string }[] }[] = [
+  { id: "botox", label: "Botox / toxin", faceMap: "units", fields: [
+    { key: "dilution", label: "Dilution", placeholder: "e.g. 100u in 2.5 ml saline" },
+    { key: "areas", label: "Injection areas", placeholder: "Forehead, glabella, crow's feet" },
+    { key: "technique", label: "Technique / needle", placeholder: "30G, intramuscular" },
+  ] },
+  { id: "filler", label: "Dermal filler", faceMap: "ml", fields: [
+    { key: "areas", label: "Injection areas", placeholder: "Cheeks, lips" },
+    { key: "technique", label: "Technique", placeholder: "Cannula 25G / needle, bolus / linear threading" },
+    { key: "anaesthetic", label: "Anaesthetic", placeholder: "Topical EMLA / lidocaine in product" },
+  ] },
+  { id: "laser", label: "Laser / energy device", fields: [
+    { key: "machine", label: "Machine" }, { key: "area", label: "Treatment area" },
+    { key: "energy", label: "Energy", placeholder: "J" }, { key: "fluence", label: "Fluence", placeholder: "J/cm²" },
+    { key: "pulse", label: "Pulse duration", placeholder: "ms" }, { key: "spot", label: "Spot size", placeholder: "mm" },
+    { key: "frequency", label: "Frequency", placeholder: "Hz" }, { key: "shots", label: "Number of shots" },
+    { key: "cooling", label: "Cooling", placeholder: "Contact / cryo" },
+  ] },
+  { id: "peel", label: "Chemical peel", fields: [
+    { key: "concentration", label: "Concentration", placeholder: "e.g. Glycolic 35%" }, { key: "layers", label: "Layers" },
+    { key: "time", label: "Application time", placeholder: "minutes" }, { key: "reaction", label: "Skin reaction", placeholder: "Erythema, frosting level" },
+    { key: "neutraliser", label: "Neutraliser" }, { key: "aftercare", label: "Aftercare given" },
+  ] },
+  { id: "general", label: "Other treatment", fields: [{ key: "area", label: "Treatment area" }, { key: "settings", label: "Settings / details" }] },
+];
+
+export interface ChartProduct {
+  itemId?: string;
+  name: string;
+  batchId?: string;
+  /** Snapshot, so the record still reads right if the batch is later removed. */
+  batchNumber?: string;
+  expiry?: string;
+  amount: number;
+  unit: InventoryUnit;
+}
+
+/** One injection point on the face map: position in the 200×260 diagram, the region it falls in, and the dose. */
+export interface FacePoint { x: number; y: number; region: string; amount: number }
+
+export interface TreatmentChart {
+  id: string;
+  clientId: string;
+  /** YYYY-MM-DD. */
+  date: string;
+  type: ChartType;
+  serviceId?: string;
+  practitionerId?: string;
+  practitionerName?: string;
+  products: ChartProduct[];
+  fields: Record<string, string>;
+  facePoints?: FacePoint[];
+  notes?: string;
+  createdAt: string;
+}
+
+/** Named face regions (centres in the 200×260 diagram) — a click is labelled with the nearest. */
+export const FACE_REGIONS: { name: string; x: number; y: number }[] = [
+  { name: "Forehead", x: 100, y: 52 }, { name: "Glabella", x: 100, y: 88 },
+  { name: "Left temple", x: 38, y: 82 }, { name: "Right temple", x: 162, y: 82 },
+  { name: "Left crow's feet", x: 42, y: 108 }, { name: "Right crow's feet", x: 158, y: 108 },
+  { name: "Left tear trough", x: 72, y: 122 }, { name: "Right tear trough", x: 128, y: 122 },
+  { name: "Bunny lines", x: 100, y: 118 }, { name: "Nose", x: 100, y: 140 },
+  { name: "Left cheek", x: 58, y: 145 }, { name: "Right cheek", x: 142, y: 145 },
+  { name: "Left nasolabial", x: 80, y: 165 }, { name: "Right nasolabial", x: 120, y: 165 },
+  { name: "Upper lip", x: 100, y: 172 }, { name: "Lower lip", x: 100, y: 186 },
+  { name: "Left marionette", x: 78, y: 196 }, { name: "Right marionette", x: 122, y: 196 },
+  { name: "Chin", x: 100, y: 214 }, { name: "Left jawline", x: 54, y: 198 }, { name: "Right jawline", x: 146, y: 198 },
+];
+
+export function faceRegionAt(x: number, y: number): string {
+  let best = FACE_REGIONS[0];
+  let bestD = Infinity;
+  for (const r of FACE_REGIONS) {
+    const d = (r.x - x) ** 2 + (r.y - y) ** 2;
+    if (d < bestD) { bestD = d; best = r; }
+  }
+  return best.name;
+}
+
+/** How much of each batch the charts have used, in the batch's item unit. */
+export function batchUsage(charts: TreatmentChart[], items: InventoryItem[]): Map<string, number> {
+  const unitOf = new Map(items.map((i) => [i.id, i.unit]));
+  const used = new Map<string, number>();
+  for (const c of charts) {
+    for (const p of c.products) {
+      if (!p.batchId || !p.itemId) continue;
+      const unit = unitOf.get(p.itemId);
+      const amount = unit ? convertUnits(p.amount, p.unit, unit) ?? p.amount : p.amount;
+      used.set(p.batchId, (used.get(p.batchId) ?? 0) + amount);
+    }
+  }
+  return used;
+}
+
+// ─── Waiting list ────────────────────────────────────────────────────────────
+
+export interface WaitlistEntry {
+  id: string;
+  clientId?: string;
+  name: string;
+  phone: string;
+  /** What they want, free text or treatment names. */
+  wants: string;
+  /** YYYY-MM-DD they'd like, if any. */
+  preferredDate?: string;
+  /** "Morning", "Evening", "After 5pm"… */
+  preferredTime?: string;
+  notes?: string;
+  status: "waiting" | "booked" | "removed";
+  createdAt: string;
+}
+
+type ClinicEntity = "consultations" | "treatment_plans" | "consents" | "clinic_photos" | "prescriptions" | "leads" | "treatment_charts" | "waitlist";
 
 function readList<T>(entity: ClinicEntity): T[] {
   if (typeof window === "undefined") return [];
@@ -263,31 +383,51 @@ export const getClinicPhotos = () => readList<ClinicPhoto>("clinic_photos");
 export const saveClinicPhotos = (list: ClinicPhoto[], deletedIds?: string[]) => writeList("clinic_photos", list, deletedIds);
 export const getPrescriptions = () => readList<Prescription>("prescriptions");
 export const savePrescriptions = (list: Prescription[], deletedIds?: string[]) => writeList("prescriptions", list, deletedIds);
+export const getTreatmentCharts = () => readList<TreatmentChart>("treatment_charts");
+export const saveTreatmentCharts = (list: TreatmentChart[], deletedIds?: string[]) => writeList("treatment_charts", list, deletedIds);
+export const getWaitlist = () => readList<WaitlistEntry>("waitlist");
+export const saveWaitlist = (list: WaitlistEntry[], deletedIds?: string[]) => writeList("waitlist", list, deletedIds);
 export const getLeads = () => readList<Lead>("leads");
 export const saveLeads = (list: Lead[], deletedIds?: string[]) => writeList("leads", list, deletedIds);
+
+/**
+ * Records who opened or changed a patient's clinical record (app/api/clinic/audit).
+ * Fire-and-forget: a failed log must never block clinical work.
+ */
+export function audit(action: "view" | "create" | "edit" | "delete" | "sign" | "download" | "send" | "upload", entity: string, clientId: string | undefined, detail?: string): void {
+  if (typeof window === "undefined" || !clientId) return;
+  fetch("/api/clinic/audit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, entity, clientId, detail }), keepalive: true }).catch(() => {});
+}
+
+/** Getter → what to call the record in the audit log. */
+const AUDIT_NAMES = new Map<() => unknown[], string>();
 
 /** Adds or replaces one record by id, against the freshest stored list. */
 export function upsertRecord<T extends { id: string }>(get: () => T[], save: (list: T[]) => Promise<boolean>, record: T): T[] {
   const list = get();
-  const next = list.some((r) => r.id === record.id) ? list.map((r) => r.id === record.id ? record : r) : [record, ...list];
+  const exists = list.some((r) => r.id === record.id);
+  const next = exists ? list.map((r) => r.id === record.id ? record : r) : [record, ...list];
   save(next);
+  const name = AUDIT_NAMES.get(get);
+  if (name) audit(exists ? "edit" : "create", name, (record as { clientId?: string }).clientId);
   return next;
 }
 
 export function removeRecord<T extends { id: string }>(get: () => T[], save: (list: T[], deletedIds?: string[]) => Promise<boolean>, id: string): T[] {
-  const next = get().filter((r) => r.id !== id);
+  const list = get();
+  const gone = list.find((r) => r.id === id);
+  const next = list.filter((r) => r.id !== id);
   save(next, [id]);
+  const name = AUDIT_NAMES.get(get);
+  if (name && gone) audit("delete", name, (gone as { clientId?: string }).clientId);
   return next;
 }
 
-export const newId = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-export const todayKey = () => new Date().toLocaleDateString("en-CA");
+// Clinical records are audited; leads and the waiting list aren't patient records.
+AUDIT_NAMES.set(getConsultations, "consultation").set(getTreatmentPlans, "treatment plan").set(getConsents, "consent")
+  .set(getClinicPhotos, "photo").set(getPrescriptions, "prescription").set(getTreatmentCharts, "treatment record");
 
-export function addDays(date: string, days: number): string {
-  const d = new Date(`${date}T12:00:00`);
-  d.setDate(d.getDate() + days);
-  return d.toLocaleDateString("en-CA");
-}
+export const newId = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
 // ─── Consent templates ───────────────────────────────────────────────────────
 
@@ -382,133 +522,9 @@ export function missingConsents(
   return [...needed.values()].filter((t) => !mine.some((c) => c.templateId === t.id && consentIsValid(t, c, nowMs)));
 }
 
-// ─── Packages (derived from invoices) ────────────────────────────────────────
-
-export interface PatientPackage {
-  /** `${invoiceId}:${lineId}` of the line that sold it — what redemption lines point at. */
-  id: string;
-  clientId: string;
-  name: string;
-  serviceId: string;
-  sessions: number;
-  used: number;
-  remaining: number;
-  /** Each session used, oldest first. */
-  usedOn: { date: string; invoiceNumber: string }[];
-  purchasedOn: string;
-  expiresAt?: string;
-  expired: boolean;
-  invoiceNumber: string;
-  price: number;
-  /** Whether the sale that bought it is fully paid. */
-  paid: boolean;
-}
-
-export function packagesForClient(clientId: string, invoices: SalonInvoice[], today = todayKey()): PatientPackage[] {
-  const used = new Map<string, { date: string; invoiceNumber: string }[]>();
-  for (const inv of invoices) {
-    for (const line of inv.items) {
-      if (!line.packageId) continue;
-      const list = used.get(line.packageId) ?? [];
-      for (let i = 0; i < Math.max(1, line.qty); i++) list.push({ date: inv.date, invoiceNumber: inv.number });
-      used.set(line.packageId, list);
-    }
-  }
-  const out: PatientPackage[] = [];
-  for (const inv of invoices) {
-    if (inv.clientId !== clientId) continue;
-    for (const line of inv.items) {
-      if (!line.packagePurchase || line.guestName) continue;
-      const id = `${inv.id}:${line.id}`;
-      const sessions = line.packagePurchase.sessions * Math.max(1, line.qty);
-      const usedOn = (used.get(id) ?? []).sort((a, b) => a.date.localeCompare(b.date));
-      const expiresAt = line.packagePurchase.expiresAt;
-      out.push({
-        id, clientId, name: line.description, serviceId: line.packagePurchase.serviceId, sessions,
-        used: usedOn.length, remaining: Math.max(0, sessions - usedOn.length), usedOn,
-        purchasedOn: inv.date, expiresAt, expired: !!expiresAt && expiresAt < today,
-        invoiceNumber: inv.number, price: line.total, paid: inv.status === "paid",
-      });
-    }
-  }
-  return out.sort((a, b) => b.purchasedOn.localeCompare(a.purchasedOn));
-}
-
-/** Packages that can still pay for a session of `serviceId`. */
-export function usablePackages(clientId: string, serviceId: string, invoices: SalonInvoice[]): PatientPackage[] {
-  return packagesForClient(clientId, invoices).filter((p) => p.serviceId === serviceId && p.remaining > 0 && !p.expired);
-}
-
-// ─── Memberships (derived from invoices, like packages) ──────────────────────
-
-export interface ActiveMembership {
-  name: string;
-  discountPercent: number;
-  perks?: string;
-  /** YYYY-MM-DD of the last day it covers. */
-  until: string;
-  invoiceNumber: string;
-}
-
-/** The client's membership covering `today`, the longest-running if several overlap. */
-export function activeMembership(clientId: string, invoices: SalonInvoice[], today = todayKey()): ActiveMembership | null {
-  let best: ActiveMembership | null = null;
-  for (const inv of invoices) {
-    if (inv.clientId !== clientId) continue;
-    for (const line of inv.items) {
-      const m = line.membershipPurchase;
-      if (!m || line.guestName || m.from > today || m.until < today) continue;
-      if (!best || m.until > best.until) best = { name: line.description, discountPercent: m.discountPercent, perks: m.perks, until: m.until, invoiceNumber: inv.number };
-    }
-  }
-  return best;
-}
-
-/** Last day a membership of `months` bought today covers. */
-export function membershipUntil(from: string, months: number): string {
-  const d = new Date(`${from}T12:00:00`);
-  d.setMonth(d.getMonth() + Math.max(1, months));
-  d.setDate(d.getDate() - 1);
-  return d.toLocaleDateString("en-CA");
-}
-
-// ─── Treatment plan progress (derived) ───────────────────────────────────────
-
-export interface PlanSession {
-  n: number;
-  /** YYYY-MM-DD: when it was done, or when it's due. */
-  date: string;
-  status: "done" | "upcoming" | "overdue";
-}
-
-export function planProgress(
-  plan: TreatmentPlan,
-  invoices: SalonInvoice[],
-  appointments: Appointment[],
-  services: Service[],
-  today = todayKey(),
-): { done: number; remaining: number; sessions: PlanSession[] } {
-  const visitDates = new Set<string>();
-  for (const serviceId of plan.serviceIds) {
-    for (const d of clientServiceDates(plan.clientId, serviceId, invoices, appointments, services)) {
-      if (d >= plan.startDate) visitDates.add(d);
-    }
-  }
-  const doneDates = [...visitDates].sort().slice(0, plan.sessions);
-  const sessions: PlanSession[] = [];
-  let last: string | undefined = doneDates[doneDates.length - 1];
-  for (let n = 1; n <= plan.sessions; n++) {
-    if (n <= doneDates.length) { sessions.push({ n, date: doneDates[n - 1], status: "done" }); continue; }
-    const date: string = last ? addDays(last, plan.intervalDays) : plan.startDate;
-    sessions.push({ n, date, status: date < today ? "overdue" : "upcoming" });
-    last = date;
-  }
-  return { done: doneDates.length, remaining: plan.sessions - doneDates.length, sessions };
-}
-
 // ─── Patient timeline (derived) ──────────────────────────────────────────────
 
-export type TimelineKind = "appointment" | "consultation" | "consent" | "photos" | "plan" | "payment" | "package" | "due" | "prescription" | "membership";
+export type TimelineKind = "appointment" | "consultation" | "consent" | "photos" | "plan" | "payment" | "package" | "due" | "prescription" | "membership" | "chart";
 
 export interface TimelineEvent {
   date: string;
@@ -529,6 +545,7 @@ export function patientTimeline(input: {
   photos: ClinicPhoto[];
   services: Service[];
   prescriptions?: Prescription[];
+  charts?: TreatmentChart[];
 }): TimelineEvent[] {
   const { clientId, services } = input;
   const nameOf = (id: string) => services.find((s) => s.id === id)?.name ?? "Treatment";
@@ -553,6 +570,11 @@ export function patientTimeline(input: {
     if (c.clientId !== clientId) continue;
     const concerns = [...c.concerns, c.concernOther].filter(Boolean).join(", ");
     events.push({ date: c.date, time: c.createdAt.slice(11, 16), kind: "consultation", title: "Consultation", detail: [concerns, c.practitionerName && `by ${c.practitionerName}`].filter(Boolean).join(" · ") });
+  }
+  for (const ch of input.charts ?? []) {
+    if (ch.clientId !== clientId) continue;
+    const dose = ch.facePoints?.length ? ` · ${Math.round(ch.facePoints.reduce((s, p) => s + p.amount, 0) * 100) / 100} ${CHART_TYPES.find((t) => t.id === ch.type)?.faceMap ?? ""} on face map` : "";
+    events.push({ date: ch.date, time: ch.createdAt.slice(11, 16), kind: "chart", title: `Treatment record: ${ch.serviceId ? nameOf(ch.serviceId) : CHART_TYPES.find((t) => t.id === ch.type)?.label ?? "Treatment"}`, detail: `${ch.products.map((p) => `${p.name} ${p.amount}${p.unit}${p.batchNumber ? ` (batch ${p.batchNumber})` : ""}`).join(", ")}${dose}` || undefined });
   }
   for (const rx of input.prescriptions ?? []) {
     if (rx.clientId !== clientId) continue;
