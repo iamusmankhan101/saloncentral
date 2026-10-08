@@ -215,10 +215,15 @@ function withinOpeningHours(baseMs: number, settings: Record<string, unknown> | 
  * `force` is the manual "Queue Now" button — it bypasses the autoWinback toggle
  * (the owner is asking for this send right now) but never the cooldown, the
  * per-run cap, or the credential/template checks.
+ *
+ * `clientIds` is the "Choose clients" picker: only those clients are queued,
+ * and never-visited ones count whether or not that option is switched on (the
+ * owner picked them by hand). They still have to be reachable, and the
+ * cooldown, pending check and daily cap all still apply.
  */
 export async function enqueueWinbackForUser(
   userId: string,
-  options: { force?: boolean; nowMs?: number } = {},
+  options: { force?: boolean; nowMs?: number; clientIds?: string[] } = {},
 ): Promise<WinbackEnqueueResult> {
   const nowMs = options.nowMs ?? Date.now();
   const settings = await loadSalonSettings(userId);
@@ -246,12 +251,13 @@ export async function enqueueWinbackForUser(
   // leads. Leads get their own wording since there's no "last visit" to mention.
   const neverVisitedTemplate = (config.discountEnabled ? whatsapp?.winbackNeverVisited : whatsapp?.winbackNeverVisitedNoDiscount)
     || whatsapp?.winbackNeverVisited;
+  const chosen = options.clientIds ? new Set(options.clientIds) : null;
   const targets: { client: WinbackClient; template: string; lastVisit?: string; daysSinceVisit?: number }[] = [
     ...audience.lapsed.map((entry) => ({ ...entry, template })),
-    ...(config.includeNeverVisited && neverVisitedTemplate?.trim()
+    ...((chosen || config.includeNeverVisited) && neverVisitedTemplate?.trim()
       ? audience.neverVisited.map((client) => ({ client, template: neverVisitedTemplate }))
       : []),
-  ];
+  ].filter((entry) => !chosen || chosen.has(entry.client.id));
   if (targets.length === 0) return { ok: true, eligible: 0, queued: 0, skipped: 0 };
 
   const salonName = (settings.salon as { name?: string } | undefined)?.name || "Your Salon";

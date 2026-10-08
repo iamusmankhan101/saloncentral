@@ -16,6 +16,17 @@ export async function POST(req: NextRequest) {
   const actor = await resolveActor(req);
   if (!actor) return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
+  // Optional { clientIds } from the "Choose clients" picker; no body = everyone eligible.
+  const body = await req.json().catch(() => ({})) as { clientIds?: unknown };
+  let clientIds: string[] | undefined;
+  if (body.clientIds !== undefined) {
+    if (!Array.isArray(body.clientIds) || body.clientIds.length === 0 || body.clientIds.length > 5000
+      || !body.clientIds.every((id) => typeof id === "string" && id.length > 0 && id.length < 200)) {
+      return Response.json({ ok: false, error: "Pick at least one client." }, { status: 400 });
+    }
+    clientIds = body.clientIds as string[];
+  }
+
   try {
     await ensureWinbackTables();
 
@@ -34,7 +45,7 @@ export async function POST(req: NextRequest) {
       return Response.json({ ok: false, error: "WhatsApp is not connected. Add your provider credentials in Account settings first." }, { status: 400 });
     }
 
-    const result = await enqueueWinbackForUser(actor.userId, { force: true });
+    const result = await enqueueWinbackForUser(actor.userId, { force: true, clientIds });
     if (!result.ok) {
       const messages: Record<string, string> = {
         "no-settings": "Save your salon settings before queueing win-back messages.",

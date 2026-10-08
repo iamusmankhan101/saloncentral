@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import {
   MessageSquare, CheckCircle2, XCircle, Clock, Send, RefreshCw,
   Zap, Bell, ThumbsUp, Package, ChevronRight, Phone, Copy, Check,
-  Eye, EyeOff, Save, TrendingUp, Wifi, WifiOff, CalendarDays, AlertCircle, Cake, CalendarX, Heart, X, ListChecks, UserMinus, RotateCcw, Trash2,
+  Eye, EyeOff, Save, TrendingUp, Wifi, WifiOff, CalendarDays, AlertCircle, Cake, CalendarX, Heart, X, ListChecks, UserMinus, RotateCcw, Trash2, Search, Users,
 } from "lucide-react";
 import DashboardHeader from "@/components/dashboard-header";
 import MobilePageHeader from "@/components/mobile-page-header";
@@ -404,6 +404,7 @@ function MessagesPageContent() {
   const [wbSaved,       setWbSaved]       = useState(false);
   const [wbSending,     setWbSending]     = useState(false);
   const [wbResult,      setWbResult]      = useState<{ ok: boolean; message: string } | null>(null);
+  const [showWbPicker,  setShowWbPicker]  = useState(false);
   const [resending,     setResending]     = useState(false);
   const [resendResult,  setResendResult]  = useState<{ ok: boolean; message: string } | null>(null);
 
@@ -425,6 +426,12 @@ function MessagesPageContent() {
   const lapsedClients = winbackAudience?.lapsed ?? [];
   const neverVisitedClients = winbackAudience?.neverVisited ?? [];
   const winbackTargetCount = lapsedClients.length + (wbNeverVisited ? neverVisitedClients.length : 0);
+  // Everyone the picker can offer: lapsed first (longest gone at the top), then
+  // never-visited — listed whatever that checkbox says, since picking is explicit.
+  const winbackCandidates = useMemo<WinbackCandidate[]>(() => [
+    ...(winbackAudience?.lapsed ?? []).map(({ client, lastVisit, daysSinceVisit }) => ({ id: client.id, name: client.name, phone: client.phone ?? "", note: `Last visit ${lastVisit} · ${daysSinceVisit} days ago` })),
+    ...(winbackAudience?.neverVisited ?? []).map((client) => ({ id: client.id, name: client.name, phone: client.phone ?? "", note: "Never visited" })),
+  ], [winbackAudience]);
 
   // "Nobody qualifies" is often the correct answer, so say which rule produced it
   // rather than leaving the owner to guess whether the feature is broken.
@@ -489,15 +496,29 @@ function MessagesPageContent() {
 
   // Queues server-side (unlike the birthday test send, which runs in this tab) so
   // the batch keeps draining across its multi-hour spread even if this page closes.
-  async function queueWinbackNow() {
+  /** @param clientIds only these clients (the picker); omit to queue everyone eligible. */
+  async function queueWinbackNow(clientIds?: string[]) {
     setWbSending(true);
     setWbResult(null);
     try {
       // The server reads the saved settings, so unsaved edits (days, never-visited) must land first.
       await saveWinbackSettings();
-      const res = await fetch("/api/whatsapp/queue-winback", { method: "POST" });
+      const res = await fetch("/api/whatsapp/queue-winback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(clientIds ? { clientIds } : {}),
+      });
       const data = await res.json() as { ok?: boolean; queued?: number; eligible?: number; skipped?: number; dailyCap?: number; error?: string };
-      if (data.ok) {
+      if (data.ok && clientIds) {
+        const queued = data.queued ?? 0;
+        const left = clientIds.length - queued;
+        setWbResult({
+          ok: queued > 0,
+          message: `Queued ${queued} of the ${clientIds.length} client${clientIds.length === 1 ? "" : "s"} you picked, spread over the next 7\u20138 hours.`
+            + (left > 0 ? ` ${left} not queued \u2014 today\u2019s limit of ${data.dailyCap ?? WINBACK_DAILY_MAX} reached, messaged within the cooldown, already in the queue, or no valid number. Pick the rest again tomorrow.` : ""),
+        });
+        if (queued > 0) setShowWbPicker(false);
+      } else if (data.ok) {
         setWbResult({
           ok: true,
           message: data.queued
@@ -1322,12 +1343,17 @@ function MessagesPageContent() {
                     </div>
                   )}
 
+                  <button type="button" onClick={() => setShowWbPicker(true)} disabled={winbackCandidates.length === 0}
+                    style={{ border: "1px dashed #99f6e4", borderRadius: 10, padding: "9px 0", fontSize: 12, fontWeight: 800, cursor: winbackCandidates.length === 0 ? "not-allowed" : "pointer", background: "#fff", color: "#0d9488", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, opacity: winbackCandidates.length === 0 ? 0.5 : 1 }}>
+                    <Users size={13} /> Choose clients to message
+                  </button>
+
                   <div style={{ display: "flex", gap: 8 }}>
                     <button type="button" onClick={saveWinbackSettings} disabled={wbSaving}
                       style={{ flex: 1, border: "none", borderRadius: 10, padding: "10px 0", fontSize: 12, fontWeight: 800, cursor: wbSaving ? "not-allowed" : "pointer", background: wbSaved ? "#ecfdf5" : "linear-gradient(135deg,#0f766e,#0d9488)", color: wbSaved ? "#059669" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, boxShadow: wbSaved ? "none" : "0 3px 10px rgba(13,148,136,0.3)" }}>
                       {wbSaved ? <><Check size={13} /> Saved</> : wbSaving ? "Saving…" : <><Save size={13} /> Save</>}
                     </button>
-                    <button type="button" onClick={queueWinbackNow} disabled={wbSending || winbackTargetCount === 0}
+                    <button type="button" onClick={() => queueWinbackNow()} disabled={wbSending || winbackTargetCount === 0}
                       title={winbackTargetCount === 0 ? "No clients to message" : "Queue today\u2019s win-back messages, spread over 7\u20138 hours"}
                       style={{ flex: 1, border: "1px solid #ccfbf1", borderRadius: 10, padding: "10px 0", fontSize: 12, fontWeight: 800, cursor: (wbSending || winbackTargetCount === 0) ? "not-allowed" : "pointer", background: "#f0fdfa", color: "#0d9488", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, opacity: winbackTargetCount === 0 ? 0.5 : 1 }}>
                       {wbSending ? "Queueing…" : <><Send size={13} /> Queue Now</>}
@@ -1339,6 +1365,16 @@ function MessagesPageContent() {
           </div>
         )}
       </div>
+
+      {showWbPicker && (
+        <WinbackPickerModal
+          candidates={winbackCandidates}
+          sending={wbSending}
+          result={wbResult}
+          onClose={() => setShowWbPicker(false)}
+          onQueue={(ids) => queueWinbackNow(ids)}
+        />
+      )}
 
       {showQueueModal && (
         <QueueDetailsModal
@@ -1376,6 +1412,94 @@ function formatWhen(iso: string): { absolute: string; relative: string; overdue:
   else relative = `${days}d`;
 
   return { absolute, relative: overdue ? `${relative} overdue` : `in ${relative}`, overdue };
+}
+
+interface WinbackCandidate { id: string; name: string; phone: string; note: string }
+
+/**
+ * Hand-pick who gets a win-back. Lists everyone the automation could reach;
+ * the server still applies the daily limit, cooldown and duplicate checks to
+ * whatever is picked, so this narrows the send but can never widen it.
+ */
+function WinbackPickerModal({ candidates, sending, result, onClose, onQueue }: {
+  candidates: WinbackCandidate[];
+  sending: boolean;
+  result: { ok: boolean; message: string } | null;
+  onClose: () => void;
+  onQueue: (clientIds: string[]) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const q = query.trim().toLowerCase();
+  const shown = q ? candidates.filter((c) => c.name.toLowerCase().includes(q) || c.phone.includes(q.replace(/\D/g, "") || q)) : candidates;
+  const toggle = (id: string) => setPicked((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const allShownPicked = shown.length > 0 && shown.every((c) => picked.has(c.id));
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 18, width: "100%", maxWidth: 560, maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 70px rgba(0,0,0,0.22)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "18px 20px", borderBottom: "1px solid #f0f0f5", flexShrink: 0 }}>
+          <Users size={18} color="#0d9488" />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 15, fontWeight: 900, color: "#1d1d2f" }}>Choose Win-back Clients</div>
+            <div style={{ fontSize: 11, color: "#9999b0", marginTop: 1 }}>{candidates.length} clients can get a win-back message</div>
+          </div>
+          <button type="button" onClick={onClose} title="Close"
+            style={{ border: "none", background: "rgba(0,0,0,0.06)", borderRadius: 8, padding: 7, cursor: "pointer", display: "flex" }}>
+            <X size={14} color="#6b6b8a" />
+          </button>
+        </div>
+
+        <div style={{ padding: "12px 16px 8px", display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+          <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 7, border: "1px solid #e4e4ee", borderRadius: 9, padding: "0 10px", height: 36 }}>
+            <Search size={14} color="#9999b0" />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name or phone"
+              style={{ flex: 1, border: "none", outline: "none", fontSize: 13, color: "#29293d", minWidth: 0 }} />
+          </div>
+          <button type="button" disabled={shown.length === 0}
+            onClick={() => setPicked((prev) => {
+              const next = new Set(prev);
+              for (const c of shown) { if (allShownPicked) next.delete(c.id); else next.add(c.id); }
+              return next;
+            })}
+            style={{ border: "1px solid #ccfbf1", background: "#f0fdfa", color: "#0d9488", borderRadius: 9, padding: "0 12px", height: 36, fontSize: 12, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}>
+            {allShownPicked ? "Unselect shown" : `Select ${q ? "shown" : "all"}`}
+          </button>
+        </div>
+
+        <div style={{ overflowY: "auto", padding: "0 10px 8px", flex: 1 }}>
+          {shown.length === 0 ? (
+            <div style={{ padding: 28, textAlign: "center", fontSize: 12, color: "#9999b0" }}>No matching clients.</div>
+          ) : shown.map((c) => (
+            <label key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 8px", borderBottom: "1px solid #f6f6fa", cursor: "pointer" }}>
+              <input type="checkbox" checked={picked.has(c.id)} onChange={() => toggle(c.id)} style={{ accentColor: "#0d9488", width: 15, height: 15, flexShrink: 0 }} />
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#1d1d2f", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
+                <span style={{ display: "block", fontSize: 11, color: "#9999b0" }}>{c.phone} · {c.note}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+
+        <div style={{ padding: "12px 16px 16px", borderTop: "1px solid #f0f0f5", display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
+          {result && !result.ok && (
+            <div style={{ padding: "8px 11px", borderRadius: 9, fontSize: 11, fontWeight: 600, background: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b" }}>{result.message}</div>
+          )}
+          <div style={{ fontSize: 11, color: "#9999b0", lineHeight: 1.5 }}>
+            At most {WINBACK_DAILY_MIN}&ndash;{WINBACK_DAILY_MAX} win-backs go out a day (including the automatic ones). Clients messaged within the cooldown are skipped.
+          </div>
+          <button type="button" disabled={picked.size === 0 || sending} onClick={() => onQueue([...picked])}
+            style={{ border: "none", borderRadius: 10, padding: "11px 0", fontSize: 13, fontWeight: 800, cursor: picked.size === 0 || sending ? "not-allowed" : "pointer", background: picked.size === 0 ? "#e8e8f0" : "linear-gradient(135deg,#0f766e,#0d9488)", color: picked.size === 0 ? "#b0b0c8" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
+            {sending ? "Queueing…" : <><Send size={13} /> Queue {picked.size || ""} selected</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function QueueDetailsModal({ items, loading, onClose, onRefresh }: {
