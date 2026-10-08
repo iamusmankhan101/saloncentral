@@ -41,8 +41,9 @@ export class ImageUploadError extends Error {}
  * defeating the point of hosting it, and the misconfiguration would only surface
  * much later as bloated sync payloads.
  */
-export async function uploadImage(file: File, folder: "clients" | "staff" | "salon"): Promise<string> {
-  const dataUrl = await fileToResizedDataUrl(file);
+/** @param maxEdge clinical photos pass a larger size so before/after detail survives. */
+export async function uploadImage(file: File, folder: "clients" | "staff" | "salon" | "patients", maxEdge = MAX_EDGE_PX): Promise<string> {
+  const dataUrl = await fileToResizedDataUrl(file, maxEdge);
   let res: Response;
   try {
     res = await fetch("/api/upload/image", {

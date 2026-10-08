@@ -6,6 +6,7 @@
 import { NextRequest } from "next/server";
 import { timingSafeEqual } from "crypto";
 import { createUser } from "@/lib/auth-db";
+import { db } from "@/lib/db";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { MAX_PASSWORD_LENGTH } from "@/lib/api-auth";
 import { ensureBillingTables, upsertBillingUser } from "@/lib/billing-db";
@@ -54,6 +55,7 @@ export async function POST(req: NextRequest) {
     phone: string;
     adminCode?: string;
     planId?: string;
+    businessType?: string;
   };
 
   try {
@@ -94,6 +96,21 @@ export async function POST(req: NextRequest) {
       emailVerified: true,
       approvalStatus: isAdmin ? "approved" : "pending",
     });
+
+    // Clinic mode lives in the salon's settings (lib/clinic.ts), so a clinic
+    // account starts with a settings row saying so. The browser merges it with
+    // the defaults on first load; a salon needs nothing.
+    if (body.businessType === "clinic") {
+      try {
+        await db.execute(`CREATE TABLE IF NOT EXISTS salon_data (entity TEXT PRIMARY KEY, data TEXT NOT NULL, updated_at TEXT NOT NULL)`);
+        await db.execute({
+          sql: "INSERT OR IGNORE INTO salon_data (entity, data, updated_at) VALUES (?, ?, ?)",
+          args: [`${user.id}_settings`, JSON.stringify({ salon: { name: user.salonName, businessType: "clinic" } }), new Date().toISOString()],
+        });
+      } catch (err) {
+        console.error("[auth/signup] clinic settings failed:", err);
+      }
+    }
 
     if (plan) {
       // Don't fail the signup over this — the account exists either way, and

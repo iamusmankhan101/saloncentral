@@ -34,6 +34,7 @@ import { getDefaultLocationId } from "@/lib/locations";
 import { getSectionOptions, getActiveSection, inSection } from "@/lib/sections";
 import type { Service, Client, InventoryItem, Staff, PaymentMethod } from "@/lib/types";
 import { settleServiceConsumption } from "@/lib/inventory-consumption";
+import { addDays, getConsents, missingConsents, term, usablePackages, useIsClinic } from "@/lib/clinic";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -72,6 +73,8 @@ interface CartEntry {
   dayBreakdown?: { label: string; amount: number }[];
   priceRangeMin?: number;
   priceRangeMax?: number;
+  /** Paid for by a session package the client already bought (lib/clinic.ts) — priced at 0. */
+  packageId?: string;
 }
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -387,6 +390,15 @@ export default function POSPage() {
       id: e.cartId, type: e.type, sourceId: e.itemId, description: e.name,
       qty: e.qty, unitPrice: wholePkr(e.unitPrice), total: wholePkr(e.total),
       ...(e.guestName ? { guestName: e.guestName } : {}),
+      ...(e.packageId ? { packageId: e.packageId } : {}),
+      // Selling a session package: snapshot what it buys and when it runs out.
+      ...((() => {
+        const pkg = e.type === "service" && !e.packageId ? services.find(sv => sv.id === e.itemId)?.sessionPackage : undefined;
+        return pkg ? { packagePurchase: {
+          serviceId: pkg.serviceId, sessions: pkg.sessions,
+          ...(pkg.validityDays ? { expiresAt: addDays(localDateKey(), pkg.validityDays) } : {}),
+        } } : {};
+      })()),
       // Only while it still matches the line — a changed qty makes it stale.
       ...(e.dayBreakdown && e.dayBreakdown.length === e.qty
         ? { dayBreakdown: e.dayBreakdown.map(d => ({ label: d.label, amount: wholePkr(e.unitPrice) })) }
@@ -454,7 +466,37 @@ export default function POSPage() {
   const balanceAmount = isAdvance ? Math.max(0, total - advanceAmount) : 0;
   const totalQty = cart.reduce((s, e) => s + e.qty, 0);
   // Prices are editable per line, so guard every line — not just the variable-priced ones.
-  const hasUnpricedLine = cart.some(e => e.unitPrice <= 0);
+  const hasUnpricedLine = cart.some(e => e.unitPrice <= 0 && !e.packageId);
+  // ── Session packages (aesthetic clinics) ──
+  const clinic = useIsClinic();
+  // Re-read after each sale so a session just used is no longer offered.
+  const clientInvoices = useMemo(() => (selectedClient?.id ? getSalonInvoices() : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- lastInvoice marks "a sale just happened"
+    [selectedClient?.id, lastInvoice]);
+  /** Sessions of the package this cart already uses, so two lines can't spend the same last session. */
+  const cartUse = (packageId: string, exceptCartId?: string) =>
+    cart.filter(e => e.packageId === packageId && e.cartId !== exceptCartId).reduce((n, e) => n + e.qty, 0);
+  const packageFor = (entry: CartEntry) => {
+    if (!selectedClient?.id || entry.type !== "service" || entry.guestName) return null;
+    return usablePackages(selectedClient.id, entry.itemId, clientInvoices)
+      .map(p => ({ ...p, left: p.remaining - cartUse(p.id, entry.cartId) }))
+      .find(p => p.left > 0) ?? null;
+  };
+  function togglePackage(entry: CartEntry) {
+    const pkg = entry.packageId ? null : packageFor(entry);
+    setCart(prev => prev.map(e => e.cartId !== entry.cartId ? e
+      : pkg ? { ...e, packageId: pkg.id, qty: Math.min(e.qty, pkg.left), unitPrice: 0, total: 0 }
+      : { ...e, packageId: undefined, unitPrice: e.basePrice, total: e.basePrice * e.qty }));
+  }
+  const packageOverdrawn = cart.some(e => {
+    if (!e.packageId || !selectedClient?.id) return false;
+    const pkg = usablePackages(selectedClient.id, e.itemId, clientInvoices).find(p => p.id === e.packageId);
+    return !pkg || cartUse(e.packageId) > pkg.remaining;
+  });
+  const packageWithoutClient = !selectedClient?.id && cart.some(e => e.type === "service" && !!services.find(sv => sv.id === e.itemId)?.sessionPackage);
+  const consentGaps = clinic && selectedClient?.id
+    ? missingConsents(selectedClient.id, cart.filter(e => e.type === "service" && !e.guestName).map(e => ({ id: e.itemId, name: e.name })), getConsents())
+    : [];
   const noPaymentSelected = !isCredit && !payMethod;
   // An advance invoice is the client's only receipt for the money just taken —
   // with no phone number it can't reach them and nothing else surfaces that
@@ -696,6 +738,7 @@ export default function POSPage() {
     // explicit Pay Later/Credit) must be chosen, never silently defaulted.
     if (!isCredit && !payMethod) return;
     if (cardNoTerminal) return;
+    if (packageWithoutClient || packageOverdrawn) return;
     setCompleting(true);
     try {
       const today = localDateKey();
@@ -1687,9 +1730,20 @@ export default function POSPage() {
                               For {entry.guestName}
                             </div>
                           )}
+                          {(() => {
+                            const pkg = entry.packageId ? null : packageFor(entry);
+                            if (!entry.packageId && !pkg) return null;
+                            return (
+                              <button type="button" onClick={() => togglePackage(entry)}
+                                style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 5, padding: "3px 9px", borderRadius: 20, cursor: "pointer", fontSize: 10.5, fontWeight: 800,
+                                  border: `1px solid ${entry.packageId ? "#7C3AED" : "#ddd6fe"}`, background: entry.packageId ? "#7C3AED" : "#f5f3ff", color: entry.packageId ? "#fff" : "#7C3AED" }}>
+                                {entry.packageId ? "✓ Paid from package · tap to undo" : `Use package session (${pkg!.left} left)`}
+                              </button>
+                            );
+                          })()}
                           {/* Every line is priced at the till — hair volume, length and
                               condition move the real price off the catalog number. */}
-                          <div style={{ marginTop: 4 }}>
+                          {!entry.packageId && <div style={{ marginTop: 4 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                               <span style={{ fontSize: 11, color: "#b0b0c8" }}>PKR</span>
                               <input type="number" min={0} step={50} inputMode="numeric"
@@ -1716,7 +1770,7 @@ export default function POSPage() {
                                 Catalog: {pkr(entry.basePrice)}
                               </div>
                             ) : null}
-                          </div>
+                          </div>}
                         </div>
                         <button type="button" onClick={() => setCart(prev => prev.filter(e => e.cartId !== entry.cartId))}
                           style={{ border: "none", background: "#f8f4ff", borderRadius: 6, cursor: "pointer", width: 24, height: 24, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -2091,20 +2145,35 @@ export default function POSPage() {
                   <AlertCircle size={13} /> Pick which card machine took the payment
                 </div>
               )}
+              {packageWithoutClient && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, fontSize: 11, fontWeight: 700, color: "#d97706" }}>
+                  <AlertCircle size={13} /> Select the {term("client", clinic)} first — a session package has to belong to someone
+                </div>
+              )}
+              {packageOverdrawn && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, fontSize: 11, fontWeight: 700, color: "#d97706" }}>
+                  <AlertCircle size={13} /> More package sessions on the bill than the package has left — lower the quantity
+                </div>
+              )}
+              {consentGaps.length > 0 && (
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 6, marginBottom: 8, fontSize: 11, fontWeight: 700, color: "#dc2626", lineHeight: 1.45 }}>
+                  <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} /> Consent not signed: {consentGaps.map(t => t.title).join(", ")}. Sign it on the patient&rsquo;s profile before treatment.
+                </div>
+              )}
               {!hasUnpricedLine && !noPaymentSelected && advanceNoPhone && (
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, fontSize: 11, fontWeight: 700, color: "#d97706" }}>
                   <AlertCircle size={13} /> Add a phone number for the client — the advance invoice is sent on WhatsApp and can't reach them without one
                 </div>
               )}
               {/* Complete button */}
-              <button type="button" onClick={completeSale} disabled={completing || hasUnpricedLine || noPaymentSelected || advanceNoPhone}
+              <button type="button" onClick={completeSale} disabled={completing || hasUnpricedLine || noPaymentSelected || advanceNoPhone || packageWithoutClient || packageOverdrawn}
                 style={{
                   width: "100%", padding: "14px 0", borderRadius: 13, border: "none",
-                  background: (completing || hasUnpricedLine || noPaymentSelected || advanceNoPhone || cardNoTerminal) ? "#e8e8f0" : isCredit ? "linear-gradient(135deg,#d97706,#f59e0b)" : "linear-gradient(135deg,#5B21B6,#9333EA)",
-                  color: (completing || hasUnpricedLine || noPaymentSelected || advanceNoPhone || cardNoTerminal) ? "#aaaabc" : "#fff",
-                  fontSize: 15, fontWeight: 900, cursor: (completing || hasUnpricedLine || noPaymentSelected || advanceNoPhone || cardNoTerminal) ? "not-allowed" : "pointer",
+                  background: (completing || hasUnpricedLine || noPaymentSelected || advanceNoPhone || cardNoTerminal || packageWithoutClient || packageOverdrawn) ? "#e8e8f0" : isCredit ? "linear-gradient(135deg,#d97706,#f59e0b)" : "linear-gradient(135deg,#5B21B6,#9333EA)",
+                  color: (completing || hasUnpricedLine || noPaymentSelected || advanceNoPhone || cardNoTerminal || packageWithoutClient || packageOverdrawn) ? "#aaaabc" : "#fff",
+                  fontSize: 15, fontWeight: 900, cursor: (completing || hasUnpricedLine || noPaymentSelected || advanceNoPhone || cardNoTerminal || packageWithoutClient || packageOverdrawn) ? "not-allowed" : "pointer",
                   display: "flex", alignItems: "center", justifyContent: "center", gap: 9,
-                  boxShadow: (completing || hasUnpricedLine || noPaymentSelected || advanceNoPhone || cardNoTerminal) ? "none" : isCredit ? "0 5px 20px rgba(217,119,6,0.40)" : "0 5px 20px rgba(91,33,182,0.42)",
+                  boxShadow: (completing || hasUnpricedLine || noPaymentSelected || advanceNoPhone || cardNoTerminal || packageWithoutClient || packageOverdrawn) ? "none" : isCredit ? "0 5px 20px rgba(217,119,6,0.40)" : "0 5px 20px rgba(91,33,182,0.42)",
                   letterSpacing: "-0.01em", transition: "all 0.15s",
                 }}
                 onMouseEnter={e => { if (!completing) e.currentTarget.style.transform = "translateY(-1px)"; }}

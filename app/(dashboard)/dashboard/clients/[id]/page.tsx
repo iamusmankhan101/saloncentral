@@ -14,6 +14,8 @@ import { exportClientPdf } from "@/lib/export-pdf";
 import { locationUserKey } from "@/lib/locations";
 import { getSectionOptions, getActiveSection, inSection } from "@/lib/sections";
 import { normalizePhone } from "@/lib/whatsapp-scheduler";
+import { term, useIsClinic } from "@/lib/clinic";
+import PatientClinicalRecord from "@/components/clinic/patient-record";
 import {
   ArrowLeft, Phone, Mail, Calendar, Heart, Star, Camera, X,
   Plus, Edit2, TrendingUp, Clock, Users, Scissors,
@@ -79,6 +81,7 @@ export default function ClientProfilePage() {
   const params = useParams();
   const router = useRouter();
   const clientId = params.id as string;
+  const clinic = useIsClinic();
 
   const [client, setClient] = useState<Client | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -247,7 +250,7 @@ export default function ClientProfilePage() {
           onClick={() => router.push("/dashboard/clients")}
           style={{ display: "flex", alignItems: "center", gap: 7, background: "none", border: "none", cursor: "pointer", color: "#6b6b8a", fontSize: 13, fontWeight: 600, padding: 0 }}
         >
-          <ArrowLeft size={15} /> <span className="cd-btn-label">Back to Clients</span>
+          <ArrowLeft size={15} /> <span className="cd-btn-label">Back to {term("Clients", clinic)}</span>
         </button>
         <div className="cd-actions" style={{ display: "flex", gap: 8 }}>
           {!editing && (
@@ -323,6 +326,9 @@ export default function ClientProfilePage() {
             </div>
           ))}
         </div>
+
+        {/* ── Clinical record (aesthetic clinics) ──────────────────────────────── */}
+        {clinic && <PatientClinicalRecord client={client} onClientChange={setClient} />}
 
         {/* ── Two-column layout ─────────────────────────────────────────────────── */}
         <div className="cd-cols" style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 20, alignItems: "start" }}>

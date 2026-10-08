@@ -179,6 +179,10 @@ const defaults = {
     goldMin: 2000,
     platinumMin: 5000,
   },
+  // Aesthetic clinics (lib/clinic.ts). null = use the built-in consent templates.
+  clinic: {
+    consentTemplates: null as null | import("./clinic").ConsentTemplate[],
+  },
   cashback: {
     enabled: false,
     apiKey: "",
@@ -264,6 +268,7 @@ function load() {
       winback:  { ...dynamicDefaults.winback,  ...saved.winback  },
       loyalty:  { ...dynamicDefaults.loyalty,  ...saved.loyalty  },
       cashback: { ...dynamicDefaults.cashback, ...saved.cashback },
+      clinic:   { ...dynamicDefaults.clinic,   ...saved.clinic   },
       printer:  { ...dynamicDefaults.printer,  ...saved.printer  },
       payments: {
         ...dynamicDefaults.payments,

@@ -23,7 +23,7 @@ const API_SECRET = process.env.CLOUDINARY_API_SECRET ?? "";
 
 /** Refuse anything that isn't a small inline image, before it reaches Cloudinary. */
 const MAX_DATA_URL_BYTES = 3 * 1024 * 1024;
-const ALLOWED_FOLDERS = new Set(["clients", "staff", "salon"]);
+const ALLOWED_FOLDERS = new Set(["clients", "staff", "salon", "patients"]);
 
 /**
  * Cloudinary signs the alphabetically-sorted params that are actually sent,

@@ -91,6 +91,7 @@ export default function SignUpPage() {
   const [step, setStep] = useState<"plan" | "details" | "pending">("plan");
   const [selectedPlan, setSelectedPlan] = useState<PlanId>("demo");
   const [form, setForm] = useState({ ownerName: "", salonName: "", email: "", phone: "", password: "" });
+  const [businessType, setBusinessType] = useState<"salon" | "clinic">("salon");
   const [adminCode, setAdminCode] = useState("");
   const [showAdmin, setShowAdmin] = useState(false);
   const [codeValid, setCodeValid] = useState<boolean | null>(null);
@@ -119,6 +120,7 @@ export default function SignUpPage() {
           ownerName: form.ownerName,
           salonName: form.salonName || form.ownerName,
           phone: form.phone,
+          businessType,
           adminCode: showAdmin && adminCode ? adminCode : undefined,
           planId: plan.billingPlanId,
         }),
@@ -357,11 +359,26 @@ export default function SignUpPage() {
                   </button>
                 </div>
 
+                {/* Business type */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }} role="radiogroup" aria-label="Business type">
+                  {([
+                    { id: "salon", title: "Salon / Spa", sub: "Hair, beauty, nails, spa" },
+                    { id: "clinic", title: "Aesthetic Clinic", sub: "Patients, consent, treatment plans" },
+                  ] as const).map((t) => (
+                    <button key={t.id} type="button" role="radio" aria-checked={businessType === t.id} onClick={() => setBusinessType(t.id)}
+                      style={{ textAlign: "left", padding: "12px 14px", borderRadius: 12, cursor: "pointer",
+                        border: `2px solid ${businessType === t.id ? "#7C3AED" : "#e8e8f0"}`, background: businessType === t.id ? "#f5f3ff" : "#fff" }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: "#1a1a2e" }}>{t.title}</div>
+                      <div style={{ fontSize: 11, color: "#9898b0", marginTop: 2 }}>{t.sub}</div>
+                    </button>
+                  ))}
+                </div>
+
                 {/* Fields */}
                 <div className={styles.fieldGrid}>
                   {[
                     { id: "ownerName", label: "Owner name", icon: User, type: "text", placeholder: "Amna Khan" },
-                    { id: "salonName", label: "Salon name", icon: Building2, type: "text", placeholder: "Amna's Salon" },
+                    { id: "salonName", label: businessType === "clinic" ? "Clinic name" : "Salon name", icon: Building2, type: "text", placeholder: businessType === "clinic" ? "Glow Aesthetics" : "Amna's Salon" },
                     { id: "email", label: "Email", icon: Mail, type: "email", placeholder: "owner@example.com" },
                     { id: "phone", label: "Phone", icon: Phone, type: "tel", placeholder: "+92 300 1234567" },
                     { id: "password", label: "Password", icon: LockKeyhole, type: "password", placeholder: "Minimum 8 characters" },

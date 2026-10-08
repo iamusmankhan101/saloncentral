@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { getStoredServices, saveServices, getStoredStaff, getStoredInventory, subscribeToStoredData } from "@/lib/storage";
 import type { InventoryItem, InventoryUnit, Service, Staff } from "@/lib/types";
 import { compatibleUnits } from "@/lib/inventory-usage";
+import { term, useIsClinic } from "@/lib/clinic";
 import { X, Plus, Clock, Scissors, DollarSign, Users, Sparkles, Check, Pencil, Trash2, Package as PackageIcon, Search, Lock, Upload, Download, FileSpreadsheet, ChevronDown, Boxes } from "lucide-react";
 import { getSectionOptions, getActiveSection, inSection, defaultSectionForNewRecord } from "@/lib/sections";
 import PageTitle from "@/components/page-title";
@@ -311,6 +312,7 @@ function AddEditServiceModal({ onClose, onSave, staffList, servicesList, invento
   onClose: () => void; onSave: (s: Service) => void; staffList: Staff[]; servicesList: Service[]; inventoryList: InventoryItem[]; serviceToEdit?: Service;
 }) {
   const isEditing = !!serviceToEdit;
+  const clinic = useIsClinic();
   const isEditingPackage = serviceToEdit?.category === "package";
   const editedCategoryIsCustom = !!serviceToEdit && !isEditingPackage && !PRESET_CATEGORIES.includes(serviceToEdit.category);
   // Services this package can bundle — excludes other packages (no nesting) and itself.
@@ -338,6 +340,11 @@ function AddEditServiceModal({ onClose, onSave, staffList, servicesList, invento
     inventoryServicesPerUnit: Object.fromEntries(
       Object.entries(serviceToEdit?.inventoryServicesPerUnit ?? {}).map(([id, n]) => [id, String(n)]),
     ) as Record<string, string>,
+    /** Session package (clinics): the treatment it covers, how many sessions, valid for how many days. */
+    sessionPkg:         !!serviceToEdit?.sessionPackage,
+    sessionPkgService:  serviceToEdit?.sessionPackage?.serviceId ?? "",
+    sessionPkgCount:    serviceToEdit?.sessionPackage ? String(serviceToEdit.sessionPackage.sessions) : "",
+    sessionPkgValidity: serviceToEdit?.sessionPackage?.validityDays ? String(serviceToEdit.sessionPackage.validityDays) : "",
     /** itemId → recipe amount per service as typed, e.g. { qty: "80", unit: "ml" }. */
     inventoryAmounts: Object.fromEntries(
       Object.entries(serviceToEdit?.inventoryAmounts ?? {}).map(([id, r]) => [id, { qty: String(r.qty), unit: r.unit }]),
@@ -452,6 +459,13 @@ function AddEditServiceModal({ onClose, onSave, staffList, servicesList, invento
           .filter(([, n]) => n > 0));
         return Object.keys(rates).length ? rates : undefined;
       })(),
+      sessionPackage: !form.isPackage && form.sessionPkg && form.sessionPkgService && Number(form.sessionPkgCount) > 0
+        ? {
+            serviceId: form.sessionPkgService,
+            sessions: Math.round(Number(form.sessionPkgCount)),
+            ...(Number(form.sessionPkgValidity) > 0 ? { validityDays: Math.round(Number(form.sessionPkgValidity)) } : {}),
+          }
+        : undefined,
       inventoryAmounts: (() => {
         const amounts = Object.fromEntries(form.inventoryUsage
           .map((id) => [id, form.inventoryAmounts[id]] as const)
@@ -647,6 +661,33 @@ function AddEditServiceModal({ onClose, onSave, staffList, servicesList, invento
               </div>
             </div>
           )}
+          {!form.isPackage && clinic && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px 14px", borderRadius: 10, border: "1px solid #e8e8f0", background: form.sessionPkg ? "#F5F3FF" : "#fff" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                <input type="checkbox" checked={form.sessionPkg} onChange={(e) => set("sessionPkg", e.target.checked)} style={{ accentColor: "#7C3AED" }} />
+                <span style={{ fontSize: 13, fontWeight: 700, color: "#1a1a2e" }}>Sold as a session package</span>
+                <span style={{ fontSize: 11, color: "#9898b0" }}>e.g. 8 laser sessions paid up front</span>
+              </label>
+              {form.sessionPkg && (
+                <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 8 }}>
+                  <select value={form.sessionPkgService} onChange={(e) => set("sessionPkgService", e.target.value)} aria-label="Treatment the package covers"
+                    style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e8e8f0", fontSize: 12, background: "#fff", minWidth: 0 }}>
+                    <option value="">Covers which treatment…</option>
+                    {servicesList.filter((sv) => sv.id !== serviceToEdit?.id && !sv.sessionPackage && !sv.packageServiceIds?.length).map((sv) => (
+                      <option key={sv.id} value={sv.id}>{sv.name}</option>
+                    ))}
+                  </select>
+                  <input type="number" min="1" value={form.sessionPkgCount} onChange={(e) => set("sessionPkgCount", e.target.value)} placeholder="Sessions" aria-label="Number of sessions"
+                    style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e8e8f0", fontSize: 12, minWidth: 0 }} />
+                  <input type="number" min="0" value={form.sessionPkgValidity} onChange={(e) => set("sessionPkgValidity", e.target.value)} placeholder="Valid days" aria-label="Valid for how many days (blank = no expiry)"
+                    style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e8e8f0", fontSize: 12, minWidth: 0 }} />
+                  <div style={{ gridColumn: "1 / -1", fontSize: 11, color: "#6b6b8a", lineHeight: 1.5 }}>
+                    The price below is for the whole package. Selling it at POS gives the {term("client", true)} these sessions; each visit is then rung up as &ldquo;Use package session&rdquo; at no charge. Leave valid days blank for no expiry.
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           {!form.isPackage && (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <label style={{ fontSize: 11, fontWeight: 700, color: "#9898b0", textTransform: "uppercase", letterSpacing: "0.06em" }}>
@@ -817,6 +858,7 @@ function DeleteConfirmModal({ name, onConfirm, onCancel }: { name: string; onCon
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function ServicesPage() {
+  const clinic = useIsClinic();
   const [services, setServices] = useState<Service[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
@@ -957,8 +999,8 @@ export default function ServicesPage() {
 
       {/* Native mobile app bar */}
       <MobilePageHeader
-        title="Services"
-        subtitle={`${services.length} services · ${activeCount} active`}
+        title={term("Services", clinic)}
+        subtitle={`${services.length} ${term("services", clinic)} · ${activeCount} active`}
         action={{ label: "Add", icon: <Plus size={14} />, onClick: () => setShowAdd(true) }}
       />
 
@@ -966,10 +1008,10 @@ export default function ServicesPage() {
       <div className="dashboard-topbar page-header" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <PageTitle
           icon={<Scissors size={24} />}
-          title="Services"
+          title={term("Services", clinic)}
           subtitle={
             <>
-            {services.length} salon services · <span style={{ color: "var(--accent)", fontWeight: 700 }}>{activeCount} active</span>
+            {services.length} {clinic ? "treatments" : "salon services"} · <span style={{ color: "var(--accent)", fontWeight: 700 }}>{activeCount} active</span>
             </>
           }
         />

@@ -15,6 +15,7 @@ import { clientLocationId, getActiveLocationFilter, getDefaultLocationId, getSal
 import { getSectionOptions, getActiveSection, inSection, defaultSectionForNewRecord } from "@/lib/sections";
 import { normalizePhone } from "@/lib/whatsapp-scheduler";
 import PageTitle from "@/components/page-title";
+import { term, useIsClinic } from "@/lib/clinic";
 import MobilePageHeader from "@/components/mobile-page-header";
 
 const STATUS_CONFIG = {
@@ -1009,6 +1010,7 @@ function ImportModal({ existing, onClose, onImport }: {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function ClientsPage() {
+  const clinic = useIsClinic();
   const [search, setSearch] = useState("");
   const [tagFilter, setTagFilter] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("all");
@@ -1226,7 +1228,7 @@ export default function ClientsPage() {
 
       {/* Native mobile app bar */}
       <MobilePageHeader
-        title="Clients"
+        title={term("Clients", clinic)}
         subtitle={`${filtered.length} clients`}
         action={{ label: clientLimited ? "Limit reached" : "Add", icon: <Plus size={14} />, onClick: () => !clientLimited && setShowAdd(true) }}
       />
@@ -1235,7 +1237,7 @@ export default function ClientsPage() {
       <div className="dashboard-topbar page-header" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <PageTitle
           icon={<Heart size={24} />}
-          title="Clients"
+          title={term("Clients", clinic)}
           subtitle={
             <>
             {filtered.length} clients

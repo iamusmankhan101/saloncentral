@@ -123,6 +123,12 @@ export interface Service {
    */
   inventoryAmounts?: Record<string, { qty: number; unit: InventoryUnit }>;
   /**
+   * Makes this a prepaid session package (aesthetic clinics): selling it at POS
+   * gives the client `sessions` sessions of `serviceId`, each redeemed at POS
+   * as a zero-priced line. Counts are derived from invoices — lib/clinic.ts.
+   */
+  sessionPackage?: { serviceId: string; sessions: number; validityDays?: number };
+  /**
    * Per product in inventoryUsage: how many of *this* service one unit lasts
    * (e.g. a dye packet lasts 5 colour services). Each performance then takes
    * 1/N of a unit off stock. Falls back to the item's own servicesPerUnit.
@@ -158,6 +164,28 @@ export interface Client {
   loyaltyPointsEarned?: number;
   /** Client has opted out of marketing WhatsApp messages (birthday offers, cancellation win-back). Transactional messages (confirmations, reminders) are unaffected. */
   whatsappOptedOut?: boolean;
+  /** Aesthetic-clinic medical profile (lib/clinic.ts). Absent for salon clients. */
+  medical?: MedicalProfile;
+}
+
+/** Fitzpatrick skin phototype, I (always burns) to VI (never burns). */
+export type FitzpatrickType = "I" | "II" | "III" | "IV" | "V" | "VI";
+
+/** A clinic patient's medical background. Free text where clinics word things their own way. */
+export interface MedicalProfile {
+  address?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  allergies?: string;
+  medicalHistory?: string;
+  medications?: string;
+  previousTreatments?: string;
+  skinType?: string;
+  fitzpatrick?: FitzpatrickType;
+  contraindications?: string;
+  complications?: string;
+  /** ISO time of the last edit. */
+  updatedAt?: string;
 }
 
 export type LoyaltyTxType = "earn" | "redeem" | "adjust";

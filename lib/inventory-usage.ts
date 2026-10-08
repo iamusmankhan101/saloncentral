@@ -60,6 +60,8 @@ interface Performance {
   at: number;
   /** Client name, for the usage history. */
   who: string;
+  /** The client it was performed on — absent for a line rung up for a named guest. */
+  clientId?: string;
 }
 
 /**
@@ -166,7 +168,7 @@ function collectPerformances(
         at = booked ? doneAt : Math.max(at, doneAt);
       }
       for (const service of performedServices(sold, byId)) {
-        performances.push({ service, count: Math.max(1, line.qty), date: invoice.date, at, who: invoice.clientName ?? "" });
+        performances.push({ service, count: Math.max(1, line.qty), date: invoice.date, at, who: line.guestName ?? invoice.clientName ?? "", clientId: line.guestName ? undefined : invoice.clientId });
       }
     }
   }
@@ -182,7 +184,7 @@ function collectPerformances(
         // When it was marked completed; older records fall back to the booked end time.
         const at = Date.parse(appointment.completedAt ?? "")
           || new Date(`${appointment.date}T${appointment.endTime || appointment.startTime || "23:59"}:00`).getTime();
-        performances.push({ service, count: 1, date: appointment.date, at, who: appointment.clientName });
+        performances.push({ service, count: 1, date: appointment.date, at, who: appointment.clientName, clientId: appointment.clientId });
       }
     }
   }
@@ -236,6 +238,26 @@ export function usageFor(usage: Map<string, ItemUsage>, itemId: string): ItemUsa
 /** Services that map to an item — for the inventory item's own detail view. */
 export function servicesUsingItem(services: Service[], itemId: string): Service[] {
   return services.filter((s) => usedItemIds(s).includes(itemId));
+}
+
+/**
+ * Dates (YYYY-MM-DD, oldest first, one per performance) on which `clientId`
+ * had `serviceId` done — from the same sales and completed appointments stock
+ * consumption counts, so a treatment plan's progress agrees with them.
+ */
+export function clientServiceDates(
+  clientId: string,
+  serviceId: string,
+  invoices: SalonInvoice[],
+  appointments: Appointment[],
+  services: Service[],
+): string[] {
+  const dates: string[] = [];
+  for (const p of collectPerformances(invoices, appointments, services, {})) {
+    if (p.clientId !== clientId || p.service.id !== serviceId) continue;
+    for (let i = 0; i < p.count; i++) dates.push(p.date);
+  }
+  return dates.sort();
 }
 
 /** Units that convert into each other: [family, size in the family's smallest unit]. */

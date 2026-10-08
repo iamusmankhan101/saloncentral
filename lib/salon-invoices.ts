@@ -33,6 +33,13 @@ export interface SalonInvoiceItem {
    * job the client came for.
    */
   upsell?: boolean;
+  /**
+   * Session packages (lib/clinic.ts). On the line that sells a package: what
+   * it bought, snapshotted so later edits to the package don't rewrite it. On a
+   * line that uses a session: the package it came out of (`${invoiceId}:${lineId}`).
+   */
+  packagePurchase?: { serviceId: string; sessions: number; expiresAt?: string };
+  packageId?: string;
   description: string;
   qty: number;
   unitPrice: number;

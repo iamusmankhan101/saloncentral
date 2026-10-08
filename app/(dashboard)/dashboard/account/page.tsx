@@ -19,6 +19,8 @@ import { whatsAppConnected } from "@/lib/whatsapp-scheduler";
 type SectionId = "profile" | "salon" | "hours" | "roles" | "security" | "whatsapp" | "mcp" | "decidr" | "tryon";
 
 interface SalonSettings {
+  /** "clinic" turns on aesthetic-clinic mode (lib/clinic.ts); unset is a salon. */
+  businessType?: "salon" | "clinic";
   name: string;
   phone: string;
   email: string;
@@ -390,6 +392,14 @@ function SalonProfile() {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px 18px" }}>
+        <Field label="Business Type" full>
+          <select style={inputStyle} value={form.businessType === "clinic" ? "clinic" : "salon"}
+            onChange={(event) => setForm((f) => ({ ...f, businessType: event.target.value === "clinic" ? "clinic" : "salon" }))}>
+            <option value="salon">Salon / Spa</option>
+            <option value="clinic">Aesthetic Clinic — patients, medical profile, consultations, consent forms, treatment plans, packages</option>
+          </select>
+          <div style={{ fontSize: 11, color: "#9999b0", marginTop: 5 }}>Switching only changes what the app shows — no data is removed either way.</div>
+        </Field>
         <Field label="Salon Name"><input style={inputStyle} value={form.name} onChange={(event) => setField("name", event.target.value)} /></Field>
         <Field label="Phone"><input style={inputStyle} value={form.phone} onChange={(event) => setField("phone", event.target.value)} /></Field>
         <Field label="Email"><input style={inputStyle} value={form.email} onChange={(event) => setField("email", event.target.value)} /></Field>
@@ -2179,6 +2189,11 @@ const PERMISSION_OPTIONS = [
   { key: "payouts", label: "Payouts" },
   { key: "messages", label: "WhatsApp" },
   { key: "try-on", label: "Virtual Try-On" },
+  // Aesthetic clinics: "medical" gates the clinical tabs on a patient's profile
+  // (medical history, consultations, consents, photos), so a receptionist can
+  // book and bill without seeing them.
+  { key: "medical", label: "Medical Records (clinic)" },
+  { key: "consent-forms", label: "Consent Forms (clinic)" },
 ];
 
 function RolesPermissionsSection() {
