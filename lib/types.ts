@@ -128,6 +128,10 @@ export interface Service {
    * as a zero-priced line. Counts are derived from invoices — lib/clinic.ts.
    */
   sessionPackage?: { serviceId: string; sessions: number; validityDays?: number };
+  /** Rooms/machines this treatment can use — one free of each kind is booked with it (lib/clinic-resources.ts). */
+  resourceIds?: string[];
+  /** Makes this a membership: selling it makes the client a member for `months` (lib/clinic.ts). */
+  membership?: { months: number; discountPercent: number; perks?: string };
   /**
    * Per product in inventoryUsage: how many of *this* service one unit lasts
    * (e.g. a dye packet lasts 5 colour services). Each performance then takes
@@ -166,6 +170,10 @@ export interface Client {
   whatsappOptedOut?: boolean;
   /** Aesthetic-clinic medical profile (lib/clinic.ts). Absent for salon clients. */
   medical?: MedicalProfile;
+  /** The client who referred them; both earn the referral credit on their first paid visit. */
+  referredBy?: string;
+  /** ISO time that credit was given — set once, so it's never paid twice. */
+  referralRewardedAt?: string;
 }
 
 /** Fitzpatrick skin phototype, I (always burns) to VI (never burns). */
@@ -279,6 +287,8 @@ export interface Appointment {
   guests?: AppointmentGuest[];
   /** ISO time the appointment was marked completed — when its products were used up. */
   completedAt?: string;
+  /** Rooms/machines it holds (aesthetic clinics, lib/clinic-resources.ts). */
+  resourceIds?: string[];
 }
 
 export interface AppointmentGuest {

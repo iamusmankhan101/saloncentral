@@ -158,7 +158,120 @@ export interface ClinicPhoto {
   createdAt: string;
 }
 
-type ClinicEntity = "consultations" | "treatment_plans" | "consents" | "clinic_photos";
+// ─── Prescriptions & skincare regimes ────────────────────────────────────────
+
+export const REGIME_TIMES = ["Morning", "Night", "As needed"] as const;
+
+export interface PrescriptionItem {
+  time: string;
+  product: string;
+  dosage?: string;
+  frequency?: string;
+  duration?: string;
+  instructions?: string;
+}
+
+export interface Prescription {
+  id: string;
+  clientId: string;
+  /** YYYY-MM-DD. */
+  date: string;
+  practitionerId?: string;
+  practitionerName?: string;
+  items: PrescriptionItem[];
+  notes?: string;
+  createdAt: string;
+}
+
+export interface PrescriptionTemplate {
+  id: string;
+  name: string;
+  items: PrescriptionItem[];
+  notes?: string;
+}
+
+/** Starting regimes; the clinic saves its own from any prescription. */
+export const DEFAULT_PRESCRIPTION_TEMPLATES: PrescriptionTemplate[] = [
+  { id: "rx-basic", name: "Basic skincare", items: [
+    { time: "Morning", product: "Gentle cleanser", frequency: "Daily" },
+    { time: "Morning", product: "Vitamin C serum", frequency: "Daily", instructions: "2–3 drops on dry skin" },
+    { time: "Morning", product: "Sunscreen SPF 50", frequency: "Daily", instructions: "Reapply every 2–3 hours outdoors" },
+    { time: "Night", product: "Gentle cleanser", frequency: "Daily" },
+    { time: "Night", product: "Retinol 0.3%", frequency: "Alternate nights", duration: "4 weeks, then nightly", instructions: "Pea-sized amount; stop if irritated" },
+    { time: "Night", product: "Moisturiser", frequency: "Daily" },
+  ] },
+  { id: "rx-acne", name: "Acne regime", items: [
+    { time: "Morning", product: "Salicylic acid cleanser", frequency: "Daily" },
+    { time: "Morning", product: "Oil-free sunscreen SPF 50", frequency: "Daily" },
+    { time: "Night", product: "Salicylic acid cleanser", frequency: "Daily" },
+    { time: "Night", product: "Adapalene 0.1% gel", frequency: "Nightly", duration: "12 weeks", instructions: "Thin layer on affected areas only" },
+    { time: "Night", product: "Non-comedogenic moisturiser", frequency: "Daily" },
+  ] },
+  { id: "rx-pigment", name: "Pigmentation regime", items: [
+    { time: "Morning", product: "Gentle cleanser", frequency: "Daily" },
+    { time: "Morning", product: "Niacinamide 10% serum", frequency: "Daily" },
+    { time: "Morning", product: "Tinted sunscreen SPF 50", frequency: "Daily", instructions: "Essential — pigmentation returns without it" },
+    { time: "Night", product: "Azelaic acid 15%", frequency: "Nightly", duration: "8–12 weeks" },
+    { time: "Night", product: "Moisturiser", frequency: "Daily" },
+  ] },
+  { id: "rx-post", name: "Post-procedure care", items: [
+    { time: "Morning", product: "Gentle cleanser", frequency: "Daily", duration: "7 days", instructions: "Lukewarm water, pat dry" },
+    { time: "Morning", product: "Sunscreen SPF 50", frequency: "Daily", instructions: "Avoid direct sun for 2 weeks" },
+    { time: "Night", product: "Barrier repair cream", frequency: "Twice daily", duration: "7 days" },
+    { time: "As needed", product: "Cold compress", frequency: "As needed", duration: "First 48 hours", instructions: "No makeup, actives, sauna or exercise for 24–48 hours" },
+  ] },
+];
+
+export function prescriptionTemplates(): PrescriptionTemplate[] {
+  const own = (settingsStore.clinic as { prescriptionTemplates?: PrescriptionTemplate[] }).prescriptionTemplates;
+  return [...DEFAULT_PRESCRIPTION_TEMPLATES, ...(Array.isArray(own) ? own : [])];
+}
+
+/** A prescription as a WhatsApp-ready message. */
+export function prescriptionText(rx: Prescription, patientName: string, clinicName: string): string {
+  const lines = [`*${clinicName}* — Skincare plan for ${patientName} (${rx.date})`];
+  for (const time of [...new Set(rx.items.map((i) => i.time))]) {
+    lines.push("", `*${time}*`);
+    for (const i of rx.items.filter((x) => x.time === time)) {
+      const extra = [i.dosage, i.frequency, i.duration].filter(Boolean).join(", ");
+      lines.push(`• ${i.product}${extra ? ` — ${extra}` : ""}${i.instructions ? `\n   _${i.instructions}_` : ""}`);
+    }
+  }
+  if (rx.notes) lines.push("", rx.notes);
+  if (rx.practitionerName) lines.push("", `— ${rx.practitionerName}`);
+  return lines.join("\n");
+}
+
+// ─── Leads ───────────────────────────────────────────────────────────────────
+
+export const LEAD_STAGES = [
+  { id: "new", label: "New Lead" }, { id: "contacted", label: "Contacted" }, { id: "consultation", label: "Consultation" },
+  { id: "treatment", label: "Treatment" }, { id: "package", label: "Package" }, { id: "followup", label: "Follow-up" },
+  { id: "lost", label: "Lost" },
+] as const;
+export type LeadStage = typeof LEAD_STAGES[number]["id"];
+
+export const LEAD_SOURCES = ["Instagram", "Facebook", "WhatsApp", "Website", "Walk-in", "Referral", "Google", "TikTok", "Other"] as const;
+
+export interface Lead {
+  id: string;
+  name: string;
+  phone: string;
+  source: string;
+  interest?: string;
+  stage: LeadStage;
+  /** Expected value (PKR), for the pipeline total. */
+  value?: number;
+  notes?: string;
+  /** Set once converted: the patient record it became. */
+  clientId?: string;
+  /** For referral leads: the patient who referred them. */
+  referredBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+type ClinicEntity = "consultations" | "treatment_plans" | "consents" | "clinic_photos" | "prescriptions" | "leads";
 
 function readList<T>(entity: ClinicEntity): T[] {
   if (typeof window === "undefined") return [];
@@ -183,6 +296,10 @@ export const getConsents = () => readList<ConsentRecord>("consents");
 export const saveConsents = (list: ConsentRecord[], deletedIds?: string[]) => writeList("consents", list, deletedIds);
 export const getClinicPhotos = () => readList<ClinicPhoto>("clinic_photos");
 export const saveClinicPhotos = (list: ClinicPhoto[], deletedIds?: string[]) => writeList("clinic_photos", list, deletedIds);
+export const getPrescriptions = () => readList<Prescription>("prescriptions");
+export const savePrescriptions = (list: Prescription[], deletedIds?: string[]) => writeList("prescriptions", list, deletedIds);
+export const getLeads = () => readList<Lead>("leads");
+export const saveLeads = (list: Lead[], deletedIds?: string[]) => writeList("leads", list, deletedIds);
 
 /** Adds or replaces one record by id, against the freshest stored list. */
 export function upsertRecord<T extends { id: string }>(get: () => T[], save: (list: T[]) => Promise<boolean>, record: T): T[] {
@@ -357,6 +474,39 @@ export function usablePackages(clientId: string, serviceId: string, invoices: Sa
   return packagesForClient(clientId, invoices).filter((p) => p.serviceId === serviceId && p.remaining > 0 && !p.expired);
 }
 
+// ─── Memberships (derived from invoices, like packages) ──────────────────────
+
+export interface ActiveMembership {
+  name: string;
+  discountPercent: number;
+  perks?: string;
+  /** YYYY-MM-DD of the last day it covers. */
+  until: string;
+  invoiceNumber: string;
+}
+
+/** The client's membership covering `today`, the longest-running if several overlap. */
+export function activeMembership(clientId: string, invoices: SalonInvoice[], today = todayKey()): ActiveMembership | null {
+  let best: ActiveMembership | null = null;
+  for (const inv of invoices) {
+    if (inv.clientId !== clientId) continue;
+    for (const line of inv.items) {
+      const m = line.membershipPurchase;
+      if (!m || line.guestName || m.from > today || m.until < today) continue;
+      if (!best || m.until > best.until) best = { name: line.description, discountPercent: m.discountPercent, perks: m.perks, until: m.until, invoiceNumber: inv.number };
+    }
+  }
+  return best;
+}
+
+/** Last day a membership of `months` bought today covers. */
+export function membershipUntil(from: string, months: number): string {
+  const d = new Date(`${from}T12:00:00`);
+  d.setMonth(d.getMonth() + Math.max(1, months));
+  d.setDate(d.getDate() - 1);
+  return d.toLocaleDateString("en-CA");
+}
+
 // ─── Treatment plan progress (derived) ───────────────────────────────────────
 
 export interface PlanSession {
@@ -393,7 +543,7 @@ export function planProgress(
 
 // ─── Patient timeline (derived) ──────────────────────────────────────────────
 
-export type TimelineKind = "appointment" | "consultation" | "consent" | "photos" | "plan" | "payment" | "package" | "due";
+export type TimelineKind = "appointment" | "consultation" | "consent" | "photos" | "plan" | "payment" | "package" | "due" | "prescription" | "membership";
 
 export interface TimelineEvent {
   date: string;
@@ -413,6 +563,7 @@ export function patientTimeline(input: {
   consents: ConsentRecord[];
   photos: ClinicPhoto[];
   services: Service[];
+  prescriptions?: Prescription[];
 }): TimelineEvent[] {
   const { clientId, services } = input;
   const nameOf = (id: string) => services.find((s) => s.id === id)?.name ?? "Treatment";
@@ -430,12 +581,17 @@ export function patientTimeline(input: {
     for (const line of inv.items) {
       if (line.packagePurchase) events.push({ date: inv.date, time, kind: "package", title: `Package bought: ${line.description}`, detail: `${line.packagePurchase.sessions * Math.max(1, line.qty)} sessions` });
       if (line.packageId) events.push({ date: inv.date, time, kind: "package", title: `Package session used: ${line.description}` });
+      if (line.membershipPurchase) events.push({ date: inv.date, time, kind: "membership", title: `Membership: ${line.description}`, detail: `Until ${line.membershipPurchase.until} · ${line.membershipPurchase.discountPercent}% off` });
     }
   }
   for (const c of input.consultations) {
     if (c.clientId !== clientId) continue;
     const concerns = [...c.concerns, c.concernOther].filter(Boolean).join(", ");
     events.push({ date: c.date, time: c.createdAt.slice(11, 16), kind: "consultation", title: "Consultation", detail: [concerns, c.practitionerName && `by ${c.practitionerName}`].filter(Boolean).join(" · ") });
+  }
+  for (const rx of input.prescriptions ?? []) {
+    if (rx.clientId !== clientId) continue;
+    events.push({ date: rx.date, time: rx.createdAt.slice(11, 16), kind: "prescription", title: "Prescription / skincare plan", detail: rx.items.map((i) => i.product).slice(0, 4).join(", ") });
   }
   for (const c of input.consents) {
     if (c.clientId !== clientId) continue;

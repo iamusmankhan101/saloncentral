@@ -10,11 +10,12 @@
  * queues the resulting WhatsApp sends, mirroring the original route exactly.
  */
 
+import { assignResources, type ClinicResource } from "./clinic-resources";
 import { db } from "./db";
 import { backupExistingSalonData } from "./data-backup";
 import { activeWhatsAppCredential, isFakePlaceholderPhone, type WhatsAppProviderConfig, ycloudConfigOf } from "./whatsapp-provider";
 import { appointmentStartHasPassed, timezoneFromSettings } from "./appointment-time";
-import type { Client, Appointment } from "./types";
+import type { Client, Appointment, Service } from "./types";
 
 export async function ensureBookingTables(): Promise<void> {
   await db.execute(`
@@ -85,6 +86,17 @@ export async function createBooking(
   // alert even when the row itself collapses to one on write.
   const isDuplicateSubmission = existingAppts.some((a) => a.id === appointment.id);
   if (!isDuplicateSubmission) {
+    // Clinics: book the room/machine the treatment needs, or refuse the slot
+    // when it's taken — the booking page offers slots by stylist only.
+    const [settingsRow, servicesRow] = await Promise.all([
+      db.execute({ sql: "SELECT data FROM salon_data WHERE entity = ?", args: [`${salonId}_settings`] }),
+      db.execute({ sql: "SELECT data FROM salon_data WHERE entity = ?", args: [`${salonId}_services`] }),
+    ]);
+    const resources: ClinicResource[] = settingsRow.rows.length ? (JSON.parse(settingsRow.rows[0].data as string)?.clinic?.resources ?? []) : [];
+    const services: Service[] = servicesRow.rows.length ? JSON.parse(servicesRow.rows[0].data as string) : [];
+    const assigned = assignResources([appointment], existingAppts, services, resources);
+    if (!assigned.ok) return { ok: false, duplicate: false, error: assigned.error };
+    appointment = assigned.appointments[0];
     const appointmentWithCreatedAt = { ...appointment, createdAt: appointment.createdAt || now };
     const updatedAppts = [appointmentWithCreatedAt, ...existingAppts];
     await backupExistingSalonData(apptKey, salonId);

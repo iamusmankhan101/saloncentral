@@ -15,6 +15,12 @@ export interface LoyaltySettings {
   platinumMin: number;
   /** Services a client can take free for a set number of points, besides the cash discount. */
   rewards?: LoyaltyReward[];
+  /**
+   * Referral credit in PKR (0 = off): when a client someone referred
+   * (Client.referredBy) pays for their first visit, both get this much as
+   * points at the redemption rate.
+   */
+  referralCredit?: number;
 }
 
 export interface LoyaltyReward {

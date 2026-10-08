@@ -39,6 +39,8 @@ export interface SalonInvoiceItem {
    * line that uses a session: the package it came out of (`${invoiceId}:${lineId}`).
    */
   packagePurchase?: { serviceId: string; sessions: number; expiresAt?: string };
+  /** On the line that sells a membership: the cover it bought (lib/clinic.ts activeMembership). */
+  membershipPurchase?: { serviceId: string; discountPercent: number; perks?: string; from: string; until: string };
   packageId?: string;
   description: string;
   qty: number;

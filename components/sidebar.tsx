@@ -8,7 +8,7 @@ import {
   UserCog, BarChart3, Package, Globe, Sparkles, CreditCard, Scissors,
   CircleUserRound, LogOut, Shield, Wand2, ReceiptText, ShoppingCart,
   X, Gift, Banknote, ChevronRight, ChevronDown, MapPin, Check, Wallet, Star,
-  ClipboardCheck, Store, Landmark, Archive, Smartphone, FileText, Armchair, FileSignature,
+  ClipboardCheck, Store, Landmark, Archive, Smartphone, FileText, Armchair, FileSignature, Megaphone, DoorOpen,
 } from "lucide-react";
 import { term, useIsClinic } from "@/lib/clinic";
 import { AuthUser, getCurrentUser, signOut } from "@/lib/auth";
@@ -106,6 +106,8 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
     items: [
       ...group.items.map((item) => ({ ...item, label: term(item.label, clinic) })),
       ...(clinic && group.label === "Clients & Sales" ? [{ href: "/dashboard/consent-forms", icon: FileSignature, label: "Consent Forms" }] : []),
+      ...(clinic && group.label === "Business" ? [{ href: "/dashboard/rooms", icon: DoorOpen, label: "Rooms & Machines" }] : []),
+      ...(clinic && group.label === "Marketing" ? [{ href: "/dashboard/leads", icon: Megaphone, label: "Leads" }] : []),
     ],
   }));
   const [multiLocationEnabled, setMultiLocationEnabled] = useState(false);

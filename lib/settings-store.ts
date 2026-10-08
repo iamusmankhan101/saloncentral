@@ -182,6 +182,8 @@ const defaults = {
   // Aesthetic clinics (lib/clinic.ts). null = use the built-in consent templates.
   clinic: {
     consentTemplates: null as null | import("./clinic").ConsentTemplate[],
+    resources: [] as import("./clinic-resources").ClinicResource[],
+    prescriptionTemplates: [] as import("./clinic").PrescriptionTemplate[],
   },
   cashback: {
     enabled: false,

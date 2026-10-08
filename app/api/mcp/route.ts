@@ -645,7 +645,7 @@ const baseHandler = createMcpHandler(
         };
 
         const result = await createBooking(salonId, appointment, clientId ? undefined : resolvedClient, clientPhone || resolvedClient.phone, "AI assistant");
-        if (!result.ok) return errorContent("Failed to create the booking.");
+        if (!result.ok) return errorContent(result.error || "Failed to create the booking.");
         return jsonContent({ ok: true, duplicate: result.duplicate, appointment });
       },
     );

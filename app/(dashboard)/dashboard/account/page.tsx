@@ -2194,6 +2194,8 @@ const PERMISSION_OPTIONS = [
   // book and bill without seeing them.
   { key: "medical", label: "Medical Records (clinic)" },
   { key: "consent-forms", label: "Consent Forms (clinic)" },
+  { key: "leads", label: "Leads (clinic)" },
+  { key: "rooms", label: "Rooms & Machines (clinic)" },
 ];
 
 function RolesPermissionsSection() {

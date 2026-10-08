@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
     // clientPhone is always sent from the booking form (covers both new and
     // returning clients).
     const result = await createBooking(salonId, appointment, client, body.clientPhone);
-    return Response.json({ ok: result.ok });
+    return Response.json(result.ok ? { ok: true } : { ok: false, error: result.error || "Failed to save booking" }, { status: result.ok ? 200 : 409 });
   } catch (err) {
     console.error("[public/booking] error:", err);
     return Response.json({ ok: false, error: "Failed to save booking" }, { status: 500 });

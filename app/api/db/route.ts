@@ -5,7 +5,7 @@ import { backupExistingSalonData } from "@/lib/data-backup";
 
 const DELETED_RECORDS_ENTITY = "deleted_records";
 
-const ALLOWED = new Set(["clients", "appointments", "staff", "services", "inventory", "salon_invoices", "expenses", "attendance", "payouts", "cash_flow_income", "held_sales", "inventory_log", "consultations", "treatment_plans", "consents", "clinic_photos", DELETED_RECORDS_ENTITY]);
+const ALLOWED = new Set(["clients", "appointments", "staff", "services", "inventory", "salon_invoices", "expenses", "attendance", "payouts", "cash_flow_income", "held_sales", "inventory_log", "consultations", "treatment_plans", "consents", "clinic_photos", "prescriptions", "leads", DELETED_RECORDS_ENTITY]);
 
 async function ensureTable() {
   await db.execute(`

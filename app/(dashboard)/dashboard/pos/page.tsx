@@ -10,7 +10,7 @@ import {
   ScanBarcode, Lock, PauseCircle, PlayCircle,
 } from "lucide-react";
 import { EasypaisaLogo, JazzCashLogo } from "@/components/wallet-logos";
-import { awardPoints, redeemPoints, type LoyaltySettings } from "@/lib/loyalty";
+import { adjustPoints, awardPoints, redeemPoints, type LoyaltySettings } from "@/lib/loyalty";
 import SalonInvoicePrint from "@/components/salon-invoice-print";
 import SalonInvoiceEdit from "@/components/salon-invoice-edit";
 import {
@@ -34,7 +34,7 @@ import { getDefaultLocationId } from "@/lib/locations";
 import { getSectionOptions, getActiveSection, inSection } from "@/lib/sections";
 import type { Service, Client, InventoryItem, Staff, PaymentMethod } from "@/lib/types";
 import { settleServiceConsumption } from "@/lib/inventory-consumption";
-import { addDays, getConsents, missingConsents, term, usablePackages, useIsClinic } from "@/lib/clinic";
+import { activeMembership, addDays, getConsents, membershipUntil, missingConsents, term, usablePackages, useIsClinic } from "@/lib/clinic";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -391,6 +391,18 @@ export default function POSPage() {
       qty: e.qty, unitPrice: wholePkr(e.unitPrice), total: wholePkr(e.total),
       ...(e.guestName ? { guestName: e.guestName } : {}),
       ...(e.packageId ? { packageId: e.packageId } : {}),
+      // Selling a membership: it runs from today, or on from the end of the
+      // one the client already has, so renewing early loses nothing.
+      ...((() => {
+        const m = e.type === "service" ? services.find(sv => sv.id === e.itemId)?.membership : undefined;
+        if (!m) return {};
+        const current = selectedClient?.id ? activeMembership(selectedClient.id, getSalonInvoices()) : null;
+        const from = current ? addDays(current.until, 1) : localDateKey();
+        return { membershipPurchase: {
+          serviceId: e.itemId, discountPercent: m.discountPercent, ...(m.perks ? { perks: m.perks } : {}),
+          from, until: membershipUntil(from, m.months * Math.max(1, e.qty)),
+        } };
+      })()),
       // Selling a session package: snapshot what it buys and when it runs out.
       ...((() => {
         const pkg = e.type === "service" && !e.packageId ? services.find(sv => sv.id === e.itemId)?.sessionPackage : undefined;
@@ -493,7 +505,8 @@ export default function POSPage() {
     const pkg = usablePackages(selectedClient.id, e.itemId, clientInvoices).find(p => p.id === e.packageId);
     return !pkg || cartUse(e.packageId) > pkg.remaining;
   });
-  const packageWithoutClient = !selectedClient?.id && cart.some(e => e.type === "service" && !!services.find(sv => sv.id === e.itemId)?.sessionPackage);
+  const packageWithoutClient = !selectedClient?.id && cart.some(e => e.type === "service" && (!!services.find(sv => sv.id === e.itemId)?.sessionPackage || !!services.find(sv => sv.id === e.itemId)?.membership));
+  const membership = selectedClient?.id ? activeMembership(selectedClient.id, clientInvoices) : null;
   const consentGaps = clinic && selectedClient?.id
     ? missingConsents(selectedClient.id, cart.filter(e => e.type === "service" && !e.guestName).map(e => ({ id: e.itemId, name: e.name })), getConsents())
     : [];
@@ -876,6 +889,15 @@ export default function POSPage() {
             updatedClient = redeemPoints(updatedClient, cappedLoyaltyRedeem, `Redeemed at POS · ${invoice.number}`);
           }
           updatedClient = awardPoints(updatedClient, total, loyaltySettings, invoice.id);
+          // Referral: the referred client's first paid visit credits them and
+          // whoever referred them, once (referralRewardedAt).
+          const referralPts = Math.ceil((Number(loyaltySettings.referralCredit) || 0) / (Number(loyaltySettings.rupeePerPoint) || 1));
+          const referrerId = updatedClient.referredBy;
+          if (referralPts > 0 && referrerId && !updatedClient.referralRewardedAt && !isCredit && updatedClients.some(c => c.id === referrerId)) {
+            updatedClient = { ...adjustPoints(updatedClient, referralPts, `Referral welcome credit · ${invoice.number}`), referralRewardedAt: new Date().toISOString() };
+            const newcomer = updatedClient.name;
+            updatedClients = updatedClients.map(c => c.id === referrerId ? adjustPoints(c, referralPts, `Referred ${newcomer} · ${invoice.number}`) : c);
+          }
         }
         console.log("[POS loyalty] pts after awardPoints:", updatedClient.loyaltyPoints ?? 0);
         const found = updatedClients.some(c => c.id === selectedClient.id);
@@ -1832,6 +1854,12 @@ export default function POSPage() {
                   );
                 })()}
 
+                {membership && membership.discountPercent > 0 && !(discType === "pct" && discount === membership.discountPercent) && (
+                  <button type="button" onClick={() => { setDiscType("pct"); setDiscount(membership.discountPercent); }}
+                    style={{ width: "100%", marginBottom: 6, padding: "7px 10px", borderRadius: 9, border: "1px solid #fde68a", background: "#fffbeb", color: "#92400e", fontSize: 11.5, fontWeight: 800, cursor: "pointer", textAlign: "left" }}>
+                    👑 {membership.name} member until {membership.until} — apply {membership.discountPercent}% member discount
+                  </button>
+                )}
                 {/* Discount row */}
                 <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", borderRadius: 9, background: "#fafafe", border: "1px solid #f0f0f8" }}>
                   <Tag size={12} color="#d97706" style={{ flexShrink: 0 }} />

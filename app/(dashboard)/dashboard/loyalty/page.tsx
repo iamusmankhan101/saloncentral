@@ -680,6 +680,21 @@ function SettingsPanel({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
+          {/* Referral credit */}
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 700, color: "#5a5a7a", display: "block", marginBottom: 6 }}>
+              Referral credit (Rs.) for both people
+            </label>
+            <input
+              type="number" step="100" min="0" value={form.referralCredit ?? 0}
+              onChange={F("referralCredit", true)}
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1.5px solid #e8e8f0", fontSize: 14, outline: "none", boxSizing: "border-box" }}
+            />
+            <div style={{ fontSize: 11, color: "#9898b0", marginTop: 4 }}>
+              e.g. 1000 — when a referred client pays for their first visit, they and whoever referred them each get Rs. 1,000 in points. Set &ldquo;Referred by&rdquo; on the client&rsquo;s profile. 0 = off.
+            </div>
+          </div>
+
           {/* Free-service rewards */}
           <RewardsEditor rewards={form.rewards ?? []} onChange={(rewards) => setForm((f) => ({ ...f, rewards }))} />
 

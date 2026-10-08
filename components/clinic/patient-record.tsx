@@ -7,21 +7,27 @@
  * Data and the rules behind it live in lib/clinic.ts.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle, CalendarDays, Camera, Check, ClipboardList, FileSignature, ListChecks,
-  Package, Plus, Stethoscope, Trash2, X, Columns2, Receipt, Images, Clock,
+  Package, Plus, Stethoscope, Trash2, X, Columns2, Receipt, Images, Clock, Pill, Send, FileDown, Crown, Copy,
 } from "lucide-react";
+import { normalizePhone } from "@/lib/whatsapp-scheduler";
+import { getActiveLocationFilter } from "@/lib/locations";
+import { saveSettings, settingsStore } from "@/lib/settings-store";
 import { getStoredAppointments, getStoredClients, getStoredServices, getStoredStaff, saveClients, subscribeToStoredData } from "@/lib/storage";
 import { getSalonInvoices } from "@/lib/salon-invoices";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessHref } from "@/components/sidebar";
+import SignaturePad from "@/components/clinic/signature-pad";
 import { uploadImage } from "@/lib/image";
 import {
   CONCERNS, PHOTO_ANGLES, PHOTO_STAGES, consentIsValid, consentTemplates, getClinicPhotos, getConsents,
   getConsultations, getTreatmentPlans, newId, packagesForClient, patientTimeline, planProgress, removeRecord,
   saveClinicPhotos, saveConsents, saveConsultations, saveTreatmentPlans, todayKey, upsertRecord,
+  activeMembership, getPrescriptions, savePrescriptions, prescriptionTemplates, prescriptionText, REGIME_TIMES,
   type ClinicPhoto, type ConsentRecord, type ConsentTemplate, type Consultation, type TimelineKind, type TreatmentPlan,
+  type Prescription, type PrescriptionItem, type PrescriptionTemplate,
 } from "@/lib/clinic";
 import type { Appointment, Client, FitzpatrickType, MedicalProfile, Service, Staff } from "@/lib/types";
 import type { SalonInvoice } from "@/lib/salon-invoices";
@@ -63,6 +69,25 @@ function Modal({ title, onClose, children, wide }: { title: string; onClose: () 
 
 const fmtDate = (d: string) => new Date(`${d.slice(0, 10)}T12:00:00`).toLocaleDateString("en-PK", { day: "numeric", month: "short", year: "numeric" });
 
+function clinicHeader() {
+  const salon = settingsStore.salon as { name?: string; phone?: string; address?: string };
+  return { name: salon.name || "Clinic", phone: salon.phone, address: salon.address };
+}
+
+/** Asks the server for a PDF (app/api/clinic/pdf) and saves it. */
+async function downloadClinicPdf(payload: Record<string, unknown>, filename: string) {
+  const res = await fetch("/api/clinic/pdf", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clinic: clinicHeader(), ...payload }) });
+  if (!res.ok) throw new Error("Couldn't create the PDF.");
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url; a.download = `${filename.replace(/[^\w .-]/g, "")}.pdf`;
+  document.body.appendChild(a); a.click(); a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** wa.me link with the message filled in, for the patient's number. */
+const whatsAppLink = (phone: string, text: string) => `https://wa.me/${normalizePhone(phone)}?text=${encodeURIComponent(text)}`;
+
 /** Multi-select of treatments as removable chips plus a picker. */
 function TreatmentPicker({ services, value, onChange }: { services: Service[]; value: string[]; onChange: (ids: string[]) => void }) {
   return (
@@ -83,13 +108,14 @@ function TreatmentPicker({ services, value, onChange }: { services: Service[]; v
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
-type Tab = "timeline" | "medical" | "consultations" | "plans" | "consent" | "photos";
+type Tab = "timeline" | "medical" | "consultations" | "plans" | "consent" | "prescriptions" | "photos";
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "timeline", label: "Timeline", icon: Clock },
   { id: "medical", label: "Medical", icon: Stethoscope },
   { id: "consultations", label: "Consultations", icon: ClipboardList },
   { id: "plans", label: "Plans & Packages", icon: ListChecks },
   { id: "consent", label: "Consent", icon: FileSignature },
+  { id: "prescriptions", label: "Prescriptions", icon: Pill },
   { id: "photos", label: "Photos", icon: Camera },
 ];
 
@@ -102,12 +128,15 @@ interface Data {
   plans: TreatmentPlan[];
   consents: ConsentRecord[];
   photos: ClinicPhoto[];
+  prescriptions: Prescription[];
+  clients: Client[];
 }
 
 function loadData(): Data {
   return {
     appointments: getStoredAppointments(), invoices: getSalonInvoices(), services: getStoredServices(), staff: getStoredStaff(),
     consultations: getConsultations(), plans: getTreatmentPlans(), consents: getConsents(), photos: getClinicPhotos(),
+    prescriptions: getPrescriptions(), clients: getStoredClients(),
   };
 }
 
@@ -132,7 +161,15 @@ export default function PatientClinicalRecord({ client, onClientChange }: { clie
       <div style={{ padding: "14px 18px 0", borderBottom: "1px solid #f0f0f8" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
           <Stethoscope size={17} color={ACCENT} />
-          <div style={{ fontSize: 15, fontWeight: 900, color: "#1a1a2e" }}>Clinical Record</div>
+          <div style={{ fontSize: 15, fontWeight: 900, color: "#1a1a2e", flex: 1 }}>Clinical Record</div>
+          {(() => {
+            const m = activeMembership(client.id, data.invoices);
+            return m ? (
+              <span title={m.perks} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 20, background: "#fef3c7", color: "#92400e", fontSize: 11.5, fontWeight: 800 }}>
+                <Crown size={12} /> {m.name} · {m.discountPercent}% off · until {fmtDate(m.until)}
+              </span>
+            ) : null;
+          })()}
         </div>
         {allowed && allergies && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", marginBottom: 12, background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, fontSize: 12.5, fontWeight: 700, color: "#b91c1c" }}>
@@ -155,10 +192,11 @@ export default function PatientClinicalRecord({ client, onClientChange }: { clie
         {!allowed ? (
           <Empty>Medical records are restricted. Ask the owner to give you the &ldquo;Medical Records&rdquo; permission.</Empty>
         ) : tab === "timeline" ? <TimelineTab client={client} data={data} />
-          : tab === "medical" ? <MedicalTab client={client} onSaved={onClientChange} />
+          : tab === "medical" ? <MedicalTab client={client} clients={data.clients} onSaved={onClientChange} />
           : tab === "consultations" ? <ConsultationsTab client={client} data={data} onChange={refresh} onPlanCreated={() => { refresh(); setTab("plans"); }} />
           : tab === "plans" ? <PlansTab client={client} data={data} onChange={refresh} />
           : tab === "consent" ? <ConsentTab client={client} data={data} onChange={refresh} />
+          : tab === "prescriptions" ? <PrescriptionsTab client={client} data={data} onChange={refresh} />
           : <PhotosTab client={client} data={data} onChange={refresh} />}
       </div>
     </div>
@@ -176,19 +214,21 @@ const KIND_STYLE: Record<TimelineKind, { color: string; icon: React.ElementType 
   payment: { color: "#475569", icon: Receipt },
   package: { color: "#7c3aed", icon: Package },
   due: { color: "#d97706", icon: Clock },
+  prescription: { color: "#0891b2", icon: Pill },
+  membership: { color: "#b45309", icon: Crown },
 };
 
 function TimelineTab({ client, data }: { client: Client; data: Data }) {
   const events = useMemo(() => patientTimeline({ clientId: client.id, ...data }), [client.id, data]);
   const today = todayKey();
   if (events.length === 0) return <Empty>Nothing recorded yet. Consultations, treatments, consents, photos and payments will appear here in date order.</Empty>;
-  let shownToday = false;
+  // The first upcoming event gets a "Today" divider above it.
+  const firstUpcoming = events.findIndex((e) => e.date > today);
   return (
     <div style={{ position: "relative", paddingLeft: 4 }}>
       {events.map((e, i) => {
         const { color, icon: Icon } = KIND_STYLE[e.kind];
-        const marker = !shownToday && e.date > today;
-        if (marker) shownToday = true;
+        const marker = i === firstUpcoming;
         return (
           <div key={i}>
             {marker && <div style={{ margin: "6px 0 10px 34px", fontSize: 10.5, fontWeight: 900, color: ACCENT, textTransform: "uppercase", letterSpacing: "0.08em" }}>— Today · upcoming below —</div>}
@@ -218,8 +258,9 @@ const FITZPATRICK: { value: FitzpatrickType; label: string }[] = [
   { value: "V", label: "V — very rarely burns, tans very easily" }, { value: "VI", label: "VI — never burns" },
 ];
 
-function MedicalTab({ client, onSaved }: { client: Client; onSaved: (c: Client) => void }) {
+function MedicalTab({ client, clients, onSaved }: { client: Client; clients: Client[]; onSaved: (c: Client) => void }) {
   const [form, setForm] = useState<MedicalProfile>(() => ({ ...client.medical }));
+  const [referredBy, setReferredBy] = useState(client.referredBy ?? "");
   const [saved, setSaved] = useState(false);
   const set = (k: keyof MedicalProfile, v: string) => setForm((f) => ({ ...f, [k]: v }));
   const text = (k: keyof MedicalProfile, label: string, placeholder = "", full = true) => (
@@ -231,7 +272,7 @@ function MedicalTab({ client, onSaved }: { client: Client; onSaved: (c: Client) 
   function save() {
     const medical: MedicalProfile = Object.fromEntries(Object.entries({ ...form, updatedAt: new Date().toISOString() })
       .map(([k, v]) => [k, typeof v === "string" ? v.trim() : v]).filter(([, v]) => v)) as MedicalProfile;
-    const updated: Client = { ...client, medical };
+    const updated: Client = { ...client, medical, referredBy: referredBy || undefined };
     saveClients(getStoredClients().map((c) => c.id === client.id ? updated : c));
     onSaved(updated);
     setSaved(true);
@@ -243,6 +284,13 @@ function MedicalTab({ client, onSaved }: { client: Client; onSaved: (c: Client) 
       <Field label="Address" full><input value={form.address ?? ""} onChange={(e) => set("address", e.target.value)} style={INP} /></Field>
       <Field label="Emergency contact name"><input value={form.emergencyContactName ?? ""} onChange={(e) => set("emergencyContactName", e.target.value)} style={INP} /></Field>
       <Field label="Emergency contact phone"><input value={form.emergencyContactPhone ?? ""} onChange={(e) => set("emergencyContactPhone", e.target.value)} style={INP} inputMode="tel" /></Field>
+      <Field label="Referred by">
+        <select value={referredBy} onChange={(e) => setReferredBy(e.target.value)} style={INP} disabled={!!client.referralRewardedAt}>
+          <option value="">— nobody —</option>
+          {clients.filter((c) => c.id !== client.id).sort((a, b) => a.name.localeCompare(b.name)).map((c) => <option key={c.id} value={c.id}>{c.name}{c.phone ? ` · ${c.phone}` : ""}</option>)}
+        </select>
+        {client.referralRewardedAt && <span style={{ fontSize: 11, color: "#059669", fontWeight: 700 }}>Referral credit given {fmtDate(client.referralRewardedAt)}</span>}
+      </Field>
       {text("allergies", "Allergies", "e.g. lidocaine, latex, penicillin — shown as a warning on every tab")}
       {text("medicalHistory", "Medical history", "Conditions, surgeries, pregnancy / breastfeeding")}
       {text("medications", "Current medications", "Including blood thinners, isotretinoin, supplements")}
@@ -487,7 +535,24 @@ function ConsentTab({ client, data, onChange }: { client: Client; data: Data; on
   const templates = consentTemplates();
   const [signing, setSigning] = useState<ConsentTemplate | null>(null);
   const [viewing, setViewing] = useState<ConsentRecord | null>(null);
+  const [link, setLink] = useState<{ template: ConsentTemplate; url?: string; error?: string } | null>(null);
+  const [pdfError, setPdfError] = useState("");
   const mine = data.consents.filter((c) => c.clientId === client.id).sort((a, b) => b.signedAt.localeCompare(a.signedAt));
+
+  async function makeLink(t: ConsentTemplate) {
+    setLink({ template: t });
+    try {
+      const res = await fetch("/api/clinic/consent-request", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId: client.id, clientName: client.name, templateId: t.id, title: t.title, body: t.body, locationId: getActiveLocationFilter() }),
+      });
+      const d = await res.json() as { ok?: boolean; token?: string; error?: string };
+      if (!d.ok || !d.token) throw new Error(d.error || "Couldn't create the link.");
+      setLink({ template: t, url: `${window.location.origin}/consent/${d.token}` });
+    } catch (e) {
+      setLink({ template: t, error: e instanceof Error ? e.message : "Couldn't create the link." });
+    }
+  }
 
   return (
     <div>
@@ -503,8 +568,11 @@ function ConsentTab({ client, data, onChange }: { client: Client; data: Data; on
                   {valid ? `Signed ${fmtDate(last!.signedAt)}` : last ? "Expired — sign again" : "Not signed"}
                 </div>
               </div>
-              <button type="button" onClick={() => setSigning(t)} style={{ ...BTN, padding: "6px 10px", fontSize: 11.5, background: valid ? "#fff" : ACCENT, color: valid ? ACCENT : "#fff", border: valid ? `1px solid ${ACCENT}` : "none" }}>
+              <button type="button" onClick={() => setSigning(t)} title="Sign here, on this device" style={{ ...BTN, padding: "6px 10px", fontSize: 11.5, background: valid ? "#fff" : ACCENT, color: valid ? ACCENT : "#fff", border: valid ? `1px solid ${ACCENT}` : "none" }}>
                 <FileSignature size={13} /> Sign
+              </button>
+              <button type="button" onClick={() => makeLink(t)} title="Send a link so the patient signs on their own phone" aria-label={`Send ${t.title} signing link`} style={{ ...BTN_GHOST, padding: "6px 8px" }}>
+                <Send size={13} />
               </button>
             </div>
           );
@@ -534,47 +602,36 @@ function ConsentTab({ client, data, onChange }: { client: Client; data: Data; on
               {viewing.staffName ? <> · witnessed by <strong>{viewing.staffName}</strong></> : null}
             </div>
           </div>
+          <button type="button" style={{ ...BTN, marginTop: 14 }}
+            onClick={() => { setPdfError(""); downloadClinicPdf({ kind: "consent", consent: viewing }, `${viewing.title} - ${viewing.signedName}`).catch((e) => setPdfError(e.message)); }}>
+            <FileDown size={14} /> Download PDF
+          </button>
+          {pdfError && <div style={{ fontSize: 12, color: "#dc2626", marginTop: 6 }}>{pdfError}</div>}
         </Modal>
       )}
-    </div>
-  );
-}
-
-/** Finger / stylus / mouse signature on a canvas. */
-function SignaturePad({ onChange }: { onChange: (dataUrl: string | null) => void }) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  const drawing = useRef(false);
-  const drew = useRef(false);
-
-  useEffect(() => {
-    const canvas = ref.current!;
-    const ratio = window.devicePixelRatio || 1;
-    canvas.width = canvas.offsetWidth * ratio;
-    canvas.height = canvas.offsetHeight * ratio;
-    const ctx = canvas.getContext("2d")!;
-    ctx.scale(ratio, ratio);
-    ctx.lineWidth = 2.2; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = "#1a1a2e";
-  }, []);
-
-  const point = (e: React.PointerEvent) => {
-    const r = ref.current!.getBoundingClientRect();
-    return [e.clientX - r.left, e.clientY - r.top] as const;
-  };
-  const clear = () => {
-    const c = ref.current!;
-    c.getContext("2d")!.clearRect(0, 0, c.width, c.height);
-    drew.current = false;
-    onChange(null);
-  };
-
-  return (
-    <div>
-      <canvas ref={ref} aria-label="Signature pad"
-        onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); drawing.current = true; const ctx = ref.current!.getContext("2d")!; ctx.beginPath(); ctx.moveTo(...point(e)); }}
-        onPointerMove={(e) => { if (!drawing.current) return; const ctx = ref.current!.getContext("2d")!; ctx.lineTo(...point(e)); ctx.stroke(); drew.current = true; }}
-        onPointerUp={() => { drawing.current = false; if (drew.current) onChange(ref.current!.toDataURL("image/png")); }}
-        style={{ width: "100%", height: 160, border: "1.5px dashed #c4b5fd", borderRadius: 12, background: "#fcfbff", touchAction: "none", display: "block", cursor: "crosshair" }} />
-      <button type="button" onClick={clear} style={{ ...BTN_GHOST, padding: "5px 10px", fontSize: 11.5, marginTop: 6 }}>Clear signature</button>
+      {link && (
+        <Modal title={`Send for signing — ${link.template.title}`} onClose={() => setLink(null)}>
+          {link.error ? <div style={{ color: "#dc2626", fontSize: 13, fontWeight: 700 }}>{link.error}</div>
+            : !link.url ? <div style={{ fontSize: 13, color: "#6b6b8a" }}>Creating link…</div>
+            : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={{ fontSize: 12.5, color: "#6b6b8a", lineHeight: 1.55 }}>
+                  {client.name} opens this on their phone, reads the form and signs with their finger. It appears here once signed. The link works once and expires in 7 days.
+                </div>
+                <input readOnly value={link.url} onFocus={(e) => e.currentTarget.select()} style={INP} />
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {client.phone && (
+                    <a href={whatsAppLink(client.phone, `Hi ${client.name.split(" ")[0]}, please read and sign your ${link.template.title} for ${clinicHeader().name} before your treatment: ${link.url}`)}
+                      target="_blank" rel="noopener noreferrer" style={{ ...BTN, background: "#16a34a", textDecoration: "none" }}>
+                      <Send size={14} /> Send on WhatsApp
+                    </a>
+                  )}
+                  <button type="button" onClick={() => navigator.clipboard?.writeText(link.url!)} style={BTN_GHOST}><Copy size={14} /> Copy link</button>
+                </div>
+              </div>
+            )}
+        </Modal>
+      )}
     </div>
   );
 }
@@ -620,6 +677,108 @@ function SignConsent({ template, client, staff, onClose, onSigned }: {
         style={{ ...BTN, width: "100%", justifyContent: "center", marginTop: 14, padding: "12px 0", opacity: ready ? 1 : 0.5, cursor: ready ? "pointer" : "not-allowed" }}>
         <Check size={15} /> Save signed consent
       </button>
+    </Modal>
+  );
+}
+
+// ─── Prescriptions ───────────────────────────────────────────────────────────
+
+function PrescriptionsTab({ client, data, onChange }: { client: Client; data: Data; onChange: () => void }) {
+  const [editing, setEditing] = useState<Prescription | null>(null);
+  const [error, setError] = useState("");
+  const mine = data.prescriptions.filter((p) => p.clientId === client.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const blank = (): Prescription => ({ id: newId("rx"), clientId: client.id, date: todayKey(), items: [{ time: "Morning", product: "" }], createdAt: new Date().toISOString() });
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+        <button type="button" onClick={() => setEditing(blank())} style={BTN}><Plus size={14} /> New prescription</button>
+      </div>
+      {error && <div style={{ fontSize: 12, color: "#dc2626", marginBottom: 8 }}>{error}</div>}
+      {mine.length === 0 ? <Empty>No prescriptions yet. Start from a template (Basic, Acne, Pigmentation, Post-procedure) or write your own.</Empty> : mine.map((rx) => (
+        <div key={rx.id} style={{ border: "1px solid #ececf4", borderRadius: 12, padding: "12px 14px", marginBottom: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <Pill size={15} color="#0891b2" />
+            <div style={{ flex: 1, fontSize: 13.5, fontWeight: 800, color: "#1a1a2e" }}>{fmtDate(rx.date)}{rx.practitionerName ? ` · ${rx.practitionerName}` : ""}</div>
+            <button type="button" onClick={() => { setError(""); downloadClinicPdf({ kind: "prescription", prescription: rx, patientName: client.name }, `Prescription - ${client.name} - ${rx.date}`).catch((e) => setError(e.message)); }}
+              style={{ ...BTN_GHOST, padding: "6px 10px", fontSize: 11.5 }}><FileDown size={13} /> PDF</button>
+            {client.phone && (
+              <a href={whatsAppLink(client.phone, prescriptionText(rx, client.name, clinicHeader().name))} target="_blank" rel="noopener noreferrer"
+                style={{ ...BTN_GHOST, padding: "6px 10px", fontSize: 11.5, textDecoration: "none", color: "#16a34a" }}><Send size={13} /> WhatsApp</a>
+            )}
+            <button type="button" onClick={() => setEditing(rx)} style={{ ...BTN_GHOST, padding: "6px 10px", fontSize: 11.5 }}>Open</button>
+          </div>
+          <div style={{ fontSize: 12.5, color: "#6b6b8a", marginTop: 6, lineHeight: 1.6 }}>
+            {[...new Set(rx.items.map((i) => i.time))].map((t) => (
+              <div key={t}><strong>{t}:</strong> {rx.items.filter((i) => i.time === t).map((i) => i.product).join(", ")}</div>
+            ))}
+          </div>
+        </div>
+      ))}
+      {editing && (
+        <PrescriptionForm initial={editing} staff={data.staff} onClose={() => setEditing(null)}
+          onDelete={mine.some((p) => p.id === editing.id) ? () => { removeRecord(getPrescriptions, savePrescriptions, editing.id); setEditing(null); onChange(); } : undefined}
+          onSave={(rx) => { upsertRecord(getPrescriptions, savePrescriptions, rx); setEditing(null); onChange(); }} />
+      )}
+    </div>
+  );
+}
+
+function PrescriptionForm({ initial, staff, onClose, onSave, onDelete }: {
+  initial: Prescription; staff: Staff[]; onClose: () => void; onSave: (rx: Prescription) => void; onDelete?: () => void;
+}) {
+  const [rx, setRx] = useState(initial);
+  const [templates, setTemplates] = useState<PrescriptionTemplate[]>(() => prescriptionTemplates());
+  const setItem = (i: number, patch: Partial<PrescriptionItem>) => setRx((r) => ({ ...r, items: r.items.map((it, idx) => idx === i ? { ...it, ...patch } : it) }));
+  const items = rx.items.filter((i) => i.product.trim());
+
+  function saveAsTemplate() {
+    const name = window.prompt("Name this template (e.g. Melasma regime):");
+    if (!name?.trim()) return;
+    const clinic = settingsStore.clinic as { prescriptionTemplates?: PrescriptionTemplate[] };
+    clinic.prescriptionTemplates = [...(clinic.prescriptionTemplates ?? []), { id: newId("rxt"), name: name.trim(), items, notes: rx.notes }];
+    saveSettings();
+    setTemplates(prescriptionTemplates());
+  }
+
+  return (
+    <Modal title="Prescription & skincare plan" onClose={onClose} wide>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 14 }}>
+        <Field label="Start from template">
+          <select value="" onChange={(e) => { const t = templates.find((x) => x.id === e.target.value); if (t) setRx({ ...rx, items: t.items.map((i) => ({ ...i })), notes: t.notes ?? rx.notes }); }} style={INP}>
+            <option value="">Choose…</option>
+            {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Date"><input type="date" value={rx.date} onChange={(e) => setRx({ ...rx, date: e.target.value })} style={INP} /></Field>
+        <Field label="Prescribed by">
+          <select value={rx.practitionerId ?? ""} onChange={(e) => { const s = staff.find((x) => x.id === e.target.value); setRx({ ...rx, practitionerId: s?.id, practitionerName: s?.name }); }} style={INP}>
+            <option value="">—</option>
+            {staff.filter((s) => s.isActive).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </Field>
+      </div>
+      {rx.items.map((it, i) => (
+        <div key={i} style={{ display: "grid", gridTemplateColumns: "110px 2fr 1fr 1fr 1fr 32px", gap: 6, marginBottom: 6, alignItems: "start" }} className="rx-row">
+          <select value={it.time} onChange={(e) => setItem(i, { time: e.target.value })} style={{ ...INP, padding: "8px 6px" }} aria-label="When">
+            {REGIME_TIMES.map((t) => <option key={t}>{t}</option>)}
+          </select>
+          <input value={it.product} onChange={(e) => setItem(i, { product: e.target.value })} placeholder="Product / medicine" style={INP} />
+          <input value={it.dosage ?? ""} onChange={(e) => setItem(i, { dosage: e.target.value })} placeholder="Dosage" style={INP} />
+          <input value={it.frequency ?? ""} onChange={(e) => setItem(i, { frequency: e.target.value })} placeholder="Frequency" style={INP} />
+          <input value={it.duration ?? ""} onChange={(e) => setItem(i, { duration: e.target.value })} placeholder="Duration" style={INP} />
+          <button type="button" aria-label="Remove line" onClick={() => setRx({ ...rx, items: rx.items.filter((_, idx) => idx !== i) })}
+            style={{ border: "none", background: "#fef2f2", borderRadius: 8, height: 36, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={13} color="#dc2626" /></button>
+          <input value={it.instructions ?? ""} onChange={(e) => setItem(i, { instructions: e.target.value })} placeholder="Instructions (optional)" style={{ ...INP, gridColumn: "2 / 6", fontSize: 12 }} />
+        </div>
+      ))}
+      <button type="button" onClick={() => setRx({ ...rx, items: [...rx.items, { time: rx.items[rx.items.length - 1]?.time ?? "Morning", product: "" }] })} style={{ ...BTN_GHOST, marginBottom: 12 }}><Plus size={13} /> Add line</button>
+      <Field label="Notes"><textarea rows={2} value={rx.notes ?? ""} onChange={(e) => setRx({ ...rx, notes: e.target.value })} style={{ ...INP, resize: "vertical" }} /></Field>
+      <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
+        <button type="button" disabled={items.length === 0} onClick={() => onSave({ ...rx, items })} style={{ ...BTN, opacity: items.length ? 1 : 0.5 }}><Check size={14} /> Save prescription</button>
+        <button type="button" disabled={items.length === 0} onClick={saveAsTemplate} style={BTN_GHOST}>Save as template</button>
+        {onDelete && <button type="button" onClick={() => { if (window.confirm("Delete this prescription?")) onDelete(); }} style={{ ...BTN_GHOST, marginLeft: "auto", color: "#dc2626", borderColor: "#fecaca" }}><Trash2 size={13} /> Delete</button>}
+      </div>
     </Modal>
   );
 }

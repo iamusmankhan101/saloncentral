@@ -5,6 +5,8 @@ import { getStoredServices, saveServices, getStoredStaff, getStoredInventory, su
 import type { InventoryItem, InventoryUnit, Service, Staff } from "@/lib/types";
 import { compatibleUnits } from "@/lib/inventory-usage";
 import { term, useIsClinic } from "@/lib/clinic";
+import type { ClinicResource } from "@/lib/clinic-resources";
+import { settingsStore } from "@/lib/settings-store";
 import { X, Plus, Clock, Scissors, DollarSign, Users, Sparkles, Check, Pencil, Trash2, Package as PackageIcon, Search, Lock, Upload, Download, FileSpreadsheet, ChevronDown, Boxes } from "lucide-react";
 import { getSectionOptions, getActiveSection, inSection, defaultSectionForNewRecord } from "@/lib/sections";
 import PageTitle from "@/components/page-title";
@@ -345,6 +347,11 @@ function AddEditServiceModal({ onClose, onSave, staffList, servicesList, invento
     sessionPkgService:  serviceToEdit?.sessionPackage?.serviceId ?? "",
     sessionPkgCount:    serviceToEdit?.sessionPackage ? String(serviceToEdit.sessionPackage.sessions) : "",
     sessionPkgValidity: serviceToEdit?.sessionPackage?.validityDays ? String(serviceToEdit.sessionPackage.validityDays) : "",
+    resourceIds:        serviceToEdit?.resourceIds ?? [] as string[],
+    memb:               !!serviceToEdit?.membership,
+    membMonths:         serviceToEdit?.membership ? String(serviceToEdit.membership.months) : "1",
+    membDiscount:       serviceToEdit?.membership ? String(serviceToEdit.membership.discountPercent) : "",
+    membPerks:          serviceToEdit?.membership?.perks ?? "",
     /** itemId → recipe amount per service as typed, e.g. { qty: "80", unit: "ml" }. */
     inventoryAmounts: Object.fromEntries(
       Object.entries(serviceToEdit?.inventoryAmounts ?? {}).map(([id, r]) => [id, { qty: String(r.qty), unit: r.unit }]),
@@ -465,6 +472,10 @@ function AddEditServiceModal({ onClose, onSave, staffList, servicesList, invento
             sessions: Math.round(Number(form.sessionPkgCount)),
             ...(Number(form.sessionPkgValidity) > 0 ? { validityDays: Math.round(Number(form.sessionPkgValidity)) } : {}),
           }
+        : undefined,
+      resourceIds:      !form.isPackage && form.resourceIds.length ? form.resourceIds : undefined,
+      membership: !form.isPackage && form.memb && Number(form.membMonths) > 0
+        ? { months: Math.round(Number(form.membMonths)), discountPercent: Math.min(100, Math.max(0, Number(form.membDiscount) || 0)), ...(form.membPerks.trim() ? { perks: form.membPerks.trim() } : {}) }
         : undefined,
       inventoryAmounts: (() => {
         const amounts = Object.fromEntries(form.inventoryUsage
@@ -659,6 +670,51 @@ function AddEditServiceModal({ onClose, onSave, staffList, servicesList, invento
                   <Plus size={13} /> Add
                 </button>
               </div>
+            </div>
+          )}
+          {!form.isPackage && clinic && (() => {
+            const resources = ((settingsStore.clinic as { resources?: ClinicResource[] }).resources) ?? [];
+            if (resources.length === 0) return null;
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: "#9898b0", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  Rooms &amp; machines <span style={{ textTransform: "none", fontWeight: 500, color: "#c0c0d0" }}>(one free of each kind is booked with it; tick several rooms if any of them will do)</span>
+                </label>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {resources.map((r) => {
+                    const on = form.resourceIds.includes(r.id);
+                    return (
+                      <button key={r.id} type="button" aria-pressed={on}
+                        onClick={() => set("resourceIds", on ? form.resourceIds.filter((id) => id !== r.id) : [...form.resourceIds, r.id])}
+                        style={{ padding: "5px 10px", borderRadius: 20, cursor: "pointer", fontSize: 12, fontWeight: 700, border: `1.5px solid ${on ? "#7C3AED" : "#e4e4ee"}`, background: on ? "#f5f3ff" : "#fff", color: on ? "#7C3AED" : "#6b6b8a" }}>
+                        {r.kind === "machine" ? "⚙️" : "🚪"} {r.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+          {!form.isPackage && clinic && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px 14px", borderRadius: 10, border: "1px solid #e8e8f0", background: form.memb ? "#F5F3FF" : "#fff" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                <input type="checkbox" checked={form.memb} onChange={(e) => set("memb", e.target.checked)} style={{ accentColor: "#7C3AED" }} />
+                <span style={{ fontSize: 13, fontWeight: 700, color: "#1a1a2e" }}>Sold as a membership</span>
+                <span style={{ fontSize: 11, color: "#9898b0" }}>e.g. Gold — PKR 10,000 / month</span>
+              </label>
+              {form.memb && (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <input type="number" min="1" value={form.membMonths} onChange={(e) => set("membMonths", e.target.value)} placeholder="Months" aria-label="Months of membership"
+                    style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e8e8f0", fontSize: 12, minWidth: 0 }} />
+                  <input type="number" min="0" max="100" value={form.membDiscount} onChange={(e) => set("membDiscount", e.target.value)} placeholder="Member discount %" aria-label="Member discount percent"
+                    style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e8e8f0", fontSize: 12, minWidth: 0 }} />
+                  <input value={form.membPerks} onChange={(e) => set("membPerks", e.target.value)} placeholder="Perks, e.g. free consultations, priority booking, 1 HydraFacial a month"
+                    style={{ gridColumn: "1 / -1", padding: "8px 10px", borderRadius: 8, border: "1px solid #e8e8f0", fontSize: 12 }} />
+                  <div style={{ gridColumn: "1 / -1", fontSize: 11, color: "#6b6b8a", lineHeight: 1.5 }}>
+                    The price below is per membership period. Selling it at POS makes the patient a member for that many months; while active, POS offers the member discount with one tap. Renew by selling it again.
+                  </div>
+                </div>
+              )}
             </div>
           )}
           {!form.isPackage && clinic && (

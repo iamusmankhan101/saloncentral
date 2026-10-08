@@ -33,6 +33,7 @@ const ALL_STATUSES = Object.keys(STATUS) as AppointmentStatus[];
 import { fmtCurrency as fmt } from "@/lib/format";
 import { TimeSelect } from "@/components/time-select";
 import { returnToStock, settleServiceConsumption, settledConsumption } from "@/lib/inventory-consumption";
+import { assignResources, type ClinicResource } from "@/lib/clinic-resources";
 
 function fmtDate(s: string) {
   const [y, m, d] = s.split("-").map(Number);
@@ -759,6 +760,12 @@ function DetailModal({ appt, onClose, clients, staffList, allServices, onStatusC
             {fmtTime(appt.startTime)} – {fmtTime(appt.endTime)} <span style={{ color: "#9898b0", fontSize: 11 }}>({durationMin} min)</span>
           </InfoRow>
 
+          {appt.resourceIds && appt.resourceIds.length > 0 && (
+            <InfoRow icon={<Tag size={14} color="#9898b0" />} label="Room / Machine">
+              {appt.resourceIds.map((id) => ((settingsStore.clinic as { resources?: ClinicResource[] } | undefined)?.resources ?? []).find((r) => r.id === id)?.name ?? "Removed").join(", ")}
+            </InfoRow>
+          )}
+
           {appt.notes && (
             <InfoRow icon={<Tag size={14} color="#9898b0" />} label="Notes">{appt.notes}</InfoRow>
           )}
@@ -957,6 +964,7 @@ function CreateModal({ onClose, onAdd, clients, staffList, allServices }: { onCl
   const [done, setDone] = useState(false);
   const [createdApptId, setCreatedApptId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [resourceError, setResourceError] = useState("");
   // useState updates aren't applied synchronously, so a fast double-click can fire
   // handleBook twice before React re-renders to disable the button — both calls
   // would then read the same stale `submitting === false`. A ref flips immediately,
@@ -1259,6 +1267,19 @@ function CreateModal({ onClose, onAdd, clients, staffList, allServices }: { onCl
         ...(bookingGroupId ? { bookingGroupId, dayNumber: i + 1, totalDays: days.length } : {}),
       };
     });
+
+    // Clinics: hold the room/machine each treatment needs, or stop here if
+    // it's already booked at that time (lib/clinic-resources.ts).
+    const resources = ((settingsStore.clinic as { resources?: ClinicResource[] } | undefined)?.resources) ?? [];
+    const withResources = assignResources(appts, getStoredAppointments(), allServices, resources);
+    if (!withResources.ok) {
+      setResourceError(withResources.error);
+      submittingRef.current = false;
+      setSubmitting(false);
+      return;
+    }
+    setResourceError("");
+    appts.splice(0, appts.length, ...withResources.appointments);
 
     try {
       onAdd(appts, [...(newClientObj ? [newClientObj] : []), ...newGuestClients]);
@@ -1690,6 +1711,11 @@ function CreateModal({ onClose, onAdd, clients, staffList, allServices }: { onCl
             </div>
           )}
 
+          {resourceError && (
+            <div role="alert" style={{ padding: "10px 12px", borderRadius: 10, background: "#fef2f2", border: "1px solid #fecaca", fontSize: 12, fontWeight: 700, color: "#b91c1c", lineHeight: 1.5 }}>
+              {resourceError}
+            </div>
+          )}
           <div style={{ display: "flex", gap: 10, paddingTop: 4 }}>
             <button onClick={onClose} style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid #e8e8f0", background: "#fff", fontSize: 13, fontWeight: 600, color: "#6b6b8a", cursor: "pointer" }}>
               Cancel
