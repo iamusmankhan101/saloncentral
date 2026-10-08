@@ -24,6 +24,17 @@ import PageTitle from "@/components/page-title";
 import { fmtCurrency as fmt } from "@/lib/format";
 import { getActiveSection } from "@/lib/sections";
 
+/**
+ * The Actions column stays pinned to the right edge of the table. The table
+ * is wider than a laptop with the sidebar open and scrolls sideways, but its
+ * scrollbar sits under the last invoice, so on a long list the buttons looked
+ * missing. `inherit` picks up the row's own background (and its hover).
+ */
+const STICKY_ACTIONS: React.CSSProperties = {
+  position: "sticky", right: 0, zIndex: 1, background: "inherit",
+  paddingLeft: 10, marginLeft: -10, boxShadow: "-10px 0 12px -10px rgba(38,25,75,0.18)",
+};
+
 function fmtDate(d: string) {
   return new Date(d + "T00:00:00").toLocaleDateString("en-PK", { month: "short", day: "numeric", year: "numeric" });
 }
@@ -579,9 +590,9 @@ export default function InvoicesPage() {
             <div className="invoice-table-inner" style={{ background: "#fff" }}>
 
               {/* Column headers */}
-              <div style={{ display: "grid", gridTemplateColumns: "150px 1fr 150px 110px 120px 80px 110px 100px 100px", padding: "12px 24px", borderBottom: "1px solid #f0f0f5", background: "#faf9fd", alignItems: "center" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "150px 1fr 150px 110px 120px 80px 110px 100px 236px", padding: "12px 24px", borderBottom: "1px solid #f0f0f5", background: "#faf9fd", alignItems: "center" }}>
                 {["Invoice #", "Client", "Staff", "Date", "Created", "Items", "Method", "Amount", "Actions"].map((h) => (
-                  <div key={h} style={{ fontSize: 10, fontWeight: 800, color: "#8e89a3", letterSpacing: "0.08em", textTransform: "uppercase" }}>{h}</div>
+                  <div key={h} style={{ fontSize: 10, fontWeight: 800, color: "#8e89a3", letterSpacing: "0.08em", textTransform: "uppercase", ...(h === "Actions" ? STICKY_ACTIONS : {}) }}>{h}</div>
                 ))}
               </div>
 
@@ -603,8 +614,8 @@ export default function InvoicesPage() {
                     key={inv.id}
                     className="hover-bg-row"
                     style={{
-                      display: "grid", gridTemplateColumns: "150px 1fr 150px 110px 120px 80px 110px 100px 100px",
-                      padding: "16px 24px",
+                      display: "grid", gridTemplateColumns: "150px 1fr 150px 110px 120px 80px 110px 100px 236px",
+                      padding: "16px 24px", background: "#fff",
                       borderBottom: i < filtered.length - 1 ? "1px solid #f8f8fc" : "none",
                       alignItems: "center", transition: "background 0.15s",
                     }}
@@ -655,8 +666,8 @@ export default function InvoicesPage() {
                       </div>
                     </div>
 
-                    {/* Actions */}
-                    <div style={{ display: "flex", gap: 8 }}>
+                    {/* Actions — pinned to the right edge so they're reachable on any screen width */}
+                    <div style={{ display: "flex", gap: 8, ...STICKY_ACTIONS }}>
                       <button
                         onClick={() => sendInvoiceOnWhatsApp(inv)}
                         disabled={sendingWaId === inv.id}
