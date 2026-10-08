@@ -9,6 +9,7 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { resolveActor } from "@/lib/api-auth";
 import { getUserById } from "@/lib/auth-db";
+import { branchScope } from "@/lib/branch-scope";
 
 const ACTIONS = new Set(["view", "create", "edit", "delete", "sign", "download", "send", "upload"]);
 
@@ -55,6 +56,9 @@ export async function GET(req: NextRequest) {
   if (actor.role === "staff") return Response.json({ ok: false, error: "Only owners and managers can see the access log." }, { status: 403 });
   const clientId = req.nextUrl.searchParams.get("clientId");
   if (!clientId) return Response.json({ ok: false }, { status: 400 });
+  // A branch's manager only sees the log for their own branch's patients.
+  const scope = await branchScope(actor);
+  if (scope && !scope.clientIds.has(clientId)) return Response.json({ ok: false, error: "This patient belongs to another branch." }, { status: 403 });
   try {
     await ensureTable();
     const r = await db.execute({

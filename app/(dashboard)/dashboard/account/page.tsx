@@ -12,7 +12,8 @@ import PageTitle from "@/components/page-title";
 import { getStoredStaff, getStoredClients, saveClients } from "@/lib/storage";
 import type { Staff, Client } from "@/lib/types";
 import { normalizePhone } from "@/lib/whatsapp-scheduler";
-import { getDefaultLocationId, getSalonLocations, type SalonLocation } from "@/lib/locations";
+import { getActiveLocationFilter, getDefaultLocationId, getSalonLocations, updateActiveLocationDetails, type SalonLocation } from "@/lib/locations";
+import { businessType } from "@/lib/clinic";
 import { getCurrentPlan } from "@/lib/plan-limits";
 import { whatsAppConnected } from "@/lib/whatsapp-scheduler";
 
@@ -293,7 +294,8 @@ function SalonProfile() {
 
   // Pre-fill from auth data when the store still has placeholder defaults
   const [form, setForm] = useState<SalonSettings>(() => {
-    const s = { ...(settingsStore.salon as SalonSettings) };
+    // Business type is per branch now — show the one being edited.
+    const s = { ...(settingsStore.salon as SalonSettings), businessType: businessType() };
     if (user) {
       if (!s.name || s.name === "Amna's Salon") s.name = user.salonName;
       if (!s.email || s.email === "amna@werzio.pk") s.email = user.email;
@@ -311,7 +313,12 @@ function SalonProfile() {
   async function save() {
     setSaving(true);
     setSaveFailed(false);
-    Object.assign(settingsStore.salon, form);
+    const { businessType: branchType, ...salonFields } = form;
+    Object.assign(settingsStore.salon, salonFields);
+    // Each branch carries its own type; a one-branch account also keeps the
+    // account-wide value in step, which is what the sign-up flow sets.
+    updateActiveLocationDetails({ address: form.address, city: form.city, businessType: branchType === "clinic" ? "clinic" : "salon" });
+    if (getSalonLocations().length === 1) (settingsStore.salon as { businessType?: string }).businessType = branchType === "clinic" ? "clinic" : "salon";
     // Awaited (unlike most saveSettings() callers) so a failed write is
     // reported instead of silently reverting on the next refresh/navigation —
     // see the settings block in lib/turso-sync.ts's syncFromDB().
@@ -398,7 +405,10 @@ function SalonProfile() {
             <option value="salon">Salon / Spa</option>
             <option value="clinic">Aesthetic Clinic — patients, medical profile, consultations, consent forms, treatment plans, packages</option>
           </select>
-          <div style={{ fontSize: 11, color: "#9999b0", marginTop: 5 }}>Switching only changes what the app shows — no data is removed either way.</div>
+          <div style={{ fontSize: 11, color: "#9999b0", marginTop: 5 }}>
+            {getSalonLocations().length > 1 ? `Applies to this branch (${getSalonLocations().find((l) => l.id === getActiveLocationFilter())?.name ?? "current"}) — each branch can be a salon or a clinic. ` : ""}
+            Switching only changes what the app shows — no data is removed either way.
+          </div>
         </Field>
         <Field label="Salon Name"><input style={inputStyle} value={form.name} onChange={(event) => setField("name", event.target.value)} /></Field>
         <Field label="Phone"><input style={inputStyle} value={form.phone} onChange={(event) => setField("phone", event.target.value)} /></Field>
@@ -2220,7 +2230,12 @@ function RolesPermissionsSection() {
 
   useEffect(() => {
     const staff = getStoredStaff();
-    const branchList = getSalonLocations();
+    // A branch's manager can only give logins for their own branch (the server
+    // enforces this too, in /api/auth/staff).
+    const me = getCurrentUser();
+    const branchList = me?.role === "manager"
+      ? getSalonLocations().filter((l) => l.id === (me.locationId || "main"))
+      : getSalonLocations();
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 4500);
     setStaffList(staff);

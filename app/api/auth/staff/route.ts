@@ -4,11 +4,17 @@ import { getSessionUserId, MAX_PASSWORD_LENGTH } from "@/lib/api-auth";
 
 const STAFF_PERMISSIONS = ["dashboard", "calendar", "appointments", "clients", "pos", "invoices"];
 const MANAGER_PERMISSIONS = ["*"];
+// Must list every page key the Roles & Permissions screen offers, or a tick is
+// silently dropped on save.
 const ALL_PERMISSION_KEYS = new Set([
-  "dashboard", "calendar", "appointments", "clients", "pos", "invoices", "loyalty",
-  "revenue", "cash-flow", "inventory", "services", "staff", "messages", "try-on",
+  "dashboard", "calendar", "floor", "appointments", "clients", "pos", "invoices", "loyalty",
+  "revenue", "cash-flow", "inventory", "services", "staff", "attendance", "payouts", "messages", "try-on",
   "account", "billing",
+  "medical", "consent-forms", "leads", "rooms", "aftercare", "waitlist", "clinic-reports",
 ]);
+
+/** The branch a manager administers; owners aren't limited to one. */
+const managerBranch = (actor: { role: string; locationId?: string }) => actor.role === "manager" ? (actor.locationId || "main") : null;
 
 async function getAuthorizedActor(req: NextRequest) {
   const actorId = await getSessionUserId(req);
@@ -30,7 +36,9 @@ export async function GET(req: NextRequest) {
   if (error) return error;
 
   const users = await getStaffUsersForOwner(actor!.salonOwnerId || actor!.id);
-  return Response.json({ ok: true, users });
+  // A branch admin only sees the logins of their own branch.
+  const branch = managerBranch(actor!);
+  return Response.json({ ok: true, users: branch ? users.filter((u) => (u.locationId || "main") === branch) : users });
 }
 
 export async function POST(req: NextRequest) {
@@ -47,6 +55,21 @@ export async function POST(req: NextRequest) {
 
   if (body.password && (body.password.length < 8 || body.password.length > MAX_PASSWORD_LENGTH)) {
     return Response.json({ ok: false, error: `Password must be 8–${MAX_PASSWORD_LENGTH} characters.` }, { status: 400 });
+  }
+
+  // A branch admin can only add or change logins in their own branch — never
+  // move someone into another branch, or take over another branch's login by
+  // sending its staff id or email.
+  const branch = managerBranch(actor!);
+  if (branch) {
+    if (body.locationId !== branch) {
+      return Response.json({ ok: false, error: "You can only manage logins for your own branch." }, { status: 403 });
+    }
+    const existing = (await getStaffUsersForOwner(actor!.salonOwnerId || actor!.id))
+      .find((u) => u.staffId === body.staffId || u.email.toLowerCase() === body.email!.trim().toLowerCase());
+    if (existing && (existing.locationId || "main") !== branch) {
+      return Response.json({ ok: false, error: "That login belongs to another branch." }, { status: 403 });
+    }
   }
 
   const isManager = body.role === "manager";

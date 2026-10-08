@@ -12,6 +12,22 @@ import type { TreatmentPlan } from "./clinic";
 
 export const todayKey = () => new Date().toLocaleDateString("en-CA");
 
+export type BusinessType = "salon" | "clinic";
+
+/**
+ * Whether a branch is a salon or an aesthetic clinic. Each branch can be
+ * either (SalonLocation.businessType); a branch that hasn't been set follows
+ * the account's type (settings.salon.businessType, chosen at sign-up), so
+ * single-branch accounts and older accounts keep working unchanged.
+ */
+export function businessTypeOf(
+  settings: { salon?: { businessType?: string }; locations?: { items?: { id: string; businessType?: string }[] } } | null | undefined,
+  locationId: string,
+): BusinessType {
+  const branch = settings?.locations?.items?.find((l) => l.id === locationId)?.businessType;
+  return (branch ?? settings?.salon?.businessType) === "clinic" ? "clinic" : "salon";
+}
+
 export function addDays(date: string, days: number): string {
   const d = new Date(`${date}T12:00:00`);
   d.setDate(d.getDate() + days);

@@ -2,7 +2,9 @@
  * Aesthetic clinic mode.
  *
  * A salon account picks "Aesthetic Clinic" at sign-up (or later in Account →
- * Salon Profile), stored as settings.salon.businessType. Clinic mode keeps the
+ * Salon Profile), stored as settings.salon.businessType — and each branch can
+ * override it (SalonLocation.businessType), so one account can run salon and
+ * clinic branches side by side (lib/clinic-core.ts businessTypeOf). Clinic mode keeps the
  * whole salon app and adds the clinical side on top: a medical profile on the
  * client (Client.medical), consultations, treatment plans, signed consent
  * forms, clinical photos, session packages and a patient timeline.
@@ -16,21 +18,20 @@
 
 import { useEffect, useState } from "react";
 import { settingsStore, SETTINGS_CHANGED_EVENT } from "./settings-store";
-import { locationUserKey } from "./locations";
+import { getActiveLocationFilter, locationUserKey } from "./locations";
 import { persistEntity } from "./turso-sync";
 import type { Appointment, InventoryItem, InventoryUnit, Service } from "./types";
 import { convertUnits } from "./inventory-usage";
 import type { SalonInvoice } from "./salon-invoices";
 import type { PrescriptionItem, Prescription } from "./clinic-prescription";
-import { activeMembership, addDays, packagesForClient, planProgress, todayKey } from "./clinic-core";
+import { activeMembership, addDays, businessTypeOf, packagesForClient, planProgress, todayKey, type BusinessType } from "./clinic-core";
 export * from "./clinic-core";
 
 // ─── Business type & wording ─────────────────────────────────────────────────
 
-export type BusinessType = "salon" | "clinic";
-
+/** The active branch's type (lib/clinic-core.ts businessTypeOf). */
 export function businessType(): BusinessType {
-  return (settingsStore.salon as { businessType?: string }).businessType === "clinic" ? "clinic" : "salon";
+  return businessTypeOf(settingsStore as Parameters<typeof businessTypeOf>[0], getActiveLocationFilter());
 }
 
 /**

@@ -21,6 +21,7 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { resolveActor } from "@/lib/api-auth";
+import { branchScope } from "@/lib/branch-scope";
 
 type QueueSource = "booking" | "pos";
 
@@ -50,6 +51,14 @@ export async function POST(req: NextRequest) {
   const { table, idColumn } = TARGETS[body.source];
 
   try {
+    // …and a branch's manager/staff only their own branch's clients' messages.
+    const scope = await branchScope(actor);
+    if (scope) {
+      const row = await db.execute({ sql: `SELECT phone FROM ${table} WHERE user_id = ? AND ${idColumn} = ?`, args: [actor.userId, id] });
+      if (row.rows.length && !scope.hasPhone(row.rows[0].phone as string)) {
+        return Response.json({ ok: false, error: "That message belongs to another branch." }, { status: 403 });
+      }
+    }
     // Scoped to the caller's own salon, so a staff account can never reach
     // another salon's queue by guessing an id.
     const result = await db.execute({

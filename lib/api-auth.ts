@@ -70,10 +70,13 @@ export async function resolveActor(
     };
   }
   if (actor.role === "manager") {
+    // A manager is one branch's admin: always their own branch, never one the
+    // request asks for. One with no branch recorded (older logins) gets the
+    // main branch rather than the run of every branch.
     return {
       userId: actor.salonOwnerId || actor.id,
       actorId: actor.id,
-      locationId: actor.locationId || requestedLocationId,
+      locationId: actor.locationId || "main",
       role: actor.role,
     };
   }

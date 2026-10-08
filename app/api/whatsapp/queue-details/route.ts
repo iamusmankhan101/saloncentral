@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { resolveActor } from "@/lib/api-auth";
+import { branchScope } from "@/lib/branch-scope";
 import { db } from "@/lib/db";
 
 const LIMIT = 200;
@@ -129,7 +130,9 @@ export async function GET(request: NextRequest) {
       return (b.sentAt ?? b.createdAt).localeCompare(a.sentAt ?? a.createdAt);
     });
 
-    return Response.json({ ok: true, items });
+    // A branch's manager/staff only see their own branch's clients' messages.
+    const scope = await branchScope(actor);
+    return Response.json({ ok: true, items: scope ? items.filter((i) => scope.hasPhone(i.phone)) : items });
   } catch (error) {
     console.error("[whatsapp/queue-details]", error);
     return Response.json({ ok: false, error: "Could not load queue details." }, { status: 500 });

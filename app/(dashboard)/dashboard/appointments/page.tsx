@@ -33,7 +33,8 @@ const ALL_STATUSES = Object.keys(STATUS) as AppointmentStatus[];
 import { fmtCurrency as fmt } from "@/lib/format";
 import { TimeSelect } from "@/components/time-select";
 import { returnToStock, settleServiceConsumption, settledConsumption } from "@/lib/inventory-consumption";
-import { assignResources, type ClinicResource } from "@/lib/clinic-resources";
+import { assignResources, resourcesAt, type ClinicResource } from "@/lib/clinic-resources";
+import { getActiveLocationFilter } from "@/lib/locations";
 
 function fmtDate(s: string) {
   const [y, m, d] = s.split("-").map(Number);
@@ -1270,7 +1271,7 @@ function CreateModal({ onClose, onAdd, clients, staffList, allServices }: { onCl
 
     // Clinics: hold the room/machine each treatment needs, or stop here if
     // it's already booked at that time (lib/clinic-resources.ts).
-    const resources = ((settingsStore.clinic as { resources?: ClinicResource[] } | undefined)?.resources) ?? [];
+    const resources = resourcesAt((settingsStore.clinic as { resources?: ClinicResource[] } | undefined)?.resources, getActiveLocationFilter());
     const withResources = assignResources(appts, getStoredAppointments(), allServices, resources);
     if (!withResources.ok) {
       setResourceError(withResources.error);

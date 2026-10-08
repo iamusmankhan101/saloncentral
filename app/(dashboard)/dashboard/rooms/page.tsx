@@ -13,11 +13,13 @@ import { saveSettings, settingsStore } from "@/lib/settings-store";
 import { getStoredAppointments, getStoredServices, subscribeToStoredData } from "@/lib/storage";
 import { newId, todayKey } from "@/lib/clinic";
 import type { ClinicResource, ResourceKind } from "@/lib/clinic-resources";
+import { getActiveLocationFilter } from "@/lib/locations";
 import type { Appointment, Service } from "@/lib/types";
 
 const INP: React.CSSProperties = { padding: "9px 11px", borderRadius: 9, border: "1px solid #e4e4ee", fontSize: 13, color: "#1a1a2e", outline: "none", background: "#fff" };
 
-const stored = () => ((settingsStore.clinic as { resources?: ClinicResource[] }).resources ?? []).map((r) => ({ ...r }));
+const allStored = () => ((settingsStore.clinic as { resources?: ClinicResource[] }).resources ?? []).map((r) => ({ ...r }));
+const here = (r: ClinicResource) => (r.locationId ?? "main") === getActiveLocationFilter();
 
 export default function RoomsPage() {
   const [resources, setResources] = useState<ClinicResource[]>([]);
@@ -30,7 +32,8 @@ export default function RoomsPage() {
   const [kind, setKind] = useState<ResourceKind>("room");
 
   useEffect(() => {
-    setResources(stored());
+    // This branch's rooms only; other branches' are kept as they are on save.
+    setResources(allStored().filter(here));
     const load = () => { setAppointments(getStoredAppointments()); setServices(getStoredServices()); };
     load();
     return subscribeToStoredData(load);
@@ -39,7 +42,7 @@ export default function RoomsPage() {
   const edit = (next: ClinicResource[]) => { setResources(next); setDirty(true); };
 
   async function save() {
-    (settingsStore.clinic as { resources: ClinicResource[] }).resources = resources.filter((r) => r.name.trim());
+    (settingsStore.clinic as { resources: ClinicResource[] }).resources = [...allStored().filter((r) => !here(r)), ...resources.filter((r) => r.name.trim())];
     await saveSettings();
     setDirty(false);
     setSaved(true);
@@ -63,7 +66,7 @@ export default function RoomsPage() {
             <option value="machine">Machine / device</option>
           </select>
           <button type="button" disabled={!name.trim()}
-            onClick={() => { edit([...resources, { id: newId("res"), name: name.trim(), kind }]); setName(""); }}
+            onClick={() => { const loc = getActiveLocationFilter(); edit([...resources, { id: newId("res"), name: name.trim(), kind, ...(loc !== "main" ? { locationId: loc } : {}) }]); setName(""); }}
             style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 9, border: "none", background: name.trim() ? "#7C3AED" : "#e8e8f0", color: name.trim() ? "#fff" : "#9898b0", fontSize: 13, fontWeight: 800, cursor: name.trim() ? "pointer" : "default" }}>
             <Plus size={14} /> Add
           </button>

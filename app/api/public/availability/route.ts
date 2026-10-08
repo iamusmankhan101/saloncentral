@@ -16,7 +16,8 @@ async function resourceKinds(salonId: string): Promise<Record<string, string>> {
   try {
     const r = await db.execute({ sql: "SELECT data FROM salon_data WHERE entity = ?", args: [`${salonId}_settings`] });
     const list = r.rows.length ? (JSON.parse(r.rows[0].data as string)?.clinic?.resources ?? []) : [];
-    return Object.fromEntries((Array.isArray(list) ? list : []).map((x: { id: string; kind: string }) => [x.id, x.kind]));
+    // Main branch only — that's where online bookings go.
+    return Object.fromEntries((Array.isArray(list) ? list : []).filter((x: { locationId?: string }) => (x.locationId ?? "main") === "main").map((x: { id: string; kind: string }) => [x.id, x.kind]));
   } catch {
     return {};
   }

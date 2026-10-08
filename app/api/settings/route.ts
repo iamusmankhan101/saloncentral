@@ -47,6 +47,37 @@ export async function GET(req: NextRequest) {
   }
 }
 
+type Json = Record<string, unknown>;
+
+/**
+ * A branch admin's (or staff member's) browser saves the whole settings
+ * object, which includes every branch. They may change their own branch's
+ * details and rooms, but the branch list, the other branches, the account's
+ * own type and which branch the owner has open are kept as stored.
+ */
+function protectOtherBranches(incoming: Json, stored: Json | null, ownBranch: string): Json {
+  if (!stored) return incoming;
+  type Loc = { id: string };
+  type Res = { locationId?: string };
+  const storedLocs = (stored.locations as { items?: Loc[] } | undefined) ?? {};
+  const incomingItems = ((incoming.locations as { items?: Loc[] } | undefined)?.items) ?? [];
+  const mine = incomingItems.find((l) => l.id === ownBranch);
+  const locations = {
+    ...storedLocs,
+    items: (storedLocs.items ?? []).map((l) => (l.id === ownBranch && mine ? { ...mine, id: l.id } : l)),
+  };
+  const storedClinic = (stored.clinic ?? {}) as Json;
+  const incomingClinic = (incoming.clinic ?? {}) as Json;
+  const here = (r: Res) => (r.locationId ?? "main") === ownBranch;
+  const resources = [
+    ...((storedClinic.resources as Res[] | undefined) ?? []).filter((r) => !here(r)),
+    ...((incomingClinic.resources as Res[] | undefined) ?? []).filter(here),
+  ];
+  const storedSalon = (stored.salon ?? {}) as Json;
+  const salon = { ...((incoming.salon ?? {}) as Json), businessType: storedSalon.businessType };
+  return { ...incoming, salon, locations, clinic: { ...incomingClinic, resources } };
+}
+
 export async function POST(req: NextRequest) {
   const actor = await resolveActor(req);
   if (!actor) return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
@@ -69,7 +100,8 @@ export async function POST(req: NextRequest) {
     const existing = await db.execute({ sql: "SELECT data FROM salon_data WHERE entity = ?", args: [`${actor.userId}_settings`] });
     let stored: Record<string, unknown> | null = null;
     try { stored = existing.rows.length ? JSON.parse(existing.rows[0].data as string) : null; } catch { stored = null; }
-    const toSave = mergeSalonSettingsSave(data as Record<string, unknown>, stored);
+    let toSave = mergeSalonSettingsSave(data as Record<string, unknown>, stored);
+    if (actor.role !== "owner" && actor.role !== "admin") toSave = protectOtherBranches(toSave, stored, actor.locationId);
     await db.execute({
       sql: "INSERT OR REPLACE INTO salon_data (entity, data, updated_at) VALUES (?, ?, ?)",
       args: [`${actor.userId}_settings`, JSON.stringify(toSave), new Date().toISOString()],

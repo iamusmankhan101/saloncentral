@@ -13,6 +13,8 @@ import { ensureMcpKeysTable } from "@/lib/mcp-auth";
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const actor = await resolveActor(req);
   if (!actor) return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  // An API key reads the whole account, so only the owner can manage them.
+  if (actor.role !== "owner") return Response.json({ ok: false, error: "Only the account owner can manage API keys." }, { status: 403 });
 
   const { id } = await params;
   await ensureMcpKeysTable();

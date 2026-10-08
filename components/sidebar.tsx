@@ -10,7 +10,7 @@ import {
   X, Gift, Banknote, ChevronRight, ChevronDown, MapPin, Check, Wallet, Star,
   ClipboardCheck, Store, Landmark, Archive, Smartphone, FileText, Armchair, FileSignature, Megaphone, DoorOpen, HeartPulse, Hourglass,
 } from "lucide-react";
-import { term, useIsClinic } from "@/lib/clinic";
+import { businessTypeOf, term, useIsClinic } from "@/lib/clinic";
 import { AuthUser, getCurrentUser, signOut } from "@/lib/auth";
 import { SETTINGS_CHANGED_EVENT, settingsStore, reloadSettings } from "@/lib/settings-store";
 import { getCurrentPlan } from "@/lib/plan-limits";
@@ -161,7 +161,9 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
     .split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
   const isStaffUser = user?.role === "staff";
   const isAdminUser = user?.role === "admin";
-  const canSwitchLocation = !isStaffUser && multiLocationEnabled && locations.length > 1;
+  // Only the owner moves between branches; a manager is one branch's admin,
+  // pinned to it on the server (resolveActor) as well as here.
+  const canSwitchLocation = user?.role === "owner" && multiLocationEnabled && locations.length > 1;
 
   function switchLocation(locationId: string) {
     const nextId = setActiveLocationFilter(locationId);
@@ -409,6 +411,9 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
                     <button key={location.id} type="button" onClick={() => switchLocation(location.id)} className="sb-profile-menu-item">
                       <MapPin size={13} />
                       <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{location.name}</span>
+                      {businessTypeOf(settingsStore as Parameters<typeof businessTypeOf>[0], location.id) === "clinic" && (
+                        <span style={{ fontSize: 9.5, fontWeight: 800, color: "#7C3AED", background: "#f5f3ff", padding: "1px 6px", borderRadius: 10 }}>Clinic</span>
+                      )}
                       {location.id === activeLocationId && <Check size={12} color="#a78bfa" />}
                     </button>
                   ))}
@@ -471,7 +476,7 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
               {!isStaffUser && (
                 <>
                   <div className="sb-section" style={{ paddingTop: 12 }}>Settings</div>
-                  {SETTINGS_NAV.map((item) => <NavItem key={item.href} {...item} />)}
+                  {SETTINGS_NAV.filter((item) => item.href !== "/dashboard/billing" || user?.role === "owner").map((item) => <NavItem key={item.href} {...item} />)}
                 </>
               )}
             </>

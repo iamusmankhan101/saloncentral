@@ -5,7 +5,8 @@ import { getStoredServices, saveServices, getStoredStaff, getStoredInventory, su
 import type { InventoryItem, InventoryUnit, Service, Staff } from "@/lib/types";
 import { compatibleUnits } from "@/lib/inventory-usage";
 import { term, useIsClinic } from "@/lib/clinic";
-import type { ClinicResource } from "@/lib/clinic-resources";
+import { resourcesAt, type ClinicResource } from "@/lib/clinic-resources";
+import { getActiveLocationFilter } from "@/lib/locations";
 import { settingsStore } from "@/lib/settings-store";
 import { X, Plus, Clock, Scissors, DollarSign, Users, Sparkles, Check, Pencil, Trash2, Package as PackageIcon, Search, Lock, Upload, Download, FileSpreadsheet, ChevronDown, Boxes } from "lucide-react";
 import { getSectionOptions, getActiveSection, inSection, defaultSectionForNewRecord } from "@/lib/sections";
@@ -678,7 +679,7 @@ function AddEditServiceModal({ onClose, onSave, staffList, servicesList, invento
             </div>
           )}
           {!form.isPackage && clinic && (() => {
-            const resources = ((settingsStore.clinic as { resources?: ClinicResource[] }).resources) ?? [];
+            const resources = resourcesAt((settingsStore.clinic as { resources?: ClinicResource[] }).resources, getActiveLocationFilter());
             if (resources.length === 0) return null;
             return (
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>

@@ -18,7 +18,7 @@ import { getBillingUser } from "@/lib/billing-db";
 import { timezoneFromSettings } from "@/lib/appointment-time";
 import { activeWhatsAppCredential, ycloudConfigOf, type WhatsAppProviderConfig } from "@/lib/whatsapp-provider";
 import { listPerformances } from "@/lib/inventory-usage";
-import { addDays, packagesForClient, planProgress } from "@/lib/clinic-core";
+import { addDays, businessTypeOf, packagesForClient, planProgress } from "@/lib/clinic-core";
 import { aftercareFlows, fillAftercare, flowsForService, type ClinicAutomationSettings } from "@/lib/clinic-aftercare";
 import { ensureWinbackTables } from "@/lib/winback-queue";
 import type { TreatmentPlan } from "@/lib/clinic";
@@ -34,8 +34,10 @@ function authorized(req: NextRequest): boolean {
   return !!secret && req.headers.get("authorization") === `Bearer ${secret}`;
 }
 
-async function load<T>(userId: string, entity: string): Promise<T[]> {
-  const r = await db.execute({ sql: "SELECT data FROM salon_data WHERE entity = ?", args: [`${userId}_${entity}`] });
+/** Same key scheme as /api/db: the main branch has no branch part in its key. */
+async function load<T>(userId: string, locationId: string, entity: string): Promise<T[]> {
+  const key = locationId === "main" ? `${userId}_${entity}` : `${userId}_${locationId}_${entity}`;
+  const r = await db.execute({ sql: "SELECT data FROM salon_data WHERE entity = ?", args: [key] });
   if (!r.rows.length) return [];
   const parsed = JSON.parse(r.rows[0].data as string);
   return Array.isArray(parsed) ? parsed as T[] : [];
@@ -48,15 +50,16 @@ function normalizePhone(raw: string): string {
   return d;
 }
 
-async function runForSalon(userId: string, settings: Record<string, unknown>): Promise<number> {
+/** One clinic branch: its own patients, sales, appointments and plans. */
+async function runForBranch(userId: string, locationId: string, settings: Record<string, unknown>): Promise<number> {
   const clinicSettings = (settings.clinic ?? {}) as ClinicAutomationSettings;
   const tz = timezoneFromSettings(settings);
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   const clinicName = (settings.salon as { name?: string } | undefined)?.name || "our clinic";
 
   const [clients, appointments, invoices, services, plans] = await Promise.all([
-    load<Client>(userId, "clients"), load<Appointment>(userId, "appointments"), load<SalonInvoice>(userId, "salon_invoices"),
-    load<Service>(userId, "services"), load<TreatmentPlan>(userId, "treatment_plans"),
+    load<Client>(userId, locationId, "clients"), load<Appointment>(userId, locationId, "appointments"), load<SalonInvoice>(userId, locationId, "salon_invoices"),
+    load<Service>(userId, locationId, "services"), load<TreatmentPlan>(userId, locationId, "treatment_plans"),
   ]);
   const clientById = new Map(clients.map((c) => [c.id, c]));
   const now = new Date();
@@ -137,7 +140,10 @@ export async function GET(req: NextRequest) {
       const userId = String(row.entity).replace(/_settings$/, "");
       try {
         const settings = JSON.parse(row.data as string) as Record<string, unknown>;
-        if ((settings.salon as { businessType?: string } | undefined)?.businessType !== "clinic") continue;
+        // A salon can run several branches, each a salon or a clinic.
+        const branches = ((settings.locations as { items?: { id: string }[] } | undefined)?.items ?? []).map((l) => l.id);
+        const clinicBranches = (branches.length ? branches : ["main"]).filter((id) => businessTypeOf(settings, id) === "clinic");
+        if (clinicBranches.length === 0) continue;
         const ws = (settings.wasender ?? {}) as Record<string, unknown>;
         if (ws.enabled === false) continue;
         const providerConfig: WhatsAppProviderConfig = {
@@ -150,7 +156,7 @@ export async function GET(req: NextRequest) {
         const billing = await getBillingUser(userId).catch(() => null);
         if (!billing || !WHATSAPP_PLANS.has(billing.planId)) continue;
         salons++;
-        queued += await runForSalon(userId, settings);
+        for (const locationId of clinicBranches) queued += await runForBranch(userId, locationId, settings);
       } catch (err) {
         console.error("[clinic-aftercare] salon failed:", userId, err);
       }

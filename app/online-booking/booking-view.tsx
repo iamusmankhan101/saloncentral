@@ -209,7 +209,7 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
   // Clinics: rooms/machines the chosen treatments need, and what kind each is.
   const resourceKinds: Record<string, string> = salonId
     ? remoteKinds
-    : Object.fromEntries((((settingsStore as { clinic?: { resources?: { id: string; kind: string }[] } }).clinic?.resources) ?? []).map((r) => [r.id, r.kind]));
+    : Object.fromEntries((((settingsStore as { clinic?: { resources?: { id: string; kind: string; locationId?: string }[] } }).clinic?.resources) ?? []).filter((r) => (r.locationId ?? "main") === getDefaultLocationId()).map((r) => [r.id, r.kind]));
   const wantedResources = [...new Set(selectedServices.flatMap((s) => (s as { resourceIds?: string[] }).resourceIds ?? []))];
 
   /** Free start times on `date` for the chosen services and stylist. */

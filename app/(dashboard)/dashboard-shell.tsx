@@ -21,6 +21,7 @@ import { setActivePlan } from "@/lib/payment-requests";
 import { addSalonLocation, clearLocationLocalData, getActiveLocationFilter, getSalonLocations, removeSalonLocation, setActiveLocationFilter, type SalonLocation } from "@/lib/locations";
 import { whatsAppConnected } from "@/lib/whatsapp-scheduler";
 import { settleServiceConsumption } from "@/lib/inventory-consumption";
+import { businessTypeOf } from "@/lib/clinic-core";
 
 // ─── Notification chime ───────────────────────────────────────────────────────
 
@@ -112,7 +113,7 @@ function DashboardLocationSwitcher({ onLocationChange }: { onLocationChange: (lo
   const [locations, setLocations] = useState<SalonLocation[]>(() => getSalonLocations());
   const [activeLocation, setActiveLocation] = useState(() => getActiveLocationFilter());
   const [showAddLocation, setShowAddLocation] = useState(false);
-  const [locationForm, setLocationForm] = useState({ name: "", address: "", city: "" });
+  const [locationForm, setLocationForm] = useState<{ name: string; address: string; city: string; businessType: "salon" | "clinic" }>({ name: "", address: "", city: "", businessType: "salon" });
   const [locationError, setLocationError] = useState("");
   const [switching, setSwitching] = useState(false);
   const [showManageLocations, setShowManageLocations] = useState(false);
@@ -178,7 +179,7 @@ function DashboardLocationSwitcher({ onLocationChange }: { onLocationChange: (lo
     try {
       const location = addSalonLocation(locationForm);
       setShowAddLocation(false);
-      setLocationForm({ name: "", address: "", city: "" });
+      setLocationForm({ name: "", address: "", city: "", businessType: "salon" });
       void changeLocation(location.id);
     } catch (error) {
       setLocationError(error instanceof Error ? error.message : "Unable to add this location.");
@@ -279,7 +280,7 @@ function DashboardLocationSwitcher({ onLocationChange }: { onLocationChange: (lo
           aria-label="Select active dashboard location"
         >
           {locations.map((location) => (
-            <option key={location.id} value={location.id}>{location.name}</option>
+            <option key={location.id} value={location.id}>{location.name}{businessTypeOf(settingsStore as Parameters<typeof businessTypeOf>[0], location.id) === "clinic" ? " (Clinic)" : ""}</option>
           ))}
         </select>
         <button
@@ -365,6 +366,19 @@ function DashboardLocationSwitcher({ onLocationChange }: { onLocationChange: (lo
                 style={{ padding: "12px 14px", border: "1px solid #ddd8e9", borderRadius: 12, outline: "none", fontSize: 14 }}
               />
             </label>
+            <div style={{ display: "grid", gap: 7, fontSize: 12, fontWeight: 800, color: "#55536b" }}>
+              Branch Type
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }} role="radiogroup" aria-label="Branch type">
+                {([["salon", "Salon / Spa", "Clients, services, stylists"], ["clinic", "Aesthetic Clinic", "Patients, consent, treatment records"]] as const).map(([id, title, sub]) => (
+                  <button key={id} type="button" role="radio" aria-checked={locationForm.businessType === id}
+                    onClick={() => setLocationForm((form) => ({ ...form, businessType: id }))}
+                    style={{ textAlign: "left", padding: "10px 12px", borderRadius: 12, cursor: "pointer", border: `2px solid ${locationForm.businessType === id ? "#7C3AED" : "#ddd8e9"}`, background: locationForm.businessType === id ? "#f5f3ff" : "#fff" }}>
+                    <div style={{ fontSize: 13, fontWeight: 850, color: "#1a1a2e" }}>{title}</div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "#9898b0", marginTop: 2 }}>{sub}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
             {locationError && <div role="alert" style={{ padding: "10px 12px", borderRadius: 10, background: "#fef2f2", color: "#b91c1c", fontSize: 12, fontWeight: 700 }}>{locationError}</div>}
           </div>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "16px 22px", borderTop: "1px solid #eeeaf6", background: "#fcfbfe" }}>

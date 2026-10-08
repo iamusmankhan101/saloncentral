@@ -20,6 +20,13 @@ export interface ClinicResource {
   id: string;
   name: string;
   kind: ResourceKind;
+  /** The branch it's in; unset = the main branch. Rooms aren't shared between branches. */
+  locationId?: string;
+}
+
+/** The rooms/machines of one branch. */
+export function resourcesAt(all: ClinicResource[] | undefined, locationId: string): ClinicResource[] {
+  return (all ?? []).filter((r) => (r.locationId ?? "main") === locationId);
 }
 
 const INACTIVE = new Set(["cancelled", "no-show"]);

@@ -6,6 +6,8 @@ export interface SalonLocation {
   name: string;
   address?: string;
   city?: string;
+  /** "clinic" makes this branch an aesthetic clinic; unset follows the account (lib/clinic-core.ts businessTypeOf). */
+  businessType?: "salon" | "clinic";
 }
 
 function slug(value: string) {
@@ -68,7 +70,7 @@ export function locationName(locationId?: string) {
   return getSalonLocations().find((location) => location.id === id)?.name || "Main Branch";
 }
 
-export function addSalonLocation(input: { name: string; address: string; city?: string }): SalonLocation {
+export function addSalonLocation(input: { name: string; address: string; city?: string; businessType?: "salon" | "clinic" }): SalonLocation {
   const cleanName = input.name.trim();
   const cleanAddress = input.address.trim();
   const cleanCity = input.city?.trim() || "";
@@ -85,7 +87,7 @@ export function addSalonLocation(input: { name: string; address: string; city?: 
     id = `${baseId}-${counter++}`;
   }
 
-  const next = { id, name: cleanName, address: cleanAddress, city: cleanCity };
+  const next: SalonLocation = { id, name: cleanName, address: cleanAddress, city: cleanCity, ...(input.businessType ? { businessType: input.businessType } : {}) };
   (settingsStore as any).locations = {
     activeLocationId: getDefaultLocationId(),
     items: [...locations, next],
@@ -94,7 +96,7 @@ export function addSalonLocation(input: { name: string; address: string; city?: 
   return next;
 }
 
-export function updateActiveLocationDetails(details: { name?: string; address: string; city?: string }) {
+export function updateActiveLocationDetails(details: { name?: string; address: string; city?: string; businessType?: "salon" | "clinic" }) {
   const activeId = getActiveLocationFilter();
   const locations = getSalonLocations();
   (settingsStore as any).locations = {
@@ -106,6 +108,7 @@ export function updateActiveLocationDetails(details: { name?: string; address: s
           name: details.name?.trim() || location.name,
           address: details.address.trim(),
           city: details.city?.trim() || "",
+          ...(details.businessType ? { businessType: details.businessType } : {}),
         }
       : location),
   };

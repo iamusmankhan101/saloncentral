@@ -15,6 +15,8 @@ import { ensureMcpKeysTable, generateMcpKey } from "@/lib/mcp-auth";
 export async function GET(req: NextRequest) {
   const actor = await resolveActor(req);
   if (!actor) return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  // An API key reads the whole account, so only the owner can manage them.
+  if (actor.role !== "owner") return Response.json({ ok: false, error: "Only the account owner can manage API keys." }, { status: 403 });
 
   await ensureMcpKeysTable();
   const result = await db.execute({
@@ -38,6 +40,8 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const actor = await resolveActor(req);
   if (!actor) return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  // An API key reads the whole account, so only the owner can manage them.
+  if (actor.role !== "owner") return Response.json({ ok: false, error: "Only the account owner can manage API keys." }, { status: 403 });
 
   let body: { label?: string; scope?: "read" | "read_write" };
   try {

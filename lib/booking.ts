@@ -10,7 +10,7 @@
  * queues the resulting WhatsApp sends, mirroring the original route exactly.
  */
 
-import { assignResources, type ClinicResource } from "./clinic-resources";
+import { assignResources, resourcesAt, type ClinicResource } from "./clinic-resources";
 import { db } from "./db";
 import { backupExistingSalonData } from "./data-backup";
 import { activeWhatsAppCredential, isFakePlaceholderPhone, type WhatsAppProviderConfig, ycloudConfigOf } from "./whatsapp-provider";
@@ -94,7 +94,8 @@ export async function createBooking(
     ]);
     const resources: ClinicResource[] = settingsRow.rows.length ? (JSON.parse(settingsRow.rows[0].data as string)?.clinic?.resources ?? []) : [];
     const services: Service[] = servicesRow.rows.length ? JSON.parse(servicesRow.rows[0].data as string) : [];
-    const assigned = assignResources([appointment], existingAppts, services, resources);
+    // Online bookings land in the main branch (see the appointments key above).
+    const assigned = assignResources([appointment], existingAppts, services, resourcesAt(resources, "main"));
     if (!assigned.ok) return { ok: false, duplicate: false, error: assigned.error };
     appointment = assigned.appointments[0];
     const appointmentWithCreatedAt = { ...appointment, createdAt: appointment.createdAt || now };

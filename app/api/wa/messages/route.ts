@@ -28,6 +28,7 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { resolveActor } from "@/lib/api-auth";
+import { branchScope } from "@/lib/branch-scope";
 
 /**
  * Message logs hold client names and phone numbers, so the caller must be
@@ -137,7 +138,10 @@ export async function GET(req: NextRequest) {
       apptId:     (r.appt_id      as string) || undefined,
     }));
 
-    return Response.json({ ok: true, logs });
+    // A branch's manager/staff only see messages to their own branch's clients.
+    const actor = await resolveActor(req);
+    const scope = actor ? await branchScope(actor) : null;
+    return Response.json({ ok: true, logs: scope ? logs.filter((l) => scope.hasPhone(l.phone)) : logs });
   } catch (err) {
     console.error("[wa/messages] GET error:", err);
     return Response.json({ ok: true, logs: [] }); // fail open — don't break the page

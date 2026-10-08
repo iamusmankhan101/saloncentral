@@ -8,6 +8,7 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { resolveActor } from "@/lib/api-auth";
+import { branchScope } from "@/lib/branch-scope";
 
 async function ensureTable() {
   await db.execute(`
@@ -41,13 +42,16 @@ export async function GET(req: NextRequest) {
     await ensureTable();
 
     const result = await db.execute({
-      sql: `SELECT client_name, service, appt_date, rating, comment, requested_at, submitted_at
+      sql: `SELECT client_id, appt_id, client_name, service, appt_date, rating, comment, requested_at, submitted_at
             FROM client_feedback WHERE user_id = ?
             ORDER BY COALESCE(submitted_at, requested_at) DESC`,
       args: [actor.userId],
     });
 
-    const items = result.rows.map((r) => ({
+    // A branch's manager/staff only see feedback from their own branch's visits.
+    const scope = await branchScope(actor);
+    const rows = scope ? result.rows.filter((r) => scope.apptIds.has(String(r.appt_id)) || scope.clientIds.has(String(r.client_id))) : result.rows;
+    const items = rows.map((r) => ({
       clientName: r.client_name as string,
       service: r.service as string | null,
       apptDate: r.appt_date as string | null,
