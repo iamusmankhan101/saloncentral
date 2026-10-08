@@ -1256,7 +1256,7 @@ button, a, [role="button"] { touch-action: manipulation; }
 
 /* POS invoice table: its fixed columns need ~1100px; narrower screens scroll
    it sideways (table-scroll-inner) instead of squashing names one word a line. */
-.invoice-table-inner { min-width: 1236px; }
+.invoice-table-inner { min-width: 1270px; }
 
 /* Inventory stock + retail tables: fixed columns need ~1040px; narrower
    screens scroll them sideways instead of overlapping names and badges. */

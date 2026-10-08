@@ -24,17 +24,6 @@ import PageTitle from "@/components/page-title";
 import { fmtCurrency as fmt } from "@/lib/format";
 import { getActiveSection } from "@/lib/sections";
 
-/**
- * The Actions column stays pinned to the right edge of the table. The table
- * is wider than a laptop with the sidebar open and scrolls sideways, but its
- * scrollbar sits under the last invoice, so on a long list the buttons looked
- * missing. `inherit` picks up the row's own background (and its hover).
- */
-const STICKY_ACTIONS: React.CSSProperties = {
-  position: "sticky", right: 0, zIndex: 1, background: "inherit",
-  paddingLeft: 10, marginLeft: -10, boxShadow: "-10px 0 12px -10px rgba(38,25,75,0.18)",
-};
-
 function fmtDate(d: string) {
   return new Date(d + "T00:00:00").toLocaleDateString("en-PK", { month: "short", day: "numeric", year: "numeric" });
 }
@@ -587,12 +576,12 @@ export default function InvoicesPage() {
           </div>
 
           <div className="table-scroll-inner">
-            <div className="invoice-table-inner" style={{ background: "#fff" }}>
+            <div className="invoice-table-inner" style={{ background: "#fff", minWidth: 1020 }}>
 
               {/* Column headers */}
-              <div style={{ display: "grid", gridTemplateColumns: "150px 1fr 150px 110px 120px 80px 110px 100px 236px", padding: "12px 24px", borderBottom: "1px solid #f0f0f5", background: "#faf9fd", alignItems: "center" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "130px minmax(140px, 1.2fr) 110px 110px 120px 70px 110px 140px 190px", padding: "12px 24px", borderBottom: "1px solid #f0f0f5", background: "#faf9fd", alignItems: "center" }}>
                 {["Invoice #", "Client", "Staff", "Date", "Created", "Items", "Method", "Amount", "Actions"].map((h) => (
-                  <div key={h} style={{ fontSize: 10, fontWeight: 800, color: "#8e89a3", letterSpacing: "0.08em", textTransform: "uppercase", ...(h === "Actions" ? STICKY_ACTIONS : {}) }}>{h}</div>
+                  <div key={h} style={{ fontSize: 10, fontWeight: 800, color: "#8e89a3", letterSpacing: "0.08em", textTransform: "uppercase", textAlign: h === "Actions" ? "right" : "left" }}>{h}</div>
                 ))}
               </div>
 
@@ -614,7 +603,7 @@ export default function InvoicesPage() {
                     key={inv.id}
                     className="hover-bg-row"
                     style={{
-                      display: "grid", gridTemplateColumns: "150px 1fr 150px 110px 120px 80px 110px 100px 236px",
+                      display: "grid", gridTemplateColumns: "130px minmax(140px, 1.2fr) 110px 110px 120px 70px 110px 140px 190px",
                       padding: "16px 24px", background: "#fff",
                       borderBottom: i < filtered.length - 1 ? "1px solid #f8f8fc" : "none",
                       alignItems: "center", transition: "background 0.15s",
@@ -658,7 +647,7 @@ export default function InvoicesPage() {
                     </div>
 
                     {/* Amount */}
-                    <div>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", justifyContent: "center" }}>
                       <div style={{ fontSize: 13, fontWeight: 800, color: "#1a1a2e" }}>{fmt(inv.total)}</div>
                       <div style={{ display: "inline-flex", alignItems: "center", gap: 4, marginTop: 4, padding: "3px 8px", borderRadius: 20, background: sm.bg, fontSize: 10, fontWeight: 750, color: sm.color, textTransform: "uppercase", letterSpacing: "0.03em" }}>
                         <StatusIcon size={10} /> {inv.status === "partial" ? `${sm.label} ${advancePercent(inv)}%` : sm.label}
@@ -666,8 +655,8 @@ export default function InvoicesPage() {
                       </div>
                     </div>
 
-                    {/* Actions — pinned to the right edge so they're reachable on any screen width */}
-                    <div style={{ display: "flex", gap: 8, ...STICKY_ACTIONS }}>
+                    {/* Actions */}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6 }}>
                       <button
                         onClick={() => sendInvoiceOnWhatsApp(inv)}
                         disabled={sendingWaId === inv.id}
