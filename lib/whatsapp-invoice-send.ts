@@ -34,10 +34,24 @@ export async function sendSalonInvoiceWhatsApp({
   }
 
   const pdf = await generateSalonInvoicePdf(invoice, salon);
-  const pdfArrayBuffer = Uint8Array.from(pdf).buffer;
-  const fileName = `${invoice.number}.pdf`;
   const invoiceLine = `Invoice ${invoice.number} from ${salon.name} — PKR ${invoice.total.toLocaleString("en-PK")}`;
   const caption = thankYouText ? `${thankYouText}\n\n${invoiceLine}` : invoiceLine;
+  return sendWhatsAppDocument({ pdf, fileName: `${invoice.number}.pdf`, caption, phone, providerConfig });
+}
+
+/**
+ * Sends any PDF as a WhatsApp document with a caption, through whichever
+ * provider the salon uses. Shared by invoices and the clinic's prescriptions
+ * and consent forms (app/api/clinic/whatsapp-send).
+ */
+export async function sendWhatsAppDocument({ pdf, fileName, caption, phone, providerConfig }: {
+  pdf: Buffer | Uint8Array; fileName: string; caption: string; phone: string; providerConfig: WhatsAppProviderConfig;
+}): Promise<SendSalonInvoiceWhatsAppResult> {
+  const provider = providerConfig.provider ?? "wasender";
+  if (isFakePlaceholderPhone(phone)) {
+    return { ok: false, skipped: true, provider, error: "Recipient looks like a fake/placeholder phone number." };
+  }
+  const pdfArrayBuffer = Uint8Array.from(pdf).buffer;
 
   if (provider === "botsailor") {
     const apiToken = providerConfig.botSailorApiToken || "";
@@ -77,14 +91,14 @@ export async function sendSalonInvoiceWhatsApp({
   }
 
   if (provider === "zaptick") {
-    return { ok: false, provider, error: "Zaptick PDF invoice sending is not supported yet." };
+    return { ok: false, provider, error: "Zaptick PDF sending is not supported yet." };
   }
 
   if (provider === "chakra") {
     // Sending a PDF via Chakra's Cloud API requires an approved document-header
     // template (with its own template name), which isn't part of the current
     // Chakra template set (reminder/confirmation/followup/cancellation/birthday).
-    return { ok: false, provider, error: "ChakraHQ PDF invoice sending is not supported yet." };
+    return { ok: false, provider, error: "ChakraHQ PDF sending is not supported yet." };
   }
 
   const apiKey = providerConfig.apiKey || "";

@@ -12,7 +12,8 @@ import {
   AlertTriangle, CalendarDays, Camera, Check, ClipboardList, FileSignature, ListChecks,
   Package, Plus, Stethoscope, Trash2, X, Columns2, Receipt, Images, Clock, Pill, Send, FileDown, Crown, Copy,
 } from "lucide-react";
-import { normalizePhone } from "@/lib/whatsapp-scheduler";
+import { normalizePhone, whatsAppConnected } from "@/lib/whatsapp-scheduler";
+import { getCurrentPlan } from "@/lib/plan-limits";
 import { getActiveLocationFilter } from "@/lib/locations";
 import { saveSettings, settingsStore } from "@/lib/settings-store";
 import { getStoredAppointments, getStoredClients, getStoredServices, getStoredStaff, saveClients, subscribeToStoredData } from "@/lib/storage";
@@ -83,6 +84,31 @@ async function downloadClinicPdf(payload: Record<string, unknown>, filename: str
   a.href = url; a.download = `${filename.replace(/[^\w .-]/g, "")}.pdf`;
   document.body.appendChild(a); a.click(); a.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/**
+ * Pro/Premium with WhatsApp connected: documents go straight to the patient
+ * through the clinic's own number (app/api/clinic/whatsapp-send). Otherwise
+ * the buttons fall back to opening WhatsApp with the message ready.
+ */
+function autoWhatsApp(): boolean {
+  return getCurrentPlan().whatsapp && whatsAppConnected(settingsStore.wasender as Parameters<typeof whatsAppConnected>[0]);
+}
+
+async function sendClinicWhatsApp(payload: Record<string, unknown>): Promise<void> {
+  const res = await fetch("/api/clinic/whatsapp-send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clinic: clinicHeader(), ...payload }) });
+  const d = await res.json().catch(() => ({})) as { ok?: boolean; error?: string };
+  if (!d.ok) throw new Error(d.error || "WhatsApp send failed.");
+}
+
+/** Button state for an automatic send: idle → sending → sent / error. */
+function useSendState() {
+  const [state, setState] = useState<Record<string, "sending" | "sent" | string>>({});
+  const run = (key: string, send: () => Promise<void>) => {
+    setState((s) => ({ ...s, [key]: "sending" }));
+    send().then(() => setState((s) => ({ ...s, [key]: "sent" }))).catch((e: Error) => setState((s) => ({ ...s, [key]: e.message })));
+  };
+  return [state, run] as const;
 }
 
 /** wa.me link with the message filled in, for the patient's number. */
@@ -535,9 +561,13 @@ function ConsentTab({ client, data, onChange }: { client: Client; data: Data; on
   const templates = consentTemplates();
   const [signing, setSigning] = useState<ConsentTemplate | null>(null);
   const [viewing, setViewing] = useState<ConsentRecord | null>(null);
-  const [link, setLink] = useState<{ template: ConsentTemplate; url?: string; error?: string } | null>(null);
+  const [link, setLink] = useState<{ template: ConsentTemplate; url?: string; error?: string; sent?: "sending" | "sent" | string } | null>(null);
+  const [sendState, runSend] = useSendState();
   const [pdfError, setPdfError] = useState("");
   const mine = data.consents.filter((c) => c.clientId === client.id).sort((a, b) => b.signedAt.localeCompare(a.signedAt));
+
+  const linkMessage = (t: ConsentTemplate, url: string) =>
+    `Hi ${client.name.split(" ")[0]}, please read and sign your ${t.title} for ${clinicHeader().name} before your treatment: ${url}`;
 
   async function makeLink(t: ConsentTemplate) {
     setLink({ template: t });
@@ -548,7 +578,14 @@ function ConsentTab({ client, data, onChange }: { client: Client; data: Data; on
       });
       const d = await res.json() as { ok?: boolean; token?: string; error?: string };
       if (!d.ok || !d.token) throw new Error(d.error || "Couldn't create the link.");
-      setLink({ template: t, url: `${window.location.origin}/consent/${d.token}` });
+      const url = `${window.location.origin}/consent/${d.token}`;
+      setLink({ template: t, url });
+      if (autoWhatsApp() && client.phone) {
+        setLink({ template: t, url, sent: "sending" });
+        sendClinicWhatsApp({ kind: "text", phone: client.phone, text: linkMessage(t, url) })
+          .then(() => setLink({ template: t, url, sent: "sent" }))
+          .catch((e: Error) => setLink({ template: t, url, sent: e.message }));
+      }
     } catch (e) {
       setLink({ template: t, error: e instanceof Error ? e.message : "Couldn't create the link." });
     }
@@ -606,6 +643,13 @@ function ConsentTab({ client, data, onChange }: { client: Client; data: Data; on
             onClick={() => { setPdfError(""); downloadClinicPdf({ kind: "consent", consent: viewing }, `${viewing.title} - ${viewing.signedName}`).catch((e) => setPdfError(e.message)); }}>
             <FileDown size={14} /> Download PDF
           </button>
+          {autoWhatsApp() && client.phone && (
+            <button type="button" style={{ ...BTN, marginTop: 14, marginLeft: 8, background: "#16a34a" }} disabled={sendState[viewing.id] === "sending" || sendState[viewing.id] === "sent"}
+              onClick={() => runSend(viewing.id, () => sendClinicWhatsApp({ kind: "consent", phone: client.phone, consent: viewing }))}>
+              <Send size={14} /> {sendState[viewing.id] === "sent" ? "Sent ✓" : sendState[viewing.id] === "sending" ? "Sending…" : "Send PDF on WhatsApp"}
+            </button>
+          )}
+          {sendState[viewing.id] && !["sending", "sent"].includes(sendState[viewing.id]) && <div style={{ fontSize: 12, color: "#dc2626", marginTop: 6 }}>{sendState[viewing.id]}</div>}
           {pdfError && <div style={{ fontSize: 12, color: "#dc2626", marginTop: 6 }}>{pdfError}</div>}
         </Modal>
       )}
@@ -619,9 +663,14 @@ function ConsentTab({ client, data, onChange }: { client: Client; data: Data; on
                   {client.name} opens this on their phone, reads the form and signs with their finger. It appears here once signed. The link works once and expires in 7 days.
                 </div>
                 <input readOnly value={link.url} onFocus={(e) => e.currentTarget.select()} style={INP} />
+                {link.sent && (
+                  <div style={{ fontSize: 12.5, fontWeight: 800, color: link.sent === "sent" ? "#059669" : link.sent === "sending" ? "#6b6b8a" : "#dc2626" }}>
+                    {link.sent === "sent" ? `✓ Sent to ${client.phone} on WhatsApp` : link.sent === "sending" ? "Sending on WhatsApp…" : `Couldn't send automatically: ${link.sent}`}
+                  </div>
+                )}
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {client.phone && (
-                    <a href={whatsAppLink(client.phone, `Hi ${client.name.split(" ")[0]}, please read and sign your ${link.template.title} for ${clinicHeader().name} before your treatment: ${link.url}`)}
+                  {client.phone && link.sent !== "sent" && link.sent !== "sending" && (
+                    <a href={whatsAppLink(client.phone, linkMessage(link.template, link.url))}
                       target="_blank" rel="noopener noreferrer" style={{ ...BTN, background: "#16a34a", textDecoration: "none" }}>
                       <Send size={14} /> Send on WhatsApp
                     </a>
@@ -686,6 +735,8 @@ function SignConsent({ template, client, staff, onClose, onSigned }: {
 function PrescriptionsTab({ client, data, onChange }: { client: Client; data: Data; onChange: () => void }) {
   const [editing, setEditing] = useState<Prescription | null>(null);
   const [error, setError] = useState("");
+  const [sendState, runSend] = useSendState();
+  const auto = autoWhatsApp();
   const mine = data.prescriptions.filter((p) => p.clientId === client.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const blank = (): Prescription => ({ id: newId("rx"), clientId: client.id, date: todayKey(), items: [{ time: "Morning", product: "" }], createdAt: new Date().toISOString() });
 
@@ -702,12 +753,20 @@ function PrescriptionsTab({ client, data, onChange }: { client: Client; data: Da
             <div style={{ flex: 1, fontSize: 13.5, fontWeight: 800, color: "#1a1a2e" }}>{fmtDate(rx.date)}{rx.practitionerName ? ` · ${rx.practitionerName}` : ""}</div>
             <button type="button" onClick={() => { setError(""); downloadClinicPdf({ kind: "prescription", prescription: rx, patientName: client.name }, `Prescription - ${client.name} - ${rx.date}`).catch((e) => setError(e.message)); }}
               style={{ ...BTN_GHOST, padding: "6px 10px", fontSize: 11.5 }}><FileDown size={13} /> PDF</button>
-            {client.phone && (
+            {client.phone && auto && (
+              <button type="button" disabled={sendState[rx.id] === "sending" || sendState[rx.id] === "sent"} title="Send the PDF and the plan to the patient's WhatsApp"
+                onClick={() => runSend(rx.id, () => sendClinicWhatsApp({ kind: "prescription", phone: client.phone, patientName: client.name, prescription: rx }))}
+                style={{ ...BTN_GHOST, padding: "6px 10px", fontSize: 11.5, color: "#16a34a" }}>
+                <Send size={13} /> {sendState[rx.id] === "sent" ? "Sent ✓" : sendState[rx.id] === "sending" ? "Sending…" : "WhatsApp"}
+              </button>
+            )}
+            {client.phone && !auto && (
               <a href={whatsAppLink(client.phone, prescriptionText(rx, client.name, clinicHeader().name))} target="_blank" rel="noopener noreferrer"
                 style={{ ...BTN_GHOST, padding: "6px 10px", fontSize: 11.5, textDecoration: "none", color: "#16a34a" }}><Send size={13} /> WhatsApp</a>
             )}
             <button type="button" onClick={() => setEditing(rx)} style={{ ...BTN_GHOST, padding: "6px 10px", fontSize: 11.5 }}>Open</button>
           </div>
+          {sendState[rx.id] && !["sending", "sent"].includes(sendState[rx.id]) && <div style={{ fontSize: 12, color: "#dc2626", marginTop: 4 }}>{sendState[rx.id]}</div>}
           <div style={{ fontSize: 12.5, color: "#6b6b8a", marginTop: 6, lineHeight: 1.6 }}>
             {[...new Set(rx.items.map((i) => i.time))].map((t) => (
               <div key={t}><strong>{t}:</strong> {rx.items.filter((i) => i.time === t).map((i) => i.product).join(", ")}</div>

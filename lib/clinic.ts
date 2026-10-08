@@ -21,6 +21,7 @@ import { persistEntity } from "./turso-sync";
 import { clientServiceDates } from "./inventory-usage";
 import type { Appointment, Service } from "./types";
 import type { SalonInvoice } from "./salon-invoices";
+import type { PrescriptionItem, Prescription } from "./clinic-prescription";
 
 // ─── Business type & wording ─────────────────────────────────────────────────
 
@@ -160,29 +161,8 @@ export interface ClinicPhoto {
 
 // ─── Prescriptions & skincare regimes ────────────────────────────────────────
 
-export const REGIME_TIMES = ["Morning", "Night", "As needed"] as const;
-
-export interface PrescriptionItem {
-  time: string;
-  product: string;
-  dosage?: string;
-  frequency?: string;
-  duration?: string;
-  instructions?: string;
-}
-
-export interface Prescription {
-  id: string;
-  clientId: string;
-  /** YYYY-MM-DD. */
-  date: string;
-  practitionerId?: string;
-  practitionerName?: string;
-  items: PrescriptionItem[];
-  notes?: string;
-  createdAt: string;
-}
-
+export { REGIME_TIMES, prescriptionText } from "./clinic-prescription";
+export type { PrescriptionItem, Prescription } from "./clinic-prescription";
 export interface PrescriptionTemplate {
   id: string;
   name: string;
@@ -225,21 +205,6 @@ export const DEFAULT_PRESCRIPTION_TEMPLATES: PrescriptionTemplate[] = [
 export function prescriptionTemplates(): PrescriptionTemplate[] {
   const own = (settingsStore.clinic as { prescriptionTemplates?: PrescriptionTemplate[] }).prescriptionTemplates;
   return [...DEFAULT_PRESCRIPTION_TEMPLATES, ...(Array.isArray(own) ? own : [])];
-}
-
-/** A prescription as a WhatsApp-ready message. */
-export function prescriptionText(rx: Prescription, patientName: string, clinicName: string): string {
-  const lines = [`*${clinicName}* — Skincare plan for ${patientName} (${rx.date})`];
-  for (const time of [...new Set(rx.items.map((i) => i.time))]) {
-    lines.push("", `*${time}*`);
-    for (const i of rx.items.filter((x) => x.time === time)) {
-      const extra = [i.dosage, i.frequency, i.duration].filter(Boolean).join(", ");
-      lines.push(`• ${i.product}${extra ? ` — ${extra}` : ""}${i.instructions ? `\n   _${i.instructions}_` : ""}`);
-    }
-  }
-  if (rx.notes) lines.push("", rx.notes);
-  if (rx.practitionerName) lines.push("", `— ${rx.practitionerName}`);
-  return lines.join("\n");
 }
 
 // ─── Leads ───────────────────────────────────────────────────────────────────
