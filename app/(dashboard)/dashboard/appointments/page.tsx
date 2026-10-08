@@ -1783,10 +1783,11 @@ function CancellationsTab({ appointments, staffList, onReschedule, onSelect }: {
         overflow: "hidden"
       }}>
         {/* Desktop: dense grid table */}
-        <div className="desktop-only">
+        <div className="desktop-only table-scroll-inner">
         <div style={{
           display: "grid",
           gridTemplateColumns: "1.2fr 130px 1.5fr 120px 110px 150px",
+          minWidth: 820,
           padding: "12px 20px",
           borderBottom: "1px solid #f0f0f5",
           background: "#faf9fd"
@@ -1811,6 +1812,7 @@ function CancellationsTab({ appointments, staffList, onReschedule, onSelect }: {
                 style={{
                   display: "grid",
                   gridTemplateColumns: "1.2fr 130px 1.5fr 120px 110px 150px",
+                  minWidth: 820,
                   padding: "14px 20px",
                   borderBottom: isLast ? "none" : "1px solid #f8f8fc",
                   alignItems: "center",

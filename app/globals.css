@@ -254,6 +254,8 @@ input, textarea, select { font-family: inherit; }
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -536,8 +538,6 @@ input, textarea, select { font-family: inherit; }
   .page-header-btn     { width: 100% !important; justify-content: center !important; }
 
   /* Table inner min-width ensures columns stay readable while the wrapper scrolls */
-  .appt-table-inner    { min-width: 900px; }
-  .client-table-inner  { min-width: 720px; }
   .inv-table-inner     { min-width: 820px; }
   .invoice-table-inner { min-width: 860px; }
   .rev-table-inner     { min-width: 700px; }
@@ -1241,6 +1241,11 @@ button, a, [role="button"] { touch-action: manipulation; }
 @media (max-width: 1600px) {
   .cf-tables { grid-template-columns: minmax(0, 1fr) !important; }
 }
+
+/* Appointment + client tables: on tablets (sidebar leaves ~740–940px) their
+   fixed columns crushed names one word a line; scroll sideways instead. */
+.appt-table-inner   { min-width: 960px; }
+.client-table-inner { min-width: 860px; }
 
 /* Staff profile: Upcoming / Top Clients / Assigned Services need a desktop
    to sit three across; tablets stack them. */
