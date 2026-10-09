@@ -7,9 +7,10 @@ import styles from "./DemoModal.module.css";
 interface Props {
   open: boolean;
   onClose: () => void;
+  onSuccess?: () => void;
 }
 
-export default function DemoModal({ open, onClose }: Props) {
+export default function DemoModal({ open, onClose, onSuccess }: Props) {
   const [form, setForm]     = useState({ name: "", email: "", phone: "", datetime: "" });
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [error, setError]   = useState("");
@@ -63,6 +64,7 @@ export default function DemoModal({ open, onClose }: Props) {
       if (!res.ok) throw new Error(data.error || "Something went wrong.");
       localStorage.setItem("demoEmails", JSON.stringify([...stored, form.email.toLowerCase().trim()]));
       setStatus("success");
+      onSuccess?.();
       setForm({ name: "", email: "", phone: "", datetime: "" });
     } catch (err: unknown) {
       setStatus("error");

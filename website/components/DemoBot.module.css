@@ -1,0 +1,158 @@
+.bot {
+  position: fixed;
+  right: 18px;
+  bottom: 20px;
+  z-index: 998;
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+}
+/* While the demo form is open the bot hovers above its overlay to coach the visitor. */
+.botOverForm { z-index: 1001; }
+
+.mascot {
+  --ex: 0px;
+  --ey: 0px;
+  width: 64px;
+  height: 64px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  animation: float 3.2s ease-in-out infinite;
+}
+.mascot:hover .waveArm { animation-duration: 0.5s; }
+.mascot:hover .mascotSvg { transform: scale(1.08); }
+.mascot:focus-visible { outline: 2px solid var(--purple); outline-offset: 4px; border-radius: 50%; }
+
+.mascotSvg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  filter: drop-shadow(0 0 14px rgba(139, 92, 246, 0.55)) drop-shadow(0 8px 14px rgba(91, 33, 182, 0.35));
+  transition: transform 0.2s ease;
+}
+.waveArm {
+  transform-origin: 62px 40px;
+  transform-box: view-box;
+  animation: wave 1.6s ease-in-out infinite;
+}
+.eyes {
+  transform-origin: 40px 41px;
+  transform-box: view-box;
+  animation: blink 4.5s infinite;
+}
+.pupils {
+  transform: translate(var(--ex), var(--ey));
+  transition: transform 0.15s ease-out;
+}
+.antennaTip { animation: glow 2s ease-in-out infinite; }
+
+.speech {
+  position: relative;
+  margin-bottom: 58px;
+  margin-right: -12px;
+  width: 240px;
+  animation: pop 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.speechBody {
+  padding: 13px 30px 13px 16px;
+  border: 1px solid var(--purple-100);
+  border-radius: 20px;
+  background: #fff;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.45;
+  box-shadow: 0 12px 30px rgba(20, 10, 50, 0.18);
+}
+.caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -2px;
+  background: var(--purple);
+  animation: caret 1s steps(1) infinite;
+}
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px -14px 0 0;
+  animation: pop 0.25s ease-out;
+}
+.yesBtn, .laterBtn {
+  border-radius: 999px;
+  padding: 9px 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.yesBtn {
+  border: none;
+  background: linear-gradient(150deg, #a78bfa 0%, #7c3aed 60%);
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(124, 58, 237, 0.35);
+}
+.yesBtn:hover { filter: brightness(1.08); }
+.laterBtn {
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text-muted);
+}
+.speechClose {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: var(--purple-50);
+  color: var(--purple-dark);
+  cursor: pointer;
+}
+.thoughtDot1, .thoughtDot2 {
+  position: absolute;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 4px 10px rgba(20, 10, 50, 0.12);
+}
+.thoughtDot1 { width: 12px; height: 12px; right: 26px; bottom: -16px; }
+.thoughtDot2 { width: 7px;  height: 7px;  right: 18px; bottom: -28px; }
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes wave  { 0%, 100% { transform: rotate(0deg); } 25% { transform: rotate(-22deg); } 75% { transform: rotate(14deg); } }
+@keyframes blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.1); } }
+@keyframes glow  { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+@keyframes caret { 50% { opacity: 0; } }
+@keyframes pop   { from { transform: translateY(8px) scale(0.96); opacity: 0; } to { transform: none; opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .mascot, .waveArm, .eyes, .antennaTip, .caret, .speech, .actions { animation: none; }
+}
+
+@media (max-width: 480px) {
+  .bot { right: 10px; bottom: 12px; }
+  .mascot { width: 56px; height: 56px; }
+  .speech { width: 200px; margin-bottom: 50px; }
+  .speechBody { font-size: 13px; }
+}
+
+/* Beside the form there's only room to coach on wide screens; elsewhere the bot steps aside. */
+@media (max-width: 1100px) {
+  .botOverForm { display: none; }
+}
