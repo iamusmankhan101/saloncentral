@@ -69,6 +69,15 @@ export default function TrustedBy() {
             className={styles.logoImage}
           />
         </div>
+        <div className={styles.logoCard} data-animate data-delay="0.64">
+          <Image
+            src="/morning glory logo.png"
+            alt="Morning Glory"
+            width={400}
+            height={500}
+            className={styles.logoImage}
+          />
+        </div>
       </div>
     </div>
   );
