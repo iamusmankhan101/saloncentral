@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { getStoredAppointments } from "@/lib/storage";
-import { getSalonInvoices, revenueAmount } from "@/lib/salon-invoices";
+import { getSalonInvoices, revenueAmount, balanceDue, paymentMethodLabel } from "@/lib/salon-invoices";
 import { getExpenses, type Expense, type ExpenseCategory } from "@/lib/expenses";
 import { getManualCashIncome, PETTY_CASH_CATEGORY, type ManualCashIncome } from "@/lib/cash-flow-income";
 import { getActiveSection } from "@/lib/sections";
@@ -12,7 +12,7 @@ import PageTitle from "@/components/page-title";
 import {
   Download, ArrowUpRight, ArrowDownRight,
   TrendingUp, TrendingDown, CalendarDays, Percent, ChevronLeft,
-  ChevronDown, ChevronUp, Receipt, Clock, Wallet,
+  ChevronDown, ChevronUp, Receipt, Clock, Wallet, Search, Printer,
 } from "lucide-react";
 
 import { fmtCurrency as fmt } from "@/lib/format";
@@ -109,6 +109,23 @@ function getDaysInRange(start: string, end: string): string[] {
 }
 
 
+/** Opens a report in a new tab and brings up the print dialog ("Save as PDF"). */
+function printHtml(html: string) {
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const win = window.open(url, "_blank");
+  if (!win) {
+    URL.revokeObjectURL(url);
+    alert("Pop-up was blocked. Please allow pop-ups for this site to download the PDF.");
+    return;
+  }
+  win.addEventListener("load", () => {
+    win.focus();
+    win.print();
+    URL.revokeObjectURL(url);
+  });
+}
+
 interface ChartBar {
   label: string;
   value: number;
@@ -122,6 +139,7 @@ export default function RevenuePage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [posInvoices, setPosInvoices]   = useState<ReturnType<typeof getSalonInvoices>>([]);
   const [posInvoiceAppointmentIds, setPosInvoiceAppointmentIds] = useState<string[]>([]);
+  const [outstandingInvoices, setOutstandingInvoices] = useState<ReturnType<typeof getSalonInvoices>>([]);
   const [manualIncome, setManualIncome] = useState<ManualCashIncome[]>([]);
   const [expenses, setExpenses]         = useState<Expense[]>([]);
   const [today, setToday]               = useState("");
@@ -154,6 +172,7 @@ export default function RevenuePage() {
         .filter(inv => !revenueScoped || inv.section === activeSection);
       setPosInvoiceAppointmentIds(allPosInvoices.map(inv => inv.appointmentId).filter((id): id is string => !!id));
       setPosInvoices(allPosInvoices.filter(inv => inv.status === "paid"));
+      setOutstandingInvoices(allPosInvoices.filter(inv => inv.status !== "paid"));
       // Cash Flow's "Import" feature records income (e.g. bulk-uploaded past
       // sales) as ManualCashIncome entries rather than salon invoices — Cash
       // Flow already counts these, so Revenue needs the same source or it
@@ -829,19 +848,7 @@ export default function RevenuePage() {
 </body>
 </html>`;
 
-    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const win = window.open(url, "_blank");
-    if (!win) {
-      URL.revokeObjectURL(url);
-      alert("Pop-up was blocked. Please allow pop-ups for this site to download the PDF.");
-      return;
-    }
-    win.addEventListener("load", () => {
-      win.focus();
-      win.print();
-      URL.revokeObjectURL(url);
-    });
+    printHtml(html);
   }
 
   // ── Table rows to display ──────────────────────────────────────────────────
@@ -1564,7 +1571,7 @@ export default function RevenuePage() {
 
       {tab === "ledger" && (
         <LedgerView
-          rangeStart={rangeStart} filterEnd={filterEnd}
+          rangeStart={rangeStart} filterEnd={filterEnd} today={today} outstandingInvoices={outstandingInvoices}
           appointments={appointments} posLinkedAppointmentIds={posLinkedAppointmentIds}
           posInvoices={posInvoices} manualIncome={manualIncome} expenses={expenses}
         />
@@ -1688,17 +1695,84 @@ function NetProfitView({
   );
 }
 
-// ── Ledger tab (day book) ────────────────────────────────────────────────────
-const PAYMENT_LABELS: Record<string, string> = {
-  cash: "Cash", jazzcash: "JazzCash", easypaisa: "EasyPaisa", bank: "Bank Transfer", card: "Card",
+// ── Ledger tab (day book, account books, money owed) ─────────────────────────
+// Every row belongs to the account the money moved through (its payment method).
+// Like Cash Flow, a missing method means cash: walk-in appointments without a POS
+// checkout and imported income carry no method at all.
+type LedgerRow = {
+  id: string; date: string; sortKey: string; description: string; detail: string;
+  account: string; category: string; moneyIn: number; moneyOut: number;
 };
-type LedgerRow = { id: string; date: string; sortKey: string; description: string; detail: string; moneyIn: number; moneyOut: number };
+type OwedRow = { id: string; name: string; detail: string; date: string; amount: number };
 
-function LedgerView({ rangeStart, filterEnd, appointments, posLinkedAppointmentIds, posInvoices, manualIncome, expenses }: {
-  rangeStart: string; filterEnd: string;
+const ACCOUNT_ORDER = Object.keys(METHOD_LABELS);
+const accountLabel = (key: string) => METHOD_LABELS[key] ?? key;
+// EXPENSE_LABELS leaves out refunds (they aren't charted as spending), but the ledger lists them.
+const expenseLabel = (key: string) => EXPENSE_LABELS[key] ?? (key === "refunds" ? "Refunds" : key);
+
+function escapeHtml(text: string) {
+  return text.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+}
+
+function daysOld(date: string, today: string) {
+  if (!today) return 0;
+  return Math.max(0, Math.round((new Date(`${today}T12:00:00`).getTime() - new Date(`${date}T12:00:00`).getTime()) / 86_400_000));
+}
+
+function ageStyle(days: number) {
+  if (days > 60) return { color: "#b91c1c", background: "#fef2f2" };
+  if (days > 30) return { color: "#c2410c", background: "#fff7ed" };
+  return { color: "#6b6b8a", background: "#f4f4f8" };
+}
+
+function OwedCard({ title, sub, rows, today, color }: { title: string; sub: string; rows: OwedRow[]; today: string; color: string }) {
+  const total = rows.reduce((s, r) => s + r.amount, 0);
+  const over30 = rows.filter(r => daysOld(r.date, today) > 30).reduce((s, r) => s + r.amount, 0);
+  return (
+    <div style={{ background: "#fff", borderRadius: 18, border: "1px solid rgba(226,223,235,.95)", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+      <div style={{ padding: "14px 20px", borderBottom: "1px solid #f0f0f5" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: "#1a1a2e" }}>{title}</div>
+          <div style={{ fontSize: 20, fontWeight: 850, color }}>{fmt(total)}</div>
+        </div>
+        <div style={{ fontSize: 11, color: "#9898b0", marginTop: 2 }}>
+          {sub} · {rows.length} open{over30 > 0 && <span style={{ color: "#c2410c", fontWeight: 700 }}> · {fmt(over30)} over 30 days</span>}
+        </div>
+      </div>
+      <div style={{ maxHeight: 240, overflowY: "auto" }}>
+        {rows.length === 0 ? (
+          <div style={{ padding: "24px 20px", textAlign: "center", fontSize: 12, color: "#9898b0" }}>Nothing outstanding</div>
+        ) : rows.map(r => {
+          const days = daysOld(r.date, today);
+          return (
+            <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 20px", borderBottom: "1px solid #f8f8fc" }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#1a1a2e", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</div>
+                <div style={{ fontSize: 11, color: "#9898b0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.detail} · {r.date}</div>
+              </div>
+              <span style={{ ...ageStyle(days), fontSize: 10, fontWeight: 750, padding: "3px 8px", borderRadius: 999, whiteSpace: "nowrap" }}>
+                {days === 0 ? "Today" : `${days}d old`}
+              </span>
+              <div style={{ fontSize: 12, fontWeight: 800, color: "#1a1a2e", minWidth: 80, textAlign: "right" }}>{fmt(r.amount)}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function LedgerView({ rangeStart, filterEnd, today, appointments, posLinkedAppointmentIds, posInvoices, outstandingInvoices, manualIncome, expenses }: {
+  rangeStart: string; filterEnd: string; today: string;
   appointments: Appointment[]; posLinkedAppointmentIds: Set<string>;
-  posInvoices: ReturnType<typeof getSalonInvoices>; manualIncome: ManualCashIncome[]; expenses: Expense[];
+  posInvoices: ReturnType<typeof getSalonInvoices>; outstandingInvoices: ReturnType<typeof getSalonInvoices>;
+  manualIncome: ManualCashIncome[]; expenses: Expense[];
 }) {
+  const [account, setAccount]   = useState("all");
+  const [flow, setFlow]         = useState<"all" | "in" | "out">("all");
+  const [category, setCategory] = useState("all");
+  const [search, setSearch]     = useState("");
+
   // Same sources and rules as the Overview and Net Profit tabs: completed
   // appointments without a POS checkout, paid POS invoices, imported income,
   // and every expense that isn't still pending.
@@ -1707,26 +1781,42 @@ function LedgerView({ rangeStart, filterEnd, appointments, posLinkedAppointmentI
       .filter(a => a.status === "completed" && !posLinkedAppointmentIds.has(a.id))
       .map(a => ({ id: a.id, date: a.date, sortKey: a.date + "T" + (a.startTime || "00:00"),
         description: a.clientName || "Appointment", detail: a.serviceNames.join(", ") || "Appointment",
-        moneyIn: a.totalAmount, moneyOut: 0 })),
+        account: "cash", category: "Appointments", moneyIn: a.totalAmount, moneyOut: 0 })),
     ...posInvoices.map(inv => ({ id: inv.id, date: inv.date, sortKey: inv.date + "T" + inv.createdAt.slice(11, 16),
-      description: inv.clientName || "POS Sale", detail: `POS · ${PAYMENT_LABELS[inv.paymentMethod || "cash"] ?? inv.paymentMethod}`,
-      moneyIn: revenueAmount(inv), moneyOut: 0 })),
+      description: inv.clientName || "POS Sale",
+      detail: `POS ${inv.number} · ${inv.paymentMethod ? paymentMethodLabel(inv, METHOD_LABELS) : "Cash"}`,
+      account: inv.paymentMethod || "cash", category: "POS Sales", moneyIn: revenueAmount(inv), moneyOut: 0 })),
     ...manualIncome.map(entry => ({ id: entry.id, date: entry.date, sortKey: entry.date + "T" + entry.createdAt.slice(11, 16),
       description: entry.description || "Income", detail: entry.category || "Imported income",
-      moneyIn: entry.amount, moneyOut: 0 })),
+      account: "cash", category: entry.category || "Imported income", moneyIn: entry.amount, moneyOut: 0 })),
     ...expenses
       .filter(e => e.paymentStatus !== "pending")
       .map(e => ({ id: e.id, date: e.date, sortKey: e.date + "T" + e.createdAt.slice(11, 16),
-        description: e.description || (EXPENSE_LABELS[e.category] ?? e.category),
-        detail: `${EXPENSE_LABELS[e.category] ?? e.category} · ${PAYMENT_LABELS[e.paymentMethod || "cash"] ?? e.paymentMethod}`,
-        moneyIn: 0, moneyOut: e.amount })),
+        description: e.description || expenseLabel(e.category),
+        detail: `${expenseLabel(e.category)} · ${accountLabel(e.paymentMethod || "cash")}`,
+        account: e.paymentMethod || "cash", category: expenseLabel(e.category), moneyIn: 0, moneyOut: e.amount })),
   ].sort((a, b) => a.sortKey.localeCompare(b.sortKey)),
   [appointments, posLinkedAppointmentIds, posInvoices, manualIncome, expenses]);
 
+  // Balance of every account as at the end of the period.
+  const accounts = useMemo(() => {
+    const balances = new Map<string, number>();
+    for (const row of allRows) {
+      if (row.date > filterEnd) break;
+      balances.set(row.account, (balances.get(row.account) ?? 0) + row.moneyIn - row.moneyOut);
+    }
+    const rank = (key: string) => (ACCOUNT_ORDER.indexOf(key) + 1) || 99;
+    return [...balances].sort((a, b) => rank(a[0]) - rank(b[0]));
+  }, [allRows, filterEnd]);
+
+  const categories = useMemo(() => [...new Set(allRows.map(r => r.category))].sort(), [allRows]);
+
+  // The selected account's book: its own opening balance and running balance.
   const { opening, rows, totalIn, totalOut } = useMemo(() => {
     let balance = 0, totalIn = 0, totalOut = 0;
     const rows: (LedgerRow & { balance: number })[] = [];
     for (const row of allRows) {
+      if (account !== "all" && row.account !== account) continue;
       if (row.date > filterEnd) break;
       if (row.date < rangeStart) { balance += row.moneyIn - row.moneyOut; continue; }
       totalIn += row.moneyIn; totalOut += row.moneyOut;
@@ -1735,27 +1825,136 @@ function LedgerView({ rangeStart, filterEnd, appointments, posLinkedAppointmentI
     const opening = balance;
     rows.forEach(row => { balance += row.moneyIn - row.moneyOut; row.balance = balance; });
     return { opening, rows, totalIn, totalOut };
-  }, [allRows, rangeStart, filterEnd]);
+  }, [allRows, account, rangeStart, filterEnd]);
   const closing = opening + totalIn - totalOut;
+
+  // Filters only hide rows — each row keeps its place in the book's running balance.
+  const query = search.trim().toLowerCase();
+  const shown = rows.filter(r =>
+    (flow === "all" || (flow === "in" ? r.moneyIn > 0 : r.moneyOut > 0)) &&
+    (category === "all" || r.category === category) &&
+    (!query || `${r.description} ${r.detail}`.toLowerCase().includes(query)));
+  const isFiltered = shown.length !== rows.length;
+  const shownIn  = shown.reduce((s, r) => s + r.moneyIn, 0);
+  const shownOut = shown.reduce((s, r) => s + r.moneyOut, 0);
+
+  // Money still to come in (unpaid / part-paid bills) and to go out (pending expenses), as of today.
+  const owedToMe = useMemo((): OwedRow[] => outstandingInvoices
+    .map(inv => ({ id: inv.id, name: inv.clientName || "Walk-in client", date: inv.date,
+      detail: `${inv.number}${inv.status === "partial" ? " · part-paid" : ""}${inv.clientPhone ? ` · ${inv.clientPhone}` : ""}`,
+      amount: inv.status === "partial" ? balanceDue(inv) : inv.total }))
+    .filter(r => r.amount > 0)
+    .sort((a, b) => a.date.localeCompare(b.date)),
+  [outstandingInvoices]);
+  const iOwe = useMemo((): OwedRow[] => expenses
+    .filter(e => e.paymentStatus === "pending")
+    .map(e => ({ id: e.id, name: e.description || expenseLabel(e.category), date: e.date,
+      detail: expenseLabel(e.category), amount: e.amount }))
+    .sort((a, b) => a.date.localeCompare(b.date)),
+  [expenses]);
+
+  const bookName = account === "all" ? "All accounts" : `${accountLabel(account)} book`;
+  const filterNote = [
+    flow !== "all" && (flow === "in" ? "Money in only" : "Money out only"),
+    category !== "all" && category,
+    query && `Search “${search.trim()}”`,
+  ].filter(Boolean).join(" · ");
+
+  const signed = (n: number) => (n < 0 ? "−" : "") + fmt(Math.abs(n));
 
   async function exportLedger() {
     const XLSX = await import("xlsx");
     const sheetRows = [
-      { Date: rangeStart, Description: "Opening balance", Details: "", "Money In": "", "Money Out": "", Balance: opening },
-      ...rows.map(row => ({ Date: row.date, Description: row.description, Details: row.detail,
+      { Date: rangeStart, Description: "Opening balance", Details: "", Account: "", "Money In": "", "Money Out": "", Balance: opening },
+      ...shown.map(row => ({ Date: row.date, Description: row.description, Details: row.detail, Account: accountLabel(row.account),
         "Money In": row.moneyIn || "", "Money Out": row.moneyOut || "", Balance: row.balance })),
-      { Date: filterEnd, Description: "Closing balance", Details: "", "Money In": totalIn, "Money Out": totalOut, Balance: closing },
+      ...(isFiltered ? [{ Date: "", Description: "Total of shown entries", Details: "", Account: "", "Money In": shownIn, "Money Out": shownOut, Balance: "" }] : []),
+      { Date: filterEnd, Description: "Closing balance", Details: "", Account: "", "Money In": totalIn, "Money Out": totalOut, Balance: closing },
     ];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheetRows), "Ledger");
-    XLSX.writeFile(wb, `ledger-${rangeStart}-to-${filterEnd}.xlsx`);
+    XLSX.writeFile(wb, `ledger-${account}-${rangeStart}-to-${filterEnd}.xlsx`);
   }
 
-  const signed = (n: number) => (n < 0 ? "−" : "") + fmt(Math.abs(n));
+  function printStatement() {
+    const e = escapeHtml;
+    const money = (n: number) => (n ? fmt(n) : "");
+    const now = new Date();
+    const body = shown.map(r => `<tr><td>${r.date}</td><td><b>${e(r.description)}</b><div class="muted">${e(r.detail)}</div></td>
+      <td class="num in">${money(r.moneyIn)}</td><td class="num out">${money(r.moneyOut)}</td><td class="num">${signed(r.balance)}</td></tr>`).join("");
+    printHtml(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${e(bookName)} ${rangeStart} to ${filterEnd}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Montserrat', sans-serif; color: #1a1a2e; font-size: 12px; }
+  .page { max-width: 820px; margin: 0 auto; padding: 40px 48px; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 20px; margin-bottom: 24px; border-bottom: 2px solid #f0f0f8; }
+  .logo-img { position:relative; overflow:hidden; width:104px; height:51px; }
+  .logo-img img { position:absolute; width:117.52%; height:241.61%; max-width:none; left:-9.14%; top:-66%; }
+  .title { font-size: 16px; font-weight: 800; color: #7C3AED; text-align: right; }
+  .sub { font-size: 11px; color: #6b6b8a; margin-top: 3px; text-align: right; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 24px; }
+  .stat { background: #F5F3FF; border: 1px solid #EDE9FE; border-radius: 10px; padding: 12px; }
+  .stat-l { font-size: 9px; font-weight: 700; color: #a0a0b8; letter-spacing: .06em; text-transform: uppercase; }
+  .stat-v { font-size: 16px; font-weight: 800; margin-top: 6px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { font-size: 9px; font-weight: 700; color: #a0a0b8; letter-spacing: .07em; text-transform: uppercase; padding: 8px 10px; text-align: left; background: #F5F3FF; }
+  td { padding: 8px 10px; border-bottom: 1px solid #f3f3f8; vertical-align: top; }
+  tr { page-break-inside: avoid; }
+  .num { text-align: right; white-space: nowrap; font-weight: 700; }
+  .in { color: #059669; } .out { color: #dc2626; }
+  .muted { color: #a0a0b8; font-size: 10px; margin-top: 2px; }
+  .edge td { background: #faf9fd; font-weight: 800; }
+  .foot { margin-top: 28px; padding-top: 14px; border-top: 1px solid #f0f0f8; font-size: 10px; color: #c0c0d0; display: flex; justify-content: space-between; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } .page { padding: 24px 32px; } }
+</style></head><body><div class="page">
+  <div class="header">
+    <div class="logo-img"><img src="${window.location.origin}/salon-central-logo.png" alt="Salon Central" /></div>
+    <div><div class="title">Ledger Statement — ${e(bookName)}</div><div class="sub">${rangeStart} to ${filterEnd}</div>
+    ${filterNote ? `<div class="sub">${e(filterNote)}</div>` : ""}</div>
+  </div>
+  <div class="stats">
+    <div class="stat"><div class="stat-l">Opening balance</div><div class="stat-v">${signed(opening)}</div></div>
+    <div class="stat"><div class="stat-l">Money in</div><div class="stat-v in">${fmt(totalIn)}</div></div>
+    <div class="stat"><div class="stat-l">Money out</div><div class="stat-v out">${fmt(totalOut)}</div></div>
+    <div class="stat"><div class="stat-l">Closing balance</div><div class="stat-v">${signed(closing)}</div></div>
+  </div>
+  <table><thead><tr><th>Date</th><th>Description</th><th class="num">Money in</th><th class="num">Money out</th><th class="num">Balance</th></tr></thead><tbody>
+    <tr class="edge"><td>${rangeStart}</td><td>Opening balance</td><td></td><td></td><td class="num">${signed(opening)}</td></tr>
+    ${body || `<tr><td colspan="5" class="muted" style="text-align:center;padding:24px">No entries</td></tr>`}
+    ${isFiltered ? `<tr class="edge"><td></td><td>Total of shown entries</td><td class="num in">${fmt(shownIn)}</td><td class="num out">${fmt(shownOut)}</td><td></td></tr>` : ""}
+    <tr class="edge"><td>${filterEnd}</td><td>Closing balance</td><td class="num in">${fmt(totalIn)}</td><td class="num out">${fmt(totalOut)}</td><td class="num">${signed(closing)}</td></tr>
+  </tbody></table>
+  <div class="foot"><span>Generated ${now.toLocaleDateString("en-PK", { year: "numeric", month: "long", day: "numeric" })} · Salon Central</span><span>Confidential</span></div>
+</div></body></html>`);
+  }
+
   const cols = "90px 1.4fr 1.2fr 110px 110px 120px";
   const cell = { fontSize: 12, color: "#6b6b8a" } as const;
+  const control = { padding: "7px 10px", borderRadius: 10, border: "1px solid #e3e0eb", background: "#fff", fontSize: 12, color: "#1a1a2e" } as const;
+  const button = { ...control, display: "flex", alignItems: "center", gap: 6, color: "var(--accent)", fontWeight: 750, cursor: "pointer" } as const;
   return (
     <>
+      {/* Account books — click one to see only its money */}
+      <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 2 }}>
+        {[["all", accounts.reduce((s, [, b]) => s + b, 0)] as [string, number], ...accounts].map(([key, balance]) => {
+          const active = account === key;
+          return (
+            <button key={key} type="button" onClick={() => setAccount(key)} aria-pressed={active} style={{
+              flex: "0 0 auto", minWidth: 150, textAlign: "left", cursor: "pointer", padding: "12px 16px", borderRadius: 14,
+              border: active ? "2px solid var(--accent)" : "1px solid rgba(226,223,235,0.9)",
+              background: active ? "#F5F3FF" : "#fff",
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#9898b0", textTransform: "uppercase", letterSpacing: "0.05em", display: "flex", alignItems: "center", gap: 6 }}>
+                {key !== "all" && <span style={{ width: 8, height: 8, borderRadius: "50%", background: METHOD_COLORS[key] ?? "#9898b0" }} />}
+                {key === "all" ? "All accounts" : accountLabel(key)}
+              </div>
+              <div style={{ fontSize: 18, fontWeight: 850, color: balance < 0 ? "#dc2626" : "#1a1a2e", marginTop: 4 }}>{signed(balance)}</div>
+            </button>
+          );
+        })}
+      </div>
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12 }}>
         {[
           { label: "Opening Balance", value: signed(opening), color: "#6b6b8a" },
@@ -1770,14 +1969,37 @@ function LedgerView({ rangeStart, filterEnd, appointments, posLinkedAppointmentI
         ))}
       </div>
 
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 12 }}>
+        <OwedCard title="Owed to me" sub="Unpaid & part-paid client bills" rows={owedToMe} today={today} color="#059669" />
+        <OwedCard title="I owe" sub="Pending expense bills" rows={iOwe} today={today} color="#dc2626" />
+      </div>
+
       <div style={{ background: "#fff", borderRadius: 18, border: "1px solid rgba(226,223,235,.95)", overflow: "hidden" }}>
-        <div style={{ padding: "14px 20px", borderBottom: "1px solid #f0f0f5", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        <div style={{ padding: "14px 20px", borderBottom: "1px solid #f0f0f5", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
           <div style={{ fontSize: 15, fontWeight: 800, color: "#1a1a2e" }}>
-            Day Book <span style={{ fontSize: 12, fontWeight: 600, color: "#9898b0", marginLeft: 6 }}>{rangeStart} → {filterEnd} · {rows.length} entries</span>
+            {account === "all" ? "Day Book" : bookName}
+            <span style={{ fontSize: 12, fontWeight: 600, color: "#9898b0", marginLeft: 6 }}>
+              {rangeStart} → {filterEnd} · {isFiltered ? `${shown.length} of ${rows.length}` : rows.length} entries
+            </span>
           </div>
-          <button type="button" onClick={exportLedger} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 10, border: "1px solid #e3e0eb", background: "#fff", color: "var(--accent)", fontSize: 12, fontWeight: 750, cursor: "pointer" }}>
-            <Download size={14} /> Export
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <label style={{ ...control, display: "flex", alignItems: "center", gap: 6 }}>
+              <Search size={13} color="#9898b0" />
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name or detail"
+                aria-label="Search ledger" style={{ border: "none", outline: "none", fontSize: 12, width: 150, background: "transparent" }} />
+            </label>
+            <select value={flow} onChange={e => setFlow(e.target.value as typeof flow)} aria-label="Money in or out" style={control}>
+              <option value="all">In &amp; out</option>
+              <option value="in">Money in</option>
+              <option value="out">Money out</option>
+            </select>
+            <select value={category} onChange={e => setCategory(e.target.value)} aria-label="Category" style={control}>
+              <option value="all">All categories</option>
+              {categories.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <button type="button" onClick={exportLedger} style={button}><Download size={14} /> Excel</button>
+            <button type="button" onClick={printStatement} style={button}><Printer size={14} /> PDF</button>
+          </div>
         </div>
         <div style={{ overflowX: "auto" }}>
           <div style={{ minWidth: 760 }}>
@@ -1792,9 +2014,11 @@ function LedgerView({ rangeStart, filterEnd, appointments, posLinkedAppointmentI
               <div /><div /><div />
               <div style={{ ...cell, fontWeight: 800, color: "#1a1a2e", textAlign: "right" }}>{signed(opening)}</div>
             </div>
-            {rows.length === 0 ? (
-              <div style={{ padding: "36px 20px", textAlign: "center", fontSize: 13, color: "#9898b0" }}>No entries in this period</div>
-            ) : rows.map(row => (
+            {shown.length === 0 ? (
+              <div style={{ padding: "36px 20px", textAlign: "center", fontSize: 13, color: "#9898b0" }}>
+                {rows.length === 0 ? "No entries in this period" : "No entries match these filters"}
+              </div>
+            ) : shown.map(row => (
               <div key={row.id} style={{ display: "grid", gridTemplateColumns: cols, padding: "10px 20px", borderBottom: "1px solid #f8f8fc", alignItems: "center" }}>
                 <div style={cell}>{row.date}</div>
                 <div style={{ ...cell, fontWeight: 700, color: "#1a1a2e", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={row.description}>{row.description}</div>
@@ -1804,6 +2028,16 @@ function LedgerView({ rangeStart, filterEnd, appointments, posLinkedAppointmentI
                 <div style={{ ...cell, fontWeight: 800, color: row.balance >= 0 ? "#1a1a2e" : "#dc2626", textAlign: "right" }}>{signed(row.balance)}</div>
               </div>
             ))}
+            {isFiltered && (
+              <div style={{ display: "grid", gridTemplateColumns: cols, padding: "10px 20px", borderBottom: "1px solid #f0f0f5" }}>
+                <div />
+                <div style={{ ...cell, fontWeight: 750, color: "#1a1a2e" }}>Total of shown entries</div>
+                <div />
+                <div style={{ ...cell, fontWeight: 800, color: "#059669", textAlign: "right" }}>{fmt(shownIn)}</div>
+                <div style={{ ...cell, fontWeight: 800, color: "#dc2626", textAlign: "right" }}>{fmt(shownOut)}</div>
+                <div />
+              </div>
+            )}
             <div style={{ display: "grid", gridTemplateColumns: cols, padding: "12px 20px", background: "#faf9fd" }}>
               <div style={cell}>{filterEnd}</div>
               <div style={{ ...cell, fontWeight: 800, color: "#1a1a2e" }}>Closing balance</div>
@@ -1816,8 +2050,9 @@ function LedgerView({ rangeStart, filterEnd, appointments, posLinkedAppointmentI
         </div>
       </div>
       <div style={{ fontSize: 11, color: "#b0b0c8", lineHeight: 1.6 }}>
-        Opening balance is everything in minus everything out before {rangeStart}. Pending expenses, unpaid invoices and
-        petty cash top-ups are left out — they aren&rsquo;t earnings or spending yet.
+        Each account&rsquo;s balance is everything in minus everything out through it up to {filterEnd || "today"}; sales and
+        imported income with no payment method count as cash. Pending expenses, unpaid invoices and petty cash top-ups stay
+        out of the books until they&rsquo;re paid — they show under Owed to me / I owe instead.
       </div>
     </>
   );
