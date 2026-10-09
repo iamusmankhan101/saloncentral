@@ -33,24 +33,25 @@ export async function POST(req: NextRequest) {
     console.error("Google Sheets error:", err);
   }
 
-  // ── 2. Alert the team on WhatsApp (WaSender, same provider as the main app) ──
+  // ── 2. Alert the owner on their own WhatsApp via CallMeBot ──────────
+  // (Not WaSender — that line is reserved for messaging salons' clients.)
+  // ponytail: CallMeBot is a free best-effort gateway; switch to a paid API if alerts go missing.
   try {
-    const res = await fetch("https://www.wasenderapi.com/api/send-message", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.WASENDER_API_KEY}` },
-      body: JSON.stringify({
-        to: process.env.DEMO_WHATSAPP_TO,
-        text: [
-          "🎉 *New Demo Request*",
-          "",
-          `*Name:* ${name}`,
-          `*Phone:* ${phone}`,
-          `*Email:* ${email}`,
-          `*Preferred time:* ${datetime}`,
-          `*Submitted:* ${submittedAt}`,
-        ].join("\n"),
-      }),
+    const text = [
+      "🎉 *New Demo Request*",
+      "",
+      `*Name:* ${name}`,
+      `*Phone:* ${phone}`,
+      `*Email:* ${email}`,
+      `*Preferred time:* ${datetime}`,
+      `*Submitted:* ${submittedAt}`,
+    ].join("\n");
+    const params = new URLSearchParams({
+      phone: process.env.CALLMEBOT_PHONE ?? "",
+      apikey: process.env.CALLMEBOT_APIKEY ?? "",
+      text,
     });
+    const res = await fetch(`https://api.callmebot.com/whatsapp.php?${params}`);
     if (!res.ok) console.error("WhatsApp demo alert failed:", res.status, await res.text());
   } catch (err) {
     console.error("WhatsApp demo alert error:", err);
