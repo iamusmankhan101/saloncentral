@@ -201,6 +201,15 @@
   border-radius: 12px;
 }
 
+.waBtn {
+  gap: 8px;
+  background: #25d366;
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+}
+.waBtn:hover { background: #1ebe5a; }
+
 /* ── RESPONSIVE ─────────────────────── */
 @media (max-width: 480px) {
   .modal { padding: 28px 20px 24px; border-radius: 20px; }

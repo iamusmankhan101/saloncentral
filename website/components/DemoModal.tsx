@@ -1,8 +1,26 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { X, User, Mail, Phone, Calendar, Loader2, CheckCircle } from "lucide-react";
+import { X, User, Mail, Phone, Calendar, Loader2, CheckCircle, MessageCircle } from "lucide-react";
 import styles from "./DemoModal.module.css";
+
+// The team's WhatsApp number; the success screen opens a chat to it with the booking pre-typed.
+const WHATSAPP_NUMBER = (process.env.NEXT_PUBLIC_DEMO_WHATSAPP ?? "").replace(/\D/g, "");
+
+function whatsAppLink(f: { name: string; email: string; phone: string; datetime: string }) {
+  const when = f.datetime
+    ? new Date(f.datetime).toLocaleString("en-PK", { dateStyle: "medium", timeStyle: "short" })
+    : "Any time";
+  const text = [
+    "Hi Salon Central! I'd like to book a demo 👋",
+    "",
+    `Name: ${f.name}`,
+    `Phone: ${f.phone}`,
+    `Email: ${f.email}`,
+    `Preferred time: ${when}`,
+  ].join("\n");
+  return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(text)}`;
+}
 
 interface Props {
   open: boolean;
@@ -14,6 +32,7 @@ export default function DemoModal({ open, onClose, onSuccess }: Props) {
   const [form, setForm]     = useState({ name: "", email: "", phone: "", datetime: "" });
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [error, setError]   = useState("");
+  const [waLink, setWaLink] = useState("");
   const firstRef            = useRef<HTMLInputElement>(null);
 
   // focus first field on open
@@ -63,6 +82,7 @@ export default function DemoModal({ open, onClose, onSuccess }: Props) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Something went wrong.");
       localStorage.setItem("demoEmails", JSON.stringify([...stored, form.email.toLowerCase().trim()]));
+      setWaLink(WHATSAPP_NUMBER ? whatsAppLink(form) : "");
       setStatus("success");
       onSuccess?.();
       setForm({ name: "", email: "", phone: "", datetime: "" });
@@ -87,10 +107,21 @@ export default function DemoModal({ open, onClose, onSuccess }: Props) {
           <div className={styles.success}>
             <CheckCircle size={48} className={styles.successIcon} />
             <h2>Request Sent!</h2>
-            <p>We&apos;ll reach out within 24 hours to confirm your demo time.</p>
-            <button className={`btn btn-primary ${styles.doneBtn}`} onClick={onClose}>
-              Done
-            </button>
+            {waLink ? (
+              <>
+                <p>One last step: send us your booking on WhatsApp so we can confirm your demo time.</p>
+                <a href={waLink} target="_blank" rel="noopener noreferrer" className={`btn ${styles.doneBtn} ${styles.waBtn}`}>
+                  <MessageCircle size={18} /> Send on WhatsApp
+                </a>
+              </>
+            ) : (
+              <>
+                <p>We&apos;ll reach out within 24 hours to confirm your demo time.</p>
+                <button className={`btn btn-primary ${styles.doneBtn}`} onClick={onClose}>
+                  Done
+                </button>
+              </>
+            )}
           </div>
         ) : (
           <>

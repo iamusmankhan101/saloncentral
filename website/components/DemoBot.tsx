@@ -5,7 +5,8 @@ import DemoModal from "./DemoModal";
 import styles from "./DemoBot.module.css";
 
 const ASK = "Hey there! 👋 Want to book a free demo of Salon Central?";
-const DONE = "🎉 You're booked! We'll be in touch within 24 hours.";
+const SENT = "🎉 Nearly there! Tap the green button to send it to us on WhatsApp 💬";
+const DONE = "Thanks! We'll confirm your demo on WhatsApp soon 💜";
 const LATER = "No worries — tap me whenever you're ready! 💜";
 // Tip the bot gives while the visitor is in each DemoModal field (keyed by the input's name).
 const HINTS: Record<string, string> = {
@@ -166,7 +167,7 @@ export default function DemoBot() {
       <DemoModal
         open={formOpen}
         onClose={closeForm}
-        onSuccess={() => { bookedRef.current = true; say(DONE); }}
+        onSuccess={() => { bookedRef.current = true; say(SENT); }}
       />
     </>
   );
