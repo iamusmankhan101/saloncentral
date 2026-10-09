@@ -4,8 +4,9 @@ import { createPortal } from "react-dom";
 import { X, User, Mail, Phone, Calendar, Loader2, CheckCircle, MessageCircle } from "lucide-react";
 import styles from "./DemoModal.module.css";
 
-// The team's WhatsApp number; the success screen opens a chat to it with the booking pre-typed.
-const WHATSAPP_NUMBER = (process.env.NEXT_PUBLIC_DEMO_WHATSAPP ?? "").replace(/\D/g, "");
+// Same sales number as the site's "Contact Sales" links; the success screen opens a chat to it
+// with the booking pre-typed.
+const WHATSAPP_NUMBER = "923029646928";
 
 function whatsAppLink(f: { name: string; email: string; phone: string; datetime: string }) {
   const when = f.datetime
@@ -82,7 +83,7 @@ export default function DemoModal({ open, onClose, onSuccess }: Props) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Something went wrong.");
       localStorage.setItem("demoEmails", JSON.stringify([...stored, form.email.toLowerCase().trim()]));
-      setWaLink(WHATSAPP_NUMBER ? whatsAppLink(form) : "");
+      setWaLink(whatsAppLink(form));
       setStatus("success");
       onSuccess?.();
       setForm({ name: "", email: "", phone: "", datetime: "" });
@@ -107,21 +108,10 @@ export default function DemoModal({ open, onClose, onSuccess }: Props) {
           <div className={styles.success}>
             <CheckCircle size={48} className={styles.successIcon} />
             <h2>Request Sent!</h2>
-            {waLink ? (
-              <>
-                <p>One last step: send us your booking on WhatsApp so we can confirm your demo time.</p>
-                <a href={waLink} target="_blank" rel="noopener noreferrer" className={`btn ${styles.doneBtn} ${styles.waBtn}`}>
-                  <MessageCircle size={18} /> Send on WhatsApp
-                </a>
-              </>
-            ) : (
-              <>
-                <p>We&apos;ll reach out within 24 hours to confirm your demo time.</p>
-                <button className={`btn btn-primary ${styles.doneBtn}`} onClick={onClose}>
-                  Done
-                </button>
-              </>
-            )}
+            <p>One last step: send us your booking on WhatsApp so we can confirm your demo time.</p>
+            <a href={waLink} target="_blank" rel="noopener noreferrer" className={`btn ${styles.doneBtn} ${styles.waBtn}`}>
+              <MessageCircle size={18} /> Send on WhatsApp
+            </a>
           </div>
         ) : (
           <>
