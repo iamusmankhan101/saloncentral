@@ -31,6 +31,8 @@ export interface DailyReportData {
     totalOut: number;
     rows: { description: string; detail: string; moneyIn: number; moneyOut: number }[];
   };
+  /** The salon's own logo (PNG/JPEG), shown in a white tile beside its name. */
+  salonLogo?: Buffer;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -81,6 +83,8 @@ const s = StyleSheet.create({
   hero: { height: 104, position: "relative" },
   heroBg: { position: "absolute", top: 0, left: 0 },
   heroContent: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: "0 32", height: 104 },
+  salonTile: { backgroundColor: "#ffffff", borderRadius: 10, padding: 5, marginRight: 12 },
+  salonLogo: { width: 48, height: 48, borderRadius: 6, objectFit: "contain" },
   heroLabel: { fontSize: 7, fontFamily: "Helvetica-Bold", color: "rgba(255,255,255,0.7)", letterSpacing: 1, textTransform: "uppercase" },
   heroSalon: { fontSize: 20, fontFamily: "Helvetica-Bold", color: "#ffffff", marginTop: 4 },
   heroSub: { fontSize: 8, color: "rgba(255,255,255,0.75)", marginTop: 3 },
@@ -178,7 +182,7 @@ const PAGE_WIDTH = 595.28; // A4 in points
 const keepTogether = (rows: number) => rows <= 15;
 
 function DailyReportPDF({ data, logo }: { data: DailyReportData; logo?: Buffer }) {
-  const { salonName, ownerName, date, invoices, ledger } = data;
+  const { salonName, ownerName, date, invoices, ledger, salonLogo } = data;
 
   const paid     = invoices.filter((i) => i.status === "paid");
   const unpaid   = invoices.filter((i) => i.status === "unpaid");
@@ -252,10 +256,18 @@ function DailyReportPDF({ data, logo }: { data: DailyReportData; logo?: Buffer }
             <Circle cx={PAGE_WIDTH - 150} cy={120} r={48} fill="#ffffff" fillOpacity={0.05} />
           </Svg>
           <View style={s.heroContent}>
-            <View>
-              <Text style={s.heroLabel}>Salon</Text>
-              <Text style={s.heroSalon}>{salonName}</Text>
-              <Text style={s.heroSub}>Prepared for {ownerName}</Text>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              {salonLogo && (
+                <View style={s.salonTile}>
+                  {/* eslint-disable-next-line jsx-a11y/alt-text -- react-pdf Image has no alt */}
+                  <Image src={{ data: salonLogo, format: salonLogo[0] === 0xff ? "jpg" : "png" }} style={s.salonLogo} />
+                </View>
+              )}
+              <View>
+                <Text style={s.heroLabel}>Salon</Text>
+                <Text style={s.heroSalon}>{salonName}</Text>
+                <Text style={s.heroSub}>Prepared for {ownerName}</Text>
+              </View>
             </View>
             <View>
               <Text style={[s.heroLabel, { textAlign: "right" }]}>Revenue collected</Text>

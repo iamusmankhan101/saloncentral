@@ -79,7 +79,48 @@ interface SalonSettings {
     email?: string;
     phone?: string;
     address?: string;
+    /** Data URL from the uploader (capped at 300×300), or an https URL on older accounts. */
+    logo?: string;
   };
+}
+
+// ─── Salon logo ───────────────────────────────────────────────────────────────
+
+const MAX_LOGO_BYTES = 2 * 1024 * 1024;
+
+/**
+ * The salon's own logo as a square PNG on white, for the report's logo tile, or
+ * undefined if there's none or it can't be read — the report then goes out
+ * without it rather than not at all.
+ */
+async function loadSalonLogo(logo?: string): Promise<Buffer | undefined> {
+  try {
+    let bytes: Buffer | undefined;
+    if (logo?.startsWith("data:image/")) {
+      bytes = Buffer.from(logo.slice(logo.indexOf(",") + 1), "base64");
+    } else if (logo?.startsWith("https://")) {
+      const res = await fetch(logo, { signal: AbortSignal.timeout(5000) });
+      if (res.ok) bytes = Buffer.from(await res.arrayBuffer());
+    }
+    if (!bytes?.length || bytes.length > MAX_LOGO_BYTES) return undefined;
+
+    // Lazy, like /api/salon-icon: a missing native binary must not break the whole report.
+    const sharp = (await import("sharp").catch(() => null))?.default;
+    if (sharp) {
+      return await sharp(bytes)
+        .resize(160, 160, { fit: "contain", background: { r: 255, g: 255, b: 255, alpha: 1 } })
+        .flatten({ background: { r: 255, g: 255, b: 255 } })
+        .png()
+        .toBuffer();
+    }
+    // No sharp: only formats the PDF and mail clients can show as-is (PNG / JPEG magic bytes).
+    const isPng = bytes[0] === 0x89 && bytes[1] === 0x50;
+    const isJpeg = bytes[0] === 0xff && bytes[1] === 0xd8;
+    return isPng || isJpeg ? bytes : undefined;
+  } catch (err) {
+    console.error("[daily-report] salon logo unreadable:", err);
+    return undefined;
+  }
 }
 
 // ─── DB helpers ───────────────────────────────────────────────────────────────
@@ -192,6 +233,7 @@ function buildReportEmail(
   date: string,
   invoices: SalonInvoice[],
   ledger: Ledger,
+  hasSalonLogo = false,
 ): { subject: string; html: string; text: string } {
   const paid   = invoices.filter((i) => i.status === "paid");
   const unpaid = invoices.filter((i) => i.status === "unpaid");
@@ -332,7 +374,12 @@ function buildReportEmail(
     <!-- Hero: salon + the day's headline number -->
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#5B21B6;background-image:linear-gradient(135deg,#4C1D95,#8B5CF6)">
       <tr>
-        <td style="padding:26px 36px">
+        ${hasSalonLogo ? `<td style="padding:26px 0 26px 36px;width:64px;vertical-align:middle">
+          <div style="background:#fff;border-radius:12px;padding:6px;width:52px;height:52px">
+            <img src="cid:salon-logo" alt="" width="52" height="52" style="display:block;border:0;border-radius:8px">
+          </div>
+        </td>` : ""}
+        <td style="padding:26px 36px${hasSalonLogo ? ";padding-left:14px" : ""}">
           <div style="color:rgba(255,255,255,0.7);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em">Salon</div>
           <div style="color:#fff;font-size:22px;font-weight:800;margin-top:4px">${salonName}</div>
           <div style="color:rgba(255,255,255,0.75);font-size:12px;margin-top:3px">Prepared for ${ownerName}</div>
@@ -468,12 +515,13 @@ export async function GET(req: NextRequest) {
     // Determine recipient: prefer settings email, fall back to billing email
     const toEmail = settings?.salon?.email || user.email;
 
-    const { subject, html, text } = buildReportEmail(user.ownerName, salonName, today, invoices, ledger);
+    const salonLogo = await loadSalonLogo(settings?.salon?.logo);
+    const { subject, html, text } = buildReportEmail(user.ownerName, salonName, today, invoices, ledger, !!salonLogo);
 
     // Generate PDF attachment
     let pdfBuffer: Buffer | undefined;
     try {
-      pdfBuffer = await generateDailyReportPdf({ salonName, ownerName: user.ownerName, date: today, invoices, ledger });
+      pdfBuffer = await generateDailyReportPdf({ salonName, ownerName: user.ownerName, date: today, invoices, ledger, salonLogo });
     } catch (e) {
       console.error(`[daily-report] PDF generation failed for ${user.email}:`, e);
     }
@@ -489,9 +537,10 @@ export async function GET(req: NextRequest) {
         subject,
         html,
         text,
-        attachments: pdfBuffer
-          ? [{ filename, content: pdfBuffer }]
-          : [],
+        attachments: [
+          ...(pdfBuffer ? [{ filename, content: pdfBuffer }] : []),
+          ...(salonLogo ? [{ filename: "salon-logo.png", content: salonLogo, contentId: "salon-logo" }] : []),
+        ],
       });
 
       if (error) {
