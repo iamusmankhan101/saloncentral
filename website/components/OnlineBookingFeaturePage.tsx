@@ -87,7 +87,7 @@ function SharePanel() {
     <div className={styles.checkoutPanel}>
       <div style={{ fontSize: "0.7rem", fontWeight: 900, color: "#746b83", marginBottom: 10 }}>YOUR BOOKING LINK</div>
       <div style={{ padding: "12px 14px", borderRadius: 12, background: "#f5f3ff", border: "1px solid #ede9fe", fontSize: "0.82rem", fontWeight: 800, color: "#7c3aed", marginBottom: 14, wordBreak: "break-all" }}>
-        app.saloncentral.com/online-booking
+        app.saloncentral.xyz/book/your-salon
       </div>
       {[
         { platform: "Instagram Bio", icon: "📸", action: "Link in bio" },
@@ -102,6 +102,39 @@ function SharePanel() {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function WebsitePanel() {
+  const badge = (bg: string, text: string) => (
+    <div style={{ width: 34, height: 34, borderRadius: 10, background: bg, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.78rem", fontWeight: 900, flexShrink: 0 }}>{text}</div>
+  );
+  return (
+    <div className={styles.checkoutPanel}>
+      <div style={{ fontSize: "0.7rem", fontWeight: 900, color: "#746b83", marginBottom: 10 }}>ON YOUR OWN WEBSITE</div>
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "12px 14px", borderRadius: 12, border: "1px solid #ede9fe", marginBottom: 10 }}>
+        {badge("#21759b", "W")}
+        <div style={{ flex: 1 }}>
+          <strong style={{ fontSize: "0.88rem", color: "#17112a" }}>WordPress plugin</strong>
+          <div style={{ fontSize: "0.74rem", color: "#746b83", marginTop: 2 }}>Install, paste your booking link, add the &ldquo;Salon Central Booking&rdquo; block.</div>
+          <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+            {["Grid layout", "List layout", "Your colours"].map((t) => (
+              <span key={t} style={{ fontSize: "0.66rem", fontWeight: 800, color: "#7c3aed", background: "#f5f3ff", borderRadius: 999, padding: "3px 8px" }}>{t}</span>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "12px 14px", borderRadius: 12, border: "1px solid #ede9fe" }}>
+        {badge("#17112a", "</>")}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <strong style={{ fontSize: "0.88rem", color: "#17112a" }}>Any website: copy-paste code</strong>
+          <div style={{ fontSize: "0.74rem", color: "#746b83", marginTop: 2 }}>Custom-coded, Wix, Squarespace, Webflow or Shopify.</div>
+          <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 8, background: "#17112a", color: "#c4b5fd", fontFamily: "ui-monospace, Menlo, monospace", fontSize: "0.66rem", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+            &lt;iframe src=&quot;app.saloncentral.xyz/book/your-salon&quot;&gt;
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -265,6 +298,12 @@ const rows = [
     visual: <SharePanel />,
   },
   {
+    eyebrow: "Your own website",
+    title: "Take bookings right on your own website",
+    body: "Already have a salon website? Put the booking form on it. On WordPress, install the Salon Central Booking plugin and add the booking block to any page. On any other site (custom-coded, Wix, Squarespace, Webflow or Shopify) copy one piece of embed code from your dashboard. Choose a grid or list layout and a button colour that matches your site, and every booking lands straight in your Salon Central calendar.",
+    visual: <WebsitePanel />,
+  },
+  {
     eyebrow: "Service catalogue",
     title: "Clients browse and select exactly what they want",
     body: "Your full service menu is displayed with names, durations, and prices. Clients tick multiple services in a single booking, and the total duration and price calculate automatically so there are no surprises.",
@@ -332,6 +371,14 @@ const faqs = [
   {
     q: "Can I customize my online booking page?",
     a: "Absolutely. You can customize your online booking system for beauty salons with your salon logo, branding, available services, staff members, operating hours, and booking rules, creating a professional booking experience for your clients.",
+  },
+  {
+    q: "Can I add online booking to my WordPress website?",
+    a: "Yes. Salon Central has a WordPress booking plugin for salons. Install it, paste your booking link, and add the Salon Central Booking block (or the [salon_central_booking] shortcode) to any page. Choose a grid or list layout and match the button colour to your website. Every booking goes straight into your Salon Central calendar.",
+  },
+  {
+    q: "Can I add the booking form to a custom-coded website?",
+    a: "Yes. In your Salon Central dashboard, open Account, then Online Booking Link, then Get embed code. Pick your layout and colour, preview it on desktop and mobile, and copy the code. Paste it into any website (custom HTML, React, Wix, Squarespace, Webflow or Shopify) and the booking form appears on your page, resizing itself to fit.",
   },
   {
     q: "Why choose Salon Central for online salon booking?",
@@ -510,7 +557,7 @@ export default function OnlineBookingFeaturePage() {
           <div>
             <Smartphone size={19} />
             <strong>Share anywhere</strong>
-            <span>Instagram, WhatsApp, Google Maps, Facebook: one link works everywhere.</span>
+            <span>Instagram, WhatsApp, Google Maps, Facebook, or right on your own website.</span>
           </div>
           <div>
             <Scissors size={19} />

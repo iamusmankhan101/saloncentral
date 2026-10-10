@@ -363,7 +363,7 @@ const features = [
     icon: CalendarDays,
     color: "#0891b2",
     title: "Appointment Booking",
-    desc: "Seamless booking for clients and staff, with zero double-bookings.",
+    desc: "Seamless booking for clients and staff, with zero double-bookings, even right on your own website.",
     bullets: ["Online booking", "Staff scheduling", "Automatic reminders", "Cancellation management"],
     preview: <AppointmentPreview />,
   },
