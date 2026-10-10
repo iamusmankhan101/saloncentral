@@ -45,11 +45,14 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: { "/api/**": ["./public/fbr-pos-logo.png", "./public/report-logo.png"] },
 
   async headers() {
+    // The public booking pages may be embedded in salons' own websites (the
+    // WordPress plugin in wordpress-plugin/), so they skip X-Frame-Options;
+    // middleware.ts sets their CSP frame-ancestors instead. Everything else stays DENY.
+    const embeddable = securityHeaders.filter((h) => h.key !== "X-Frame-Options");
     return [
-      {
-        source: "/(.*)",
-        headers: securityHeaders,
-      },
+      { source: "/((?!book/|online-booking).*)", headers: securityHeaders },
+      { source: "/book/:slug*", headers: embeddable },
+      { source: "/online-booking", headers: embeddable },
     ];
   },
 };
