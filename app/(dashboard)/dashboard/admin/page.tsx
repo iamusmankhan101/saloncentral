@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle, XCircle, Clock, ImageIcon, ChevronDown, ChevronUp, Shield, Store, Pencil, Save, Ban, Trash2, AlertTriangle, X, ReceiptText, Users as UsersIcon, BadgeCheck, Landmark, Archive, Database, RotateCcw, Lock, LockOpen, Snowflake, LayoutDashboard, Banknote, LogOut, RefreshCw, FileText, ShoppingCart, Monitor, Smartphone, Tablet } from "lucide-react";
+import { CheckCircle, XCircle, Clock, ImageIcon, ChevronDown, ChevronUp, Shield, Store, Pencil, Save, Ban, Trash2, AlertTriangle, X, ReceiptText, Users as UsersIcon, BadgeCheck, Landmark, Archive, Database, RotateCcw, Lock, LockOpen, Snowflake, KeyRound, Copy, LayoutDashboard, Banknote, LogOut, RefreshCw, FileText, ShoppingCart, Monitor, Smartphone, Tablet } from "lucide-react";
 import { getCurrentUser, signOut } from "@/lib/auth";
 import PointlyConsole from "@/components/pointly-admin/console";
 import {
@@ -1170,6 +1170,80 @@ function FreezeAccountModal({ row, onClose, onFrozen }: {
   );
 }
 
+function ResetPasswordModal({ row, onClose }: { row: AccountUserRow; onClose: () => void }) {
+  const [loading, setLoading] = useState(false);
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  async function reset() {
+    if (loading) return;
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: row.id, action: "reset-password" }),
+      });
+      const data = await res.json();
+      if (!data.ok || !data.password) setError(data.error || "Could not reset the password.");
+      else setPassword(data.password);
+    } catch {
+      setError("Could not reach the server.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div onClick={password ? undefined : onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 20, width: 440, maxWidth: "100%", padding: "32px 28px", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+          <div style={{ width: 44, height: 44, borderRadius: 12, background: "#f5f3ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <KeyRound size={20} color="#7c3aed" />
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontWeight: 800, fontSize: 17, color: "#1a1a2e" }}>{password ? "New password" : "Reset password?"}</div>
+            <div style={{ fontSize: 12, color: "#9898b0", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {row.ownerName} · {row.salonName} ({row.email})
+            </div>
+          </div>
+        </div>
+        {password ? (
+          <>
+            <div style={{ fontSize: 13, color: "#6b6b8a", lineHeight: 1.6, marginBottom: 14 }}>
+              This is shown <strong>once</strong>. Send it to {row.ownerName.split(" ")[0]} privately (e.g. WhatsApp) and ask them to change it in Settings → Security.
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 14px", borderRadius: 12, background: "#f8f8fc", border: "1px dashed #d6d6e6" }}>
+              <code style={{ flex: 1, fontSize: 17, fontWeight: 800, letterSpacing: "0.08em", color: "#1a1a2e", wordBreak: "break-all" }}>{password}</code>
+              <button onClick={() => navigator.clipboard?.writeText(`${row.email}\n${password}`).then(() => setCopied(true)).catch(() => {})}
+                style={{ display: "flex", alignItems: "center", gap: 5, padding: "7px 10px", borderRadius: 8, border: "1px solid #e8e8f0", background: "#fff", fontSize: 12, fontWeight: 700, color: "#7c3aed", cursor: "pointer" }}>
+                <Copy size={13} /> {copied ? "Copied" : "Copy"}
+              </button>
+            </div>
+            <button onClick={onClose} style={{ width: "100%", marginTop: 18, padding: "10px 0", borderRadius: 10, border: "none", background: "#7c3aed", fontSize: 13, fontWeight: 700, color: "#fff", cursor: "pointer" }}>Done</button>
+          </>
+        ) : (
+          <>
+            <div style={{ fontSize: 13, color: "#6b6b8a", lineHeight: 1.6 }}>
+              Their current password stops working right away and they&apos;re signed out of every device. You&apos;ll get a new temporary password to pass on.
+            </div>
+            {error && <div style={{ marginTop: 12, fontSize: 12, color: "#dc2626", fontWeight: 600 }}>{error}</div>}
+            <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
+              <button onClick={onClose} disabled={loading} style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid #e8e8f0", background: "#fff", fontSize: 13, fontWeight: 600, color: "#6b6b8a", cursor: loading ? "not-allowed" : "pointer" }}>Cancel</button>
+              <button onClick={reset} disabled={loading}
+                style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "none", background: "#7c3aed", fontSize: 13, fontWeight: 700, color: "#fff", cursor: loading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                <KeyRound size={14} /> {loading ? "Resetting…" : "Reset Password"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** Rough "Chrome on Windows"-style label from a user-agent string. */
 function describeDevice(ua: string | null): { label: string; kind: "phone" | "tablet" | "computer" } {
   if (!ua) return { label: "Unknown device", kind: "computer" };
@@ -1515,6 +1589,7 @@ function UsersPanel() {
   const [roleFilter, setRoleFilter] = useState<AccountUserRow["role"] | "all">("all");
   const [updatingApproval, setUpdatingApproval] = useState<string | null>(null);
   const [freezeTarget, setFreezeTarget] = useState<AccountUserRow | null>(null);
+  const [resetTarget, setResetTarget] = useState<AccountUserRow | null>(null);
   const [devicesTarget, setDevicesTarget] = useState<AccountUserRow | null>(null);
   const [whatsAppTarget, setWhatsAppTarget] = useState<AccountUserRow | null>(null);
   const [dueDrafts, setDueDrafts] = useState<Record<string, string>>({});
@@ -1650,6 +1725,7 @@ function UsersPanel() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {resetTarget && <ResetPasswordModal row={resetTarget} onClose={() => setResetTarget(null)} />}
       {freezeTarget && (
         <FreezeAccountModal
           row={freezeTarget}
@@ -1833,6 +1909,12 @@ function UsersPanel() {
                     <button onClick={() => updateApproval(row.id, "rejected")} disabled={updatingApproval === row.id}
                       style={{ padding: "7px 10px", borderRadius: 8, border: "1px solid #fecaca", background: "#fef2f2", color: "#dc2626", fontSize: 11, fontWeight: 800, cursor: updatingApproval === row.id ? "not-allowed" : "pointer" }}>
                       Disapprove
+                    </button>
+                  )}
+                  {row.role !== "admin" && (
+                    <button onClick={() => setResetTarget(row)} title="Set a new temporary password"
+                      style={{ padding: "7px 10px", borderRadius: 8, border: "1px solid #e9e3fb", background: "#fff", color: "#7c3aed", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+                      <KeyRound size={12} /> Reset password
                     </button>
                   )}
                   {row.role !== "admin" && !row.accountFrozen && (

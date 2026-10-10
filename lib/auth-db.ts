@@ -5,7 +5,7 @@
 
 import { db } from "@/lib/db";
 import type { InValue } from "@libsql/client";
-import { randomBytes, pbkdf2Sync, timingSafeEqual } from "crypto";
+import { randomBytes, randomInt, pbkdf2Sync, timingSafeEqual } from "crypto";
 
 // ─── Password hashing ─────────────────────────────────────────────────────────
 
@@ -333,6 +333,24 @@ export async function updateAccountFreeze(
   const updated = await getUserById(id);
   if (!updated) throw new Error("Failed to update account status.");
   return withoutPassword(updated);
+}
+
+/**
+ * Admin reset: replaces the password with a random temporary one, signs the account
+ * out everywhere, and returns the new password — the only time it exists in plain
+ * text. No 0/O/1/l/I, so it can be read out or typed from a phone without mistakes.
+ */
+export async function resetUserPassword(id: string): Promise<string> {
+  await ensureAuthTables();
+  const user = await getUserById(id);
+  if (!user) throw new Error("User not found.");
+  if (user.role === "admin") throw new Error("Admin passwords can't be reset here.");
+
+  const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+  const password = Array.from({ length: 12 }, () => alphabet[randomInt(alphabet.length)]).join("");
+  await db.execute({ sql: "UPDATE users SET password = ? WHERE id = ?", args: [hashPassword(password), id] });
+  await revokeAllSessionsForUser(id);
+  return password;
 }
 
 /** Revoke every active session for a user (used when an account is frozen). */

@@ -7,7 +7,7 @@
  */
 
 import { NextRequest } from "next/server";
-import { getAllUsers, getUserById, updateUserApprovalStatus, updateAccountFreeze, countActiveSessionsByUser, type ApprovalStatus } from "@/lib/auth-db";
+import { getAllUsers, getUserById, updateUserApprovalStatus, updateAccountFreeze, resetUserPassword, countActiveSessionsByUser, type ApprovalStatus } from "@/lib/auth-db";
 import { sendWelcomeEmail } from "@/lib/welcome-email";
 import { requireAdmin } from "@/lib/api-auth";
 import { getBillingAdminSummaries } from "@/lib/billing-db";
@@ -48,7 +48,7 @@ export async function PATCH(req: NextRequest) {
     return Response.json({ ok: false, error: "Unauthorized" }, { status: 403 });
   }
 
-  let body: { userId?: string; approvalStatus?: ApprovalStatus; action?: "freeze" | "unfreeze"; reason?: string };
+  let body: { userId?: string; approvalStatus?: ApprovalStatus; action?: "freeze" | "unfreeze" | "reset-password"; reason?: string };
   try {
     body = await req.json();
   } catch {
@@ -60,6 +60,12 @@ export async function PATCH(req: NextRequest) {
   }
 
   try {
+    if (body.action === "reset-password") {
+      // The plain password goes back to the admin once, in this response, and is never stored or logged.
+      const password = await resetUserPassword(body.userId);
+      return Response.json({ ok: true, password }, { headers: { "Cache-Control": "no-store" } });
+    }
+
     if (body.action === "freeze" || body.action === "unfreeze") {
       const frozen = body.action === "freeze";
       const reason = frozen ? body.reason?.trim() || "No reason provided." : null;
