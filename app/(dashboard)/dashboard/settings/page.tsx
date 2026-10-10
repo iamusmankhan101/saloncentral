@@ -8,6 +8,7 @@ import { rasterizeLogoForThermal } from "@/lib/escpos-raster";
 import { getActiveLocationFilter, locationName, updateActiveLocationDetails } from "@/lib/locations";
 import PageTitle from "@/components/page-title";
 import { updateCurrentPassword } from "@/lib/auth";
+import TwoStepSignIn from "@/components/two-step-sign-in";
 import { whatsAppConnected } from "@/lib/whatsapp-scheduler";
 
 const SECTIONS = [
@@ -262,120 +263,6 @@ function Security() {
           {saving ? "Updating…" : "Update Password"}
         </button>
       </div>
-    </div>
-  );
-}
-
-/** Owners and admins: how the sign-in code arrives (lib/two-factor.ts). Hidden for staff. */
-function TwoStepSignIn() {
-  const [status, setStatus] = useState<{ required: boolean; method?: "email" | "totp" } | null>(null);
-  const [setup, setSetup] = useState<{ qr: string; secret: string } | null>(null);
-  const [switching, setSwitching] = useState(false);
-  const [code, setCode] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [done, setDone] = useState("");
-
-  useEffect(() => {
-    fetch("/api/auth/2fa/setup", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((d) => d.ok && setStatus({ required: d.required, method: d.method }))
-      .catch(() => {});
-  }, []);
-
-  async function call(body: Record<string, string>) {
-    setBusy(true); setError("");
-    try {
-      const res = await fetch("/api/auth/2fa/setup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      const data = await res.json();
-      if (!data.ok) setError(data.error || "Something went wrong.");
-      return data.ok ? data : null;
-    } catch {
-      setError("Couldn't reach the server.");
-      return null;
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (!status?.required) return null;
-  const usingApp = status.method === "totp";
-  const box: CSSProperties = { padding: 16, borderRadius: 12, border: "1px solid #e9e3fb", background: "#faf8ff" };
-  const btn = (primary: boolean): CSSProperties => ({
-    padding: "9px 16px", borderRadius: 10, border: primary ? "none" : "1px solid #e3e0eb", fontSize: 13, fontWeight: 700,
-    background: primary ? "#7c3aed" : "#fff", color: primary ? "#fff" : "#6b6b8a", cursor: busy ? "not-allowed" : "pointer",
-  });
-  const codeInput = (
-    <input inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="123456" value={code}
-      onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-      style={{ ...inp, width: 140, letterSpacing: "0.3em", fontWeight: 700 }} />
-  );
-
-  return (
-    <div style={box}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 750, color: "#1a1a2e" }}>Two-step sign-in</div>
-          <div style={{ fontSize: 12, color: "#6b6b8a", marginTop: 3, lineHeight: 1.5 }}>
-            {usingApp
-              ? "On — you enter a code from your authenticator app every time you sign in."
-              : "On — we email you a 6-digit code every time you sign in."}
-          </div>
-        </div>
-        <span style={{ fontSize: 11, fontWeight: 800, color: "#059669", background: "#ecfdf5", padding: "4px 10px", borderRadius: 999, whiteSpace: "nowrap" }}>
-          {usingApp ? "Authenticator app" : "Email code"}
-        </span>
-      </div>
-
-      {done && <div style={{ marginTop: 12, fontSize: 13, color: "#059669", fontWeight: 600 }}>{done}</div>}
-
-      {!usingApp && !setup && (
-        <button style={{ ...btn(false), marginTop: 14 }} disabled={busy}
-          onClick={async () => { setDone(""); const d = await call({ action: "start" }); if (d) { setSetup({ qr: d.qr, secret: d.secret }); setCode(""); } }}>
-          Use an authenticator app instead
-        </button>
-      )}
-
-      {setup && (
-        <div style={{ marginTop: 14, display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
-          {/* eslint-disable-next-line @next/next/no-img-element -- data: URL QR code */}
-          <img src={setup.qr} alt="QR code for your authenticator app" width={160} height={160} style={{ borderRadius: 10, background: "#fff", border: "1px solid #eee" }} />
-          <div style={{ flex: 1, minWidth: 220, fontSize: 12.5, color: "#4a4a6a", lineHeight: 1.6 }}>
-            1. Scan this with Google Authenticator, Microsoft Authenticator or similar.<br />
-            Can&apos;t scan? Enter this key: <code style={{ fontWeight: 700, wordBreak: "break-all" }}>{setup.secret}</code><br />
-            2. Type the 6-digit code the app shows:
-            <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-              {codeInput}
-              <button style={btn(true)} disabled={busy || code.length !== 6}
-                onClick={async () => { const d = await call({ action: "confirm", code }); if (d) { setStatus({ required: true, method: "totp" }); setSetup(null); setCode(""); setDone("Authenticator app is set up — use it next time you sign in."); } }}>
-                {busy ? "Checking…" : "Turn on"}
-              </button>
-              <button style={btn(false)} disabled={busy} onClick={() => { setSetup(null); setCode(""); setError(""); }}>Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {usingApp && !switching && (
-        <button style={{ ...btn(false), marginTop: 14 }} onClick={() => { setSwitching(true); setDone(""); setCode(""); }}>
-          Switch back to email codes
-        </button>
-      )}
-      {usingApp && switching && (
-        <div style={{ marginTop: 14, fontSize: 12.5, color: "#4a4a6a" }}>
-          Enter the current code from your authenticator app to confirm:
-          <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-            {codeInput}
-            <button style={btn(true)} disabled={busy || code.length !== 6}
-              onClick={async () => { const d = await call({ action: "use-email", code }); if (d) { setStatus({ required: true, method: "email" }); setSwitching(false); setCode(""); setDone("Switched to email codes."); } }}>
-              {busy ? "Checking…" : "Switch to email"}
-            </button>
-            <button style={btn(false)} disabled={busy} onClick={() => { setSwitching(false); setCode(""); setError(""); }}>Cancel</button>
-          </div>
-        </div>
-      )}
-
-      {error && <div style={{ marginTop: 10, fontSize: 12, color: "#dc2626", fontWeight: 600 }}>{error}</div>}
     </div>
   );
 }

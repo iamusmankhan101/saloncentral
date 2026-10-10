@@ -8,6 +8,8 @@
  *   email — a 6-digit code emailed to the account, valid 10 minutes (default)
  *   totp  — a code from an authenticator app, set up in Settings → Security
  * A code is asked for on every sign-in; devices aren't remembered.
+ * It's on by default and each owner/admin can switch it off in Account → Security
+ * (switching off needs a code too, so a stolen session can't do it).
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -25,8 +27,14 @@ const CODE_TTL_MS = 10 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
 const MAX_SENDS = 4; // first email + 3 resends
 
-export function needsTwoFactor(user: Pick<AuthUser, "role">): boolean {
+/** Roles that can use two-step sign-in at all (staff never do). */
+export function canUseTwoFactor(user: Pick<AuthUser, "role">): boolean {
   return user.role === "owner" || user.role === "admin";
+}
+
+/** Whether this sign-in needs a code: an owner/admin who hasn't switched it off. */
+export async function needsTwoFactor(user: Pick<AuthUser, "id" | "role">): Promise<boolean> {
+  return canUseTwoFactor(user) && (await readSettings(user.id)).enabled;
 }
 
 let challengesReady: Promise<void> | null = null;
@@ -117,15 +125,35 @@ function decryptSecret(stored: string): string | null {
 
 // ─── Per-user settings ────────────────────────────────────────────────────────
 
-async function readSettings(userId: string): Promise<{ method: TwoFactorMethod; secret: string | null; pending: string | null }> {
+async function readSettings(userId: string): Promise<{ enabled: boolean; method: TwoFactorMethod; secret: string | null; pending: string | null }> {
   await ensureChallengesTable();
-  const res = await db.execute({ sql: "SELECT twofa_method, totp_secret, totp_pending FROM users WHERE id = ?", args: [userId] });
+  const res = await db.execute({ sql: "SELECT twofa_enabled, twofa_method, totp_secret, totp_pending FROM users WHERE id = ?", args: [userId] });
   const row = res.rows[0];
   const secret = row?.totp_secret ? decryptSecret(String(row.totp_secret)) : null;
   const pending = row?.totp_pending ? decryptSecret(String(row.totp_pending)) : null;
   // An unreadable authenticator secret falls back to email rather than locking the owner out.
   const method: TwoFactorMethod = row?.twofa_method === "totp" && secret ? "totp" : "email";
-  return { method, secret, pending };
+  return { enabled: Number(row?.twofa_enabled ?? 1) !== 0, method, secret, pending };
+}
+
+export async function getTwoFactorStatus(userId: string): Promise<{ enabled: boolean; method: TwoFactorMethod }> {
+  const { enabled, method } = await readSettings(userId);
+  return { enabled, method };
+}
+
+/** On is instant. Off goes through confirmTwoFactorOff with a code from startChallenge. */
+export async function setTwoFactorEnabled(userId: string, enabled: boolean): Promise<void> {
+  await ensureChallengesTable();
+  await db.execute({ sql: "UPDATE users SET twofa_enabled = ? WHERE id = ?", args: [enabled ? 1 : 0, userId] });
+}
+
+/** Turns it off once the code for a challenge started by this same user checks out. */
+export async function confirmTwoFactorOff(userId: string, challengeId: string, code: string): Promise<string | null> {
+  const { userId: owner, error } = await verifyChallenge(challengeId, code);
+  if (!owner) return error ?? "That code isn't right.";
+  if (owner !== userId) return "That code isn't for this account.";
+  await setTwoFactorEnabled(userId, false);
+  return null;
 }
 
 export async function getTwoFactorMethod(userId: string): Promise<TwoFactorMethod> {

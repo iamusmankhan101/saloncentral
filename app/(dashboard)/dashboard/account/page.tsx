@@ -5,6 +5,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { Banknote, Bot, Check, ChevronLeft, ChevronRight, Clock, Copy, ImageIcon, KeyRound, Lock, LogOut, MapPin, Plus, Save, Shield, Smartphone, Store, Trash2, User, UserCog, Wand2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { AuthUser, getCurrentUser, signOut, updateCurrentPassword, updateCurrentUser } from "@/lib/auth";
+import TwoStepSignIn from "@/components/two-step-sign-in";
 import { saveSettings, settingsStore } from "@/lib/settings-store";
 import { DEFAULT_WEEKLY_OFF_DAYS, DEFAULT_PEAK_DAYS, DEFAULT_PEAK_DAY_MULTIPLIER } from "@/lib/attendance";
 import MobilePageHeader from "@/components/mobile-page-header";
@@ -809,6 +810,8 @@ function Security() {
   return (
     <section>
       <h2 style={{ margin: "0 0 24px", color: "#1d1d2f", fontSize: 20, fontWeight: 900 }}>Security</h2>
+      <div style={{ marginBottom: 28 }}><TwoStepSignIn /></div>
+      <h3 style={{ margin: "0 0 16px", color: "#1d1d2f", fontSize: 15, fontWeight: 800 }}>Change password</h3>
       <div style={{ display: "grid", gap: 18 }}>
         <Field label="Current Password"><input type="password" style={inputStyle} value={form.current} onChange={(event) => setForm((current) => ({ ...current, current: event.target.value }))} placeholder="••••••••" /></Field>
         <Field label="New Password" hint="Use at least 8 characters."><input type="password" style={inputStyle} value={form.next} onChange={(event) => setForm((current) => ({ ...current, next: event.target.value }))} placeholder="••••••••" /></Field>

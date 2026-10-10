@@ -115,7 +115,7 @@ export async function GET(req: NextRequest) {
   }
 
   // Owners and admins confirm a code first: the sign-in page picks the challenge up from the URL.
-  if (needsTwoFactor(user)) {
+  if (await needsTwoFactor(user)) {
     let challenge;
     try {
       challenge = await startChallenge(user);

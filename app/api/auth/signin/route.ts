@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
     await rateLimitClear("signin-email", emailKey);
 
     // Owners and admins confirm a code before any session exists (lib/two-factor.ts).
-    if (needsTwoFactor(user)) {
+    if (await needsTwoFactor(user)) {
       const twoFactor = await startChallenge(user);
       await logSigninEvent(req, "server", "2fa_challenge", email, `method=${twoFactor.method}`);
       return Response.json({ ok: true, twoFactor });

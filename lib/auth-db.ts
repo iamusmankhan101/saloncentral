@@ -69,6 +69,8 @@ async function ensureAuthTablesUncached(): Promise<void> {
   await db.execute("ALTER TABLE users ADD COLUMN twofa_method TEXT NOT NULL DEFAULT 'email'").catch(() => {});
   await db.execute("ALTER TABLE users ADD COLUMN totp_secret TEXT").catch(() => {});
   await db.execute("ALTER TABLE users ADD COLUMN totp_pending TEXT").catch(() => {});
+  // On by default for owners and admins; each can switch it off in Account → Security.
+  await db.execute("ALTER TABLE users ADD COLUMN twofa_enabled INTEGER NOT NULL DEFAULT 1").catch(() => {});
 
   // Create index for faster email lookups
   await db.execute(`
