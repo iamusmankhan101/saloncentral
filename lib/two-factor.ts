@@ -141,7 +141,20 @@ export async function getTwoFactorStatus(userId: string): Promise<{ enabled: boo
   return { enabled, method };
 }
 
-/** On is instant. Off goes through confirmTwoFactorOff with a code from startChallenge. */
+/** Every account's setting, for the admin Users tab (one query, not one per row). */
+export async function getAllTwoFactorStatuses(): Promise<Map<string, { enabled: boolean; method: TwoFactorMethod }>> {
+  await ensureChallengesTable();
+  const res = await db.execute("SELECT id, twofa_enabled, twofa_method, totp_secret FROM users");
+  return new Map(res.rows.map((r) => [String(r.id), {
+    enabled: Number(r.twofa_enabled ?? 1) !== 0,
+    method: r.twofa_method === "totp" && r.totp_secret ? "totp" : "email",
+  }]));
+}
+
+/**
+ * On is instant. A user turning it off goes through confirmTwoFactorOff with a code;
+ * a platform admin can set it directly from the Users tab.
+ */
 export async function setTwoFactorEnabled(userId: string, enabled: boolean): Promise<void> {
   await ensureChallengesTable();
   await db.execute({ sql: "UPDATE users SET twofa_enabled = ? WHERE id = ?", args: [enabled ? 1 : 0, userId] });
