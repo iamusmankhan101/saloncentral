@@ -9,7 +9,7 @@ import DemoModal from "./DemoModal";
 const CONTACT_SALES_URL = "https://wa.me/+923029646928?text=Hi%2C%20I%27m%20interested%20in%20a%20Salon%20Central%20plan.";
 
 // Pointly is the sibling POS product, with its own site.
-const POINTLY_URL = "https://pointlypos.saloncentral.xyz/";
+const POINTLY_URL = "https://pointlypos.site/";
 
 const featureLinks = [
   { label: "Appointment Scheduling", desc: "Calendar, bookings & reminders", href: "/features/appointment-scheduling", Icon: CalendarDays },

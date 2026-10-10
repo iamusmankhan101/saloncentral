@@ -2,7 +2,8 @@ import Image from "next/image";
 import styles from "./TrustedBy.module.css";
 
 // `inset`: logos on a white background — keep the whole mark visible and outline the circle.
-const LOGOS = [
+// `bg`: an inset logo on its own coloured background — the circle is filled to match.
+const LOGOS: { src: string; alt: string; inset?: boolean; bg?: string }[] = [
   { src: "/lounge-8-salon-logo.png", alt: "Lounge 8 Salon" },
   { src: "/sonias-bridal-experts-logo.png", alt: "Sonia's The Bridal Experts" },
   { src: "/HA SALON.png", alt: "HA Salon", inset: true },
@@ -10,7 +11,7 @@ const LOGOS = [
   { src: "/makeup-by-sara-logo.jpg", alt: "Makeup by Sara", inset: true },
   { src: "/prestige-salon-logo.jpg", alt: "Prestige Salon & Spa" },
   { src: "/the-velvet-chair-logo.jpg", alt: "The Velvet Chair" },
-  { src: "/morning glory logo.png", alt: "Morning Glory" },
+  { src: "/morning-glory-logo.webp", alt: "Morning Glory", inset: true, bg: "#eadacc" },
 ];
 
 export default function TrustedBy() {
@@ -31,6 +32,7 @@ export default function TrustedBy() {
                     width={500}
                     height={500}
                     className={`${styles.logoImage} ${logo.inset ? styles.logoImageInset : ""}`}
+                    style={logo.bg ? { background: logo.bg } : undefined}
                   />
                 </div>
               ))}
