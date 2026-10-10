@@ -8,6 +8,7 @@
 
 import { db } from "@/lib/db";
 import { snapshotFullDatabase, snapshotSalonDataForOwner } from "@/lib/data-backup";
+import { invalidatePublicSalon } from "@/lib/public-salon-cache";
 
 // Relational tables (lib/db-schema.ts) scoped by a plain `user_id` column.
 const OWNER_SCOPED_TABLES = [
@@ -79,6 +80,7 @@ export async function deleteSalonAccount(ownerId: string): Promise<DeleteAccount
     sql: "DELETE FROM salon_data WHERE entity = ? OR (entity >= ? AND entity < ?)",
     args: [ownerId, `${ownerId}_`, `${ownerId}\``],
   }).catch(() => {});
+  invalidatePublicSalon(ownerId);
 
   await db.execute({ sql: "DELETE FROM billing_invoices WHERE user_id = ?", args: [ownerId] }).catch(() => {});
   await db.execute({ sql: "DELETE FROM billing_users WHERE id = ?", args: [ownerId] }).catch(() => {});

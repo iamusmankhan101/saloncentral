@@ -13,6 +13,7 @@ import { requireAdmin } from "@/lib/api-auth";
 import { backupExistingSalonData } from "@/lib/data-backup";
 import { checkWhatsAppProvider, ycloudConfigOf, type WhatsAppProvider } from "@/lib/whatsapp-provider";
 import { activeCredential, isProviderField, providerSetupOf } from "@/lib/whatsapp-credentials";
+import { invalidatePublicSalon } from "@/lib/public-salon-cache";
 
 type Json = Record<string, unknown>;
 const PROVIDERS = new Set(["wasender", "botsailor", "zaptick", "chakra", "ycloud"]);
@@ -72,5 +73,6 @@ export async function POST(req: NextRequest) {
     sql: "INSERT OR REPLACE INTO salon_data (entity, data, updated_at) VALUES (?, ?, ?)",
     args: [`${userId}_settings`, JSON.stringify({ ...settings, wasender: nextWs }), new Date().toISOString()],
   });
+  invalidatePublicSalon(userId);
   return Response.json({ ok: true, connected: !!activeCredential(nextWs) });
 }

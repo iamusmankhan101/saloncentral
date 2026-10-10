@@ -13,6 +13,7 @@ import { db } from "@/lib/db";
 import { resolveActor } from "@/lib/api-auth";
 import { mergeSalonSettingsSave, settingsForSalon } from "@/lib/whatsapp-credentials";
 import { backupExistingSalonData } from "@/lib/data-backup";
+import { invalidatePublicSalon } from "@/lib/public-salon-cache";
 
 async function ensureTable() {
   await db.execute(`
@@ -106,6 +107,7 @@ export async function POST(req: NextRequest) {
       sql: "INSERT OR REPLACE INTO salon_data (entity, data, updated_at) VALUES (?, ?, ?)",
       args: [`${actor.userId}_settings`, JSON.stringify(toSave), new Date().toISOString()],
     });
+    invalidatePublicSalon(actor.userId);
     return Response.json({ ok: true });
   } catch (err) {
     console.error("[settings] POST error:", err);

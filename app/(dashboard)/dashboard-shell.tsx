@@ -906,14 +906,20 @@ export default function DashboardShell({ children }: { children: React.ReactNode
     // Poll for new online bookings every 5 s — catches bookings from external devices
     const user = getCurrentUser();
     let lastSeenId: string | null = null;
+    // When the appointments last changed on the server — the poll sends it back so an
+    // unchanged list costs one tiny read instead of re-sending every appointment.
+    let lastUpdatedAt = "";
 
     async function pollNewBookings() {
       if (!user) return;
       try {
-        const res = await fetch(`/api/public/salon?salonId=${encodeURIComponent(user.salonOwnerId || user.id)}`);
+        const salonId = encodeURIComponent(user.salonOwnerId || user.id);
+        const res = await fetch(`/api/public/salon?salonId=${salonId}&only=appointments&since=${encodeURIComponent(lastUpdatedAt)}`);
         if (!res.ok) return;
-        const data = await res.json() as { ok: boolean; appointments?: Array<{ id: string; clientName: string; serviceNames: string[]; date: string; startTime: string; totalAmount: number; source?: string }> };
-        if (!data.ok || !Array.isArray(data.appointments) || data.appointments.length === 0) return;
+        const data = await res.json() as { ok: boolean; unchanged?: boolean; updatedAt?: string; appointments?: Array<{ id: string; clientName: string; serviceNames: string[]; date: string; startTime: string; totalAmount: number; source?: string }> };
+        if (!data.ok || data.unchanged) return;
+        lastUpdatedAt = data.updatedAt ?? "";
+        if (!Array.isArray(data.appointments) || data.appointments.length === 0) return;
 
         const latest = data.appointments[0]; // newest is first (prepended on save)
         if (lastSeenId === null) {

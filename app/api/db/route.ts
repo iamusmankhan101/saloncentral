@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { resolveActor } from "@/lib/api-auth";
 import { backupExistingSalonData } from "@/lib/data-backup";
+import { invalidatePublicSalon } from "@/lib/public-salon-cache";
 
 const DELETED_RECORDS_ENTITY = "deleted_records";
 
@@ -288,6 +289,8 @@ export async function POST(req: NextRequest) {
       sql: "INSERT OR REPLACE INTO salon_data (entity, data, updated_at) VALUES (?, ?, ?)",
       args: [key, JSON.stringify(payload), new Date().toISOString()],
     });
+    // Services and staff feed the public booking page's cache (lib/public-salon-cache.ts).
+    if (entity === "services" || entity === "staff") invalidatePublicSalon(userId);
 
     // Keep the relational clients table in sync so phone updates are reflected
     // in loyalty card lookups and Google Wallet passes.
@@ -386,6 +389,7 @@ export async function DELETE(req: NextRequest) {
       await backupExistingSalonData(key, userId, "before-write");
       await db.execute({ sql: "DELETE FROM salon_data WHERE entity = ?", args: [key] });
     }
+    invalidatePublicSalon(userId);
     return Response.json({ ok: true, deletedKeys: keys.length });
   } catch (err) {
     console.error("[db] DELETE error:", err);

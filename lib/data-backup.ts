@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { encryptValue, encryptionEnabled } from "@/lib/data-crypto";
+import { invalidatePublicSalon } from "@/lib/public-salon-cache";
 
 export type BackupReason =
   | "before-write"
@@ -283,6 +284,7 @@ export async function restoreSalonDataBackup(backupIdToRestore: string): Promise
     sql: "INSERT OR REPLACE INTO salon_data (entity, data, updated_at) VALUES (?, ?, ?)",
     args: [backup.entity, backup.data, new Date().toISOString()],
   });
+  invalidatePublicSalon(backup.userId);
   return backup;
 }
 
@@ -408,6 +410,7 @@ export async function restoreSalonBackupBundle(bundleId: string): Promise<Restor
       args: [entry.entity, entry.data, now],
     });
   }
+  invalidatePublicSalon(userId);
 
   return {
     id: row.id as string,
