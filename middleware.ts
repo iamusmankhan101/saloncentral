@@ -19,6 +19,8 @@ const SECRET_MISCONFIGURED_IN_PROD = process.env.NODE_ENV === "production" && !S
 
 const DASHBOARD = /^\/dashboard(\/|$)/;
 const AUTH_PAGES = new Set(["/sign-in", "/sign-up"]);
+// Public booking pages, which salons may embed in their own sites (WordPress plugin).
+const EMBEDDABLE = /^\/(book\/|online-booking\/?$)/;
 
 // ─── Edge-compatible token verification ──────────────────────────────────────
 // Token format (from lib/session.ts): base64url(userId:expiry).hexHMAC
@@ -144,6 +146,7 @@ export async function middleware(req: NextRequest) {
     "img-src 'self' data: blob: https:",
     "connect-src 'self' https://*.turso.io wss://*.turso.io https://api.resend.com https://graph.facebook.com https://api.qrserver.com https://api.wasenderapi.com",
     "frame-src 'none'",
+    EMBEDDABLE.test(pathname) ? "frame-ancestors *" : "frame-ancestors 'none'",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",

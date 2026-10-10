@@ -405,3 +405,7 @@ html:has(.pageWrapper), body:has(.pageWrapper) { background: #f6f5f9; }
 .payProofOk { display: flex; align-items: center; gap: 8px; color: #059669; font-size: 13px; font-weight: 700; }
 .paySpin { animation: paySpin 0.9s linear infinite; }
 @keyframes paySpin { to { transform: rotate(360deg); } }
+
+/* Embedded in a salon's website: size to the content, not the frame (the host
+   page sets the frame's height from it — a min-height of 100vh would only grow). */
+html[data-embedded] .pageWrapper { min-height: 0; }

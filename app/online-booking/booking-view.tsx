@@ -438,8 +438,27 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
     return () => { cancelled = true; };
   }, [loaded, salonAccent, salonLogo]);
 
+  // Embedded in a salon's own website (WordPress plugin): tell the host page how tall
+  // the form is, so its frame fits without an inner scrollbar, and when the step changes,
+  // so it can bring the form back into view. Height and step only — nothing private.
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const embedded = typeof window !== "undefined" && window.parent !== window;
+  useEffect(() => {
+    if (!embedded || !wrapperRef.current) return;
+    document.documentElement.dataset.embedded = "";
+    const send = () => window.parent.postMessage({ type: "salon-central:height", height: wrapperRef.current?.offsetHeight ?? 0 }, "*");
+    const observer = new ResizeObserver(send);
+    observer.observe(wrapperRef.current);
+    send();
+    return () => observer.disconnect();
+  }, [embedded]);
+  useEffect(() => {
+    if (embedded) window.parent.postMessage({ type: "salon-central:step", step }, "*");
+  }, [embedded, step]);
+
   return (
     <div
+      ref={wrapperRef}
       className="pageWrapper"
       data-ready={theme ? "" : undefined}
       style={(theme?.vars ?? {}) as React.CSSProperties}
