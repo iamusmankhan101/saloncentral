@@ -354,6 +354,30 @@ html:has(.pageWrapper), body:has(.pageWrapper) { background: #f6f5f9; }
 .bkFooter { text-align: center; font-size: 11.5px; color: #a3a3b5; padding: 0 16px 32px; }
 .bkFooter strong { color: #6b7280; }
 
+/* ─── Grid layout (?layout=grid): categories as tiles ─────────────────── */
+.svcTiles {
+  display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  padding: 12px;
+}
+.svcTile {
+  position: relative; text-align: left; cursor: pointer;
+  display: flex; flex-direction: column; justify-content: center;
+  min-height: 70px; padding: 12px 14px;
+  border: 1.5px solid #ece9f2; border-radius: 14px; background: #fff;
+  font: inherit; color: inherit;
+  transition: border-color .15s, background .15s;
+}
+.svcTile:hover { border-color: var(--bk-line); background: var(--bk-softer); }
+.svcTile.active { border-color: var(--bk-accent); background: var(--bk-soft); }
+.svcTile.active .svcGroupName { color: var(--bk-deep); }
+.svcTileBadge { position: absolute; top: 8px; right: 8px; }
+.svcTilePanel { border-top: 1px solid #f0eef5; }
+.svcTilePanelHead {
+  padding: 12px 18px 4px; font-size: 12px; font-weight: 800;
+  text-transform: uppercase; letter-spacing: .06em; color: var(--bk-accent);
+}
+
 /* ─── Phones ───────────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
   .bkHero        { padding: 28px 16px 92px; }
@@ -368,6 +392,7 @@ html:has(.pageWrapper), body:has(.pageWrapper) { background: #f6f5f9; }
   .stepTitle     { font-size: 18px; }
   .stepIconWrap  { width: 38px; height: 38px; }
   .dayStrip      { margin: 0 -16px; padding: 2px 16px 4px; }
+  .svcTiles      { grid-template-columns: repeat(2, 1fr); padding: 10px; gap: 8px; }
   .timeGrid      { grid-template-columns: repeat(3, 1fr); }
   .svcRow, .svcGroupHead { padding-left: 13px; padding-right: 13px; }
   /* On a phone the action bar pins to the bottom of the screen, so Continue is

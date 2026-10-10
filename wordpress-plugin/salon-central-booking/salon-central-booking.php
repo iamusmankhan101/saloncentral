@@ -3,7 +3,7 @@
  * Plugin Name:       Salon Central Booking
  * Plugin URI:        https://saloncentral.xyz
  * Description:       Adds your Salon Central online booking form to any page with the Salon Central Booking block or the [salon_central_booking] shortcode. Bookings go straight into your Salon Central dashboard.
- * Version:           1.1.0
+ * Version:           1.3.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Salon Central
@@ -18,6 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 define( 'SCB_OPTION', 'salon_central_booking_url' );
 define( 'SCB_COLOR_OPTION', 'salon_central_booking_color' );
+define( 'SCB_LAYOUT_OPTION', 'salon_central_booking_layout' );
 
 /**
  * The salon's booking link, from the shortcode's url="" or the settings page.
@@ -41,19 +42,36 @@ function scb_color( $override = '' ) {
 	return $color ? $color : scb_clean_color( get_option( SCB_COLOR_OPTION, '' ) );
 }
 
-/** The link the frame loads: the booking link, plus the button colour when one is chosen. */
-function scb_frame_url( $url, $color ) {
-	return $color ? add_query_arg( 'accent', substr( $color, 1 ), $url ) : $url;
+/** 'list' (one row per category, the default) or 'grid' (category tiles — a much shorter form). */
+function scb_clean_layout( $layout ) {
+	return 'grid' === $layout ? 'grid' : 'list';
+}
+
+/** The layout: the shortcode's/block's layout="" if set, else the settings page's. */
+function scb_layout( $override = '' ) {
+	return $override ? scb_clean_layout( $override ) : scb_clean_layout( get_option( SCB_LAYOUT_OPTION, 'list' ) );
+}
+
+/** The link the frame loads: the booking link, plus the button colour and layout when chosen. */
+function scb_frame_url( $url, $color, $layout = 'list' ) {
+	if ( $color ) {
+		$url = add_query_arg( 'accent', substr( $color, 1 ), $url );
+	}
+	if ( 'grid' === $layout ) {
+		$url = add_query_arg( 'layout', 'grid', $url );
+	}
+	return $url;
 }
 
 /**
  * [salon_central_booking] — optional attributes:
  *   url="https://app.saloncentral.xyz/book/your-salon"  (overrides the saved link)
  *   color="#b45309"                                      (button colour, overrides the saved one)
+ *   layout="grid"                                        (category tiles instead of a list; or "list")
  *   height="900"                                         (starting height in px, before it auto-fits)
  */
 function scb_shortcode( $atts ) {
-	$atts = shortcode_atts( array( 'url' => '', 'color' => '', 'height' => '900' ), $atts, 'salon_central_booking' );
+	$atts = shortcode_atts( array( 'url' => '', 'color' => '', 'layout' => '', 'height' => '900' ), $atts, 'salon_central_booking' );
 	$url  = scb_booking_url( $atts['url'] );
 
 	if ( ! $url ) {
@@ -71,7 +89,7 @@ function scb_shortcode( $atts ) {
 
 	return sprintf(
 		'<div class="scb-wrap"><iframe class="scb-frame" src="%1$s" title="%2$s" loading="lazy" style="width:100%%;height:%3$dpx;border:0;display:block;" allow="clipboard-write"></iframe></div>',
-		esc_url( scb_frame_url( $url, scb_color( $atts['color'] ) ) ),
+		esc_url( scb_frame_url( $url, scb_color( $atts['color'] ), scb_layout( $atts['layout'] ) ) ),
 		esc_attr__( 'Book an appointment', 'salon-central-booking' ),
 		$height
 	);
@@ -134,7 +152,7 @@ function scb_register_block() {
     icon: "calendar-alt",
     category: "widgets",
     keywords: ["booking", "appointment", "salon"],
-    attributes: { url: { type: "string", default: "" }, color: { type: "string", default: "" } },
+    attributes: { url: { type: "string", default: "" }, color: { type: "string", default: "" }, layout: { type: "string", default: "" } },
     supports: { html: false, align: ["wide", "full"] },
     edit: function (props) {
       var blockProps = blockEditor.useBlockProps({
@@ -148,6 +166,18 @@ function scb_register_block() {
               help: __("Leave empty to use the link from Settings → Salon Central Booking.", "salon-central-booking"),
               value: props.attributes.url,
               onChange: function (url) { props.setAttributes({ url: url }); }
+            })
+          ),
+          el(components.PanelBody, { title: __("Layout", "salon-central-booking") },
+            el(components.SelectControl, {
+              label: __("Services", "salon-central-booking"),
+              value: props.attributes.layout,
+              options: [
+                { label: __("Same as Settings", "salon-central-booking"), value: "" },
+                { label: __("List — one row per category", "salon-central-booking"), value: "list" },
+                { label: __("Grid — category tiles (shorter)", "salon-central-booking"), value: "grid" }
+              ],
+              onChange: function (layout) { props.setAttributes({ layout: layout }); }
             })
           ),
           el(components.PanelBody, { title: __("Button colour", "salon-central-booking") },
@@ -178,13 +208,15 @@ JS
 			'editor_script'   => 'scb-block-editor',
 			'attributes'      => array(
 				'url'   => array( 'type' => 'string', 'default' => '' ),
-				'color' => array( 'type' => 'string', 'default' => '' ),
+				'color'  => array( 'type' => 'string', 'default' => '' ),
+				'layout' => array( 'type' => 'string', 'default' => '' ),
 			),
 			'render_callback' => function ( $attributes ) {
 				return scb_shortcode(
 					array(
 						'url'   => isset( $attributes['url'] ) ? $attributes['url'] : '',
-						'color' => isset( $attributes['color'] ) ? $attributes['color'] : '',
+						'color'  => isset( $attributes['color'] ) ? $attributes['color'] : '',
+						'layout' => isset( $attributes['layout'] ) ? $attributes['layout'] : '',
 					)
 				);
 			},
@@ -221,14 +253,75 @@ function scb_register_color_setting() {
 }
 add_action( 'admin_init', 'scb_register_color_setting' );
 
-/** WordPress's own colour picker, on this plugin's settings page only. */
+function scb_register_layout_setting() {
+	register_setting(
+		'scb_settings',
+		SCB_LAYOUT_OPTION,
+		array(
+			'type'              => 'string',
+			'sanitize_callback' => 'scb_clean_layout',
+			'default'           => 'list',
+		)
+	);
+}
+add_action( 'admin_init', 'scb_register_layout_setting' );
+
+/**
+ * Settings page only: WordPress's own colour picker, and desktop + phone previews
+ * that follow the link, layout and colour fields as they change (before saving).
+ */
 function scb_admin_assets( $hook ) {
 	if ( 'settings_page_salon-central-booking' !== $hook ) {
 		return;
 	}
 	wp_enqueue_style( 'wp-color-picker' );
 	wp_enqueue_script( 'wp-color-picker' );
-	wp_add_inline_script( 'wp-color-picker', 'jQuery(function ($) { $(".scb-color").wpColorPicker(); });' );
+	wp_add_inline_script(
+		'wp-color-picker',
+		<<<'JS'
+jQuery(function ($) {
+  var frames = $(".scb-preview-frame"), timer;
+  // Same link the plugin builds on the site (scb_frame_url), from the unsaved fields.
+  function previewSrc(color) {
+    var url;
+    try { url = new URL($("#scb-url").val().trim()); } catch (e) { return ""; }
+    if (url.protocol !== "https:") return "";
+    var c = color !== undefined ? color : $("#scb-color").val();
+    if (/^#[0-9a-f]{6}$/i.test(c)) url.searchParams.set("accent", c.slice(1).toLowerCase());
+    if ($("input[name='salon_central_booking_layout']:checked").val() === "grid") url.searchParams.set("layout", "grid");
+    return url.toString();
+  }
+  function refresh(color) {
+    clearTimeout(timer);
+    timer = setTimeout(function () {
+      var src = previewSrc(color);
+      if (src) frames.each(function () { if (this.src !== src) this.src = src; });
+    }, 400);
+  }
+  $(".scb-color").wpColorPicker({
+    change: function (e, ui) { refresh(ui.color.toString()); },
+    clear: function () { refresh(""); }
+  });
+  $("#scb-url").on("input", function () { refresh(); });
+  $("input[name='salon_central_booking_layout']").on("change", function () { refresh(); });
+});
+JS
+	);
+	wp_add_inline_style(
+		'wp-color-picker',
+		'.scb-previews{display:flex;flex-wrap:wrap;gap:32px;align-items:flex-start;margin-top:12px}'
+		. '.scb-device{margin:0}.scb-device figcaption{font-weight:600;margin:0 0 8px;color:#1d2327}'
+		// Desktop: a 1200px-wide page shown at half size in a browser-style frame.
+		. '.scb-browser{width:600px;max-width:100%;border:1px solid #c3c4c7;border-radius:10px;overflow:hidden;background:#fff}'
+		. '.scb-bar{height:26px;background:#f0f0f1;display:flex;gap:6px;align-items:center;padding:0 12px}'
+		. '.scb-bar i{display:block;width:9px;height:9px;border-radius:50%;background:#c3c4c7}'
+		. '.scb-desktop .scb-viewport{width:600px;height:640px;overflow:hidden}'
+		. '.scb-desktop iframe{width:1200px;height:1280px;border:0;transform:scale(.5);transform-origin:0 0}'
+		// Phone: a 375px-wide screen at 80% in a phone outline.
+		. '.scb-phone{width:300px;padding:10px;border-radius:38px;background:#1d2327}'
+		. '.scb-mobile .scb-viewport{width:300px;height:608px;overflow:hidden;border-radius:28px;background:#fff}'
+		. '.scb-mobile iframe{width:375px;height:760px;border:0;transform:scale(.8);transform-origin:0 0}'
+	);
 }
 add_action( 'admin_enqueue_scripts', 'scb_admin_assets' );
 
@@ -273,6 +366,18 @@ function scb_render_settings_page() {
 					</td>
 				</tr>
 				<tr>
+					<th scope="row"><?php esc_html_e( 'Layout', 'salon-central-booking' ); ?></th>
+					<td>
+						<?php $layout = scb_layout(); ?>
+						<fieldset>
+							<label><input type="radio" name="<?php echo esc_attr( SCB_LAYOUT_OPTION ); ?>" value="list" <?php checked( 'list', $layout ); ?> />
+								<?php esc_html_e( 'List — one row per service category', 'salon-central-booking' ); ?></label><br />
+							<label><input type="radio" name="<?php echo esc_attr( SCB_LAYOUT_OPTION ); ?>" value="grid" <?php checked( 'grid', $layout ); ?> />
+								<?php esc_html_e( 'Grid — categories as tiles, a much shorter form', 'salon-central-booking' ); ?></label>
+						</fieldset>
+					</td>
+				</tr>
+				<tr>
 					<th scope="row"><label for="scb-color"><?php esc_html_e( 'Button colour', 'salon-central-booking' ); ?></label></th>
 					<td>
 						<input id="scb-color" type="text" class="scb-color" name="<?php echo esc_attr( SCB_COLOR_OPTION ); ?>"
@@ -289,9 +394,28 @@ function scb_render_settings_page() {
 		<p><?php esc_html_e( 'Using the Classic editor or a page builder? Paste this shortcode instead:', 'salon-central-booking' ); ?> <code>[salon_central_booking]</code></p>
 
 		<?php if ( $url ) : ?>
+			<?php $preview = scb_frame_url( $url, scb_color(), scb_layout() ); ?>
 			<h2><?php esc_html_e( 'Preview', 'salon-central-booking' ); ?></h2>
-			<iframe src="<?php echo esc_url( scb_frame_url( $url, scb_color() ) ); ?>" title="<?php esc_attr_e( 'Booking form preview', 'salon-central-booking' ); ?>"
-				style="width:100%;max-width:520px;height:640px;border:1px solid #dcdcde;border-radius:8px;background:#fff;"></iframe>
+			<p class="description"><?php esc_html_e( 'Updates as you change the layout or colour above. Click Save Changes to use them on your website.', 'salon-central-booking' ); ?></p>
+			<div class="scb-previews">
+				<figure class="scb-device scb-desktop">
+					<figcaption><?php esc_html_e( 'Desktop', 'salon-central-booking' ); ?></figcaption>
+					<div class="scb-browser">
+						<div class="scb-bar"><i></i><i></i><i></i></div>
+						<div class="scb-viewport">
+							<iframe class="scb-preview-frame" src="<?php echo esc_url( $preview ); ?>" title="<?php esc_attr_e( 'Desktop preview', 'salon-central-booking' ); ?>"></iframe>
+						</div>
+					</div>
+				</figure>
+				<figure class="scb-device scb-mobile">
+					<figcaption><?php esc_html_e( 'Mobile', 'salon-central-booking' ); ?></figcaption>
+					<div class="scb-phone">
+						<div class="scb-viewport">
+							<iframe class="scb-preview-frame" src="<?php echo esc_url( $preview ); ?>" title="<?php esc_attr_e( 'Mobile preview', 'salon-central-booking' ); ?>"></iframe>
+						</div>
+					</div>
+				</figure>
+			</div>
 		<?php endif; ?>
 	</div>
 	<?php

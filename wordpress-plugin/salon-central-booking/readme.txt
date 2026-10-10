@@ -4,7 +4,7 @@ Tags: booking, appointments, salon, spa, beauty
 Requires at least: 5.8
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 1.1.0
+Stable tag: 1.3.0
 License: GPLv2 or later
 
 Show your Salon Central online booking form on your website. Bookings go straight into your Salon Central dashboard.
@@ -29,10 +29,19 @@ Yes. In the block's sidebar, fill in "Different link for this block". With the s
 = Can I change the button colour? =
 Yes. Settings → Salon Central Booking → Button colour sets it for every form. A single block can have its own colour in the block's sidebar, or with the shortcode: [salon_central_booking color="#b45309"]. Leave it empty to use your salon colour from Salon Central.
 
+= The form is too long =
+Choose the Grid layout under Settings → Salon Central Booking → Layout. Service categories then show as tiles in a few columns instead of one row each. Per block: the block's sidebar → Layout. Shortcode: [salon_central_booking layout="grid"]
+
 = The form is cut off before the page has loaded =
 It resizes itself once it loads. To change the starting height: [salon_central_booking height="1100"]
 
 == Changelog ==
+
+= 1.3.0 =
+* Settings page shows desktop and mobile previews side by side, updating live as you change the layout or colour.
+
+= 1.2.0 =
+* Layout option: List (default) or Grid — service categories as tiles for a much shorter form.
 
 = 1.1.0 =
 * Button colour option (settings page, block sidebar, shortcode color="").

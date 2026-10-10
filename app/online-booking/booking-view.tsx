@@ -428,6 +428,9 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
     ? (remoteSettings?.appearance as { accent?: string } | undefined)?.accent
     : (settingsStore.appearance as { accent?: string }).accent;
 
+  // ?layout=grid — service categories as tiles instead of a long list (WordPress plugin option).
+  const gridLayout = searchParams.get("layout") === "grid";
+
   // ?accent=RRGGBB — a colour chosen in the WordPress plugin to match the
   // salon's website. Taken exactly as given, even the house purple.
   const accentParam = searchParams.get("accent");
@@ -574,6 +577,31 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
                     : <div className="svcRows">{searchMatches.map(renderServiceRow)}</div>
                 ) : serviceGroups.length === 1 ? (
                   renderGroupRows(serviceGroups[0][1])
+                ) : gridLayout ? (
+                  // Grid layout: categories as tiles, one open at a time, its services below.
+                  <>
+                    <div className="svcTiles">
+                      {serviceGroups.map(([cat, items]) => {
+                        const open = openCats.has(cat);
+                        const picked = items.filter((sv) => selectedServiceIds.includes(sv.id)).length;
+                        const from = Math.min(...items.map((sv) => sv.price || 0));
+                        return (
+                          <button key={cat} className={`svcTile ${open ? "active" : ""}`} aria-expanded={open}
+                            onClick={() => setOpenCats(open ? new Set() : new Set([cat]))}>
+                            <span className="svcGroupName">{categoryLabel(cat)}</span>
+                            <span className="svcGroupMeta">{items.length} service{items.length === 1 ? "" : "s"} · from {fmt(from)}</span>
+                            {picked > 0 && <span className="svcGroupBadge svcTileBadge">{picked}</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {serviceGroups.filter(([cat]) => openCats.has(cat)).map(([cat, items]) => (
+                      <div key={cat} className="svcTilePanel">
+                        <div className="svcTilePanelHead">{categoryLabel(cat)}</div>
+                        {renderGroupRows(items)}
+                      </div>
+                    ))}
+                  </>
                 ) : serviceGroups.map(([cat, items]) => {
                   const open = openCats.has(cat);
                   const picked = items.filter((sv) => selectedServiceIds.includes(sv.id)).length;
