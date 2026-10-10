@@ -11,6 +11,7 @@ import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { MAX_PASSWORD_LENGTH } from "@/lib/api-auth";
 import { ensureBillingTables, upsertBillingUser } from "@/lib/billing-db";
 import { PLAN_CONFIGS } from "@/lib/plan-limits";
+import { sendWelcomeEmail } from "@/lib/welcome-email";
 
 // Billing registration happens here, server-side, for the account this request
 // just created. It used to be a separate public endpoint taking any userId,
@@ -132,6 +133,10 @@ export async function POST(req: NextRequest) {
       } catch (err) {
         console.error("[auth/signup] billing registration failed:", err);
       }
+    }
+
+    if (user.role === "owner") {
+      await sendWelcomeEmail(user, { pending: user.approvalStatus !== "approved" });
     }
 
     return Response.json({

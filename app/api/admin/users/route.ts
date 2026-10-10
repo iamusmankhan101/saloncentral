@@ -7,7 +7,8 @@
  */
 
 import { NextRequest } from "next/server";
-import { getAllUsers, updateUserApprovalStatus, updateAccountFreeze, countActiveSessionsByUser, type ApprovalStatus } from "@/lib/auth-db";
+import { getAllUsers, getUserById, updateUserApprovalStatus, updateAccountFreeze, countActiveSessionsByUser, type ApprovalStatus } from "@/lib/auth-db";
+import { sendWelcomeEmail } from "@/lib/welcome-email";
 import { requireAdmin } from "@/lib/api-auth";
 import { getBillingAdminSummaries } from "@/lib/billing-db";
 
@@ -73,7 +74,12 @@ export async function PATCH(req: NextRequest) {
       return Response.json({ ok: false, error: "Invalid approval status." }, { status: 400 });
     }
 
+    const before = await getUserById(body.userId);
     const user = await updateUserApprovalStatus(body.userId, body.approvalStatus);
+    // Only on the change to approved, so re-clicking Approve doesn't send it again.
+    if (user.role === "owner" && user.approvalStatus === "approved" && before?.approvalStatus !== "approved") {
+      await sendWelcomeEmail(user, { pending: false });
+    }
     return Response.json({ ok: true, user });
   } catch (err) {
     console.error("[admin/users] Update error:", err);
