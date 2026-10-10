@@ -145,7 +145,8 @@ export async function middleware(req: NextRequest) {
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: blob: https:",
     "connect-src 'self' https://*.turso.io wss://*.turso.io https://api.resend.com https://graph.facebook.com https://api.qrserver.com https://api.wasenderapi.com",
-    "frame-src 'none'",
+    // Own pages only: the dashboard previews the salon's booking form (Account → Embed on your website).
+    "frame-src 'self'",
     EMBEDDABLE.test(pathname) ? "frame-ancestors *" : "frame-ancestors 'none'",
     "object-src 'none'",
     "base-uri 'self'",

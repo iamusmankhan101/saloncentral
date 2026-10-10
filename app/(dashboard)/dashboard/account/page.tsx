@@ -6,6 +6,7 @@ import { Banknote, Bot, Check, ChevronLeft, ChevronRight, Clock, Copy, ImageIcon
 import { useRouter } from "next/navigation";
 import { AuthUser, getCurrentUser, signOut, updateCurrentPassword, updateCurrentUser } from "@/lib/auth";
 import TwoStepSignIn from "@/components/two-step-sign-in";
+import EmbedCodeCard from "@/components/embed-code-card";
 import { saveSettings, settingsStore } from "@/lib/settings-store";
 import { DEFAULT_WEEKLY_OFF_DAYS, DEFAULT_PEAK_DAYS, DEFAULT_PEAK_DAY_MULTIPLIER } from "@/lib/attendance";
 import MobilePageHeader from "@/components/mobile-page-header";
@@ -577,6 +578,7 @@ function BookingLinkCard() {
       {message && (
         <div style={{ fontSize: 12, fontWeight: 700, marginTop: 8, color: message.ok ? "#059669" : "#dc2626" }}>{message.text}</div>
       )}
+      {!editing && <EmbedCodeCard url={url} />}
     </div>
   );
 }
