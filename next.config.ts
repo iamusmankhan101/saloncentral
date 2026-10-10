@@ -42,7 +42,7 @@ const nextConfig: NextConfig = {
 
   // The WhatsApp invoice PDF is built on the server and reads FBR's logo from
   // /public, which isn't part of a serverless function's files by default.
-  outputFileTracingIncludes: { "/api/**": ["./public/fbr-pos-logo.png"] },
+  outputFileTracingIncludes: { "/api/**": ["./public/fbr-pos-logo.png", "./public/report-logo.png"] },
 
   async headers() {
     return [

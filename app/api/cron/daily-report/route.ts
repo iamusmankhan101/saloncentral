@@ -184,6 +184,8 @@ const METHOD_LABELS: Record<string, string> = {
 
 // ─── Email builder ────────────────────────────────────────────────────────────
 
+const APP_URL = (process.env.NEXT_PUBLIC_APP_URL || "https://app.saloncentral.xyz").replace(/\/$/, "");
+
 function buildReportEmail(
   ownerName: string,
   salonName: string,
@@ -314,23 +316,34 @@ function buildReportEmail(
 <body style="margin:0;padding:24px 0;background:#f4f5f7;font-family:Arial,Helvetica,sans-serif">
   <div style="max-width:620px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e8e8f0;box-shadow:0 4px 24px rgba(0,0,0,0.07)">
 
-    <!-- Header -->
-    <div style="background:linear-gradient(135deg,#5B21B6,#9333EA);padding:28px 36px">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start">
-        <div>
-          <div style="color:#fff;font-size:24px;font-weight:900;letter-spacing:-0.5px">Salon Central</div>
-          <div style="color:rgba(255,255,255,0.75);font-size:12px;margin-top:2px">Salon Management Platform</div>
-        </div>
-        <div style="text-align:right">
-          <div style="color:rgba(255,255,255,0.85);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em">Daily Sales Report</div>
-          <div style="color:#fff;font-size:13px;font-weight:600;margin-top:4px">${fmtDate(date)}</div>
-        </div>
-      </div>
-      <div style="margin-top:20px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.2)">
-        <div style="color:rgba(255,255,255,0.75);font-size:12px">Salon</div>
-        <div style="color:#fff;font-size:18px;font-weight:800;margin-top:2px">${salonName}</div>
-      </div>
-    </div>
+    <!-- Logo bar (tables, not flex, so Outlook and Gmail lay it out the same) -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-bottom:1px solid #ece9f5">
+      <tr>
+        <td style="padding:20px 36px">
+          <img src="${APP_URL}/report-logo.png" alt="Salon Central" width="74" height="36" style="display:block;border:0;color:#7C3AED;font-size:18px;font-weight:900">
+        </td>
+        <td style="padding:20px 36px;text-align:right">
+          <span style="display:inline-block;background:#F5F3FF;color:#6D28D9;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.1em;padding:5px 10px;border-radius:999px">Daily Sales Report</span>
+          <div style="color:#4a4a6a;font-size:13px;font-weight:700;margin-top:6px">${fmtDate(date)}</div>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Hero: salon + the day's headline number -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#5B21B6;background-image:linear-gradient(135deg,#4C1D95,#8B5CF6)">
+      <tr>
+        <td style="padding:26px 36px">
+          <div style="color:rgba(255,255,255,0.7);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em">Salon</div>
+          <div style="color:#fff;font-size:22px;font-weight:800;margin-top:4px">${salonName}</div>
+          <div style="color:rgba(255,255,255,0.75);font-size:12px;margin-top:3px">Prepared for ${ownerName}</div>
+        </td>
+        <td style="padding:26px 36px;text-align:right">
+          <div style="color:rgba(255,255,255,0.7);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em">Revenue collected</div>
+          <div style="color:#fff;font-size:26px;font-weight:900;margin-top:4px;white-space:nowrap">${pkr(revenue)}</div>
+          <div style="color:rgba(255,255,255,0.75);font-size:12px;margin-top:3px">${paid.length} paid sale${paid.length !== 1 ? "s" : ""}${unpaid.length ? ` · ${unpaid.length} unpaid` : ""}</div>
+        </td>
+      </tr>
+    </table>
 
     <div style="padding:28px 36px">
 
