@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ArrowRight, Eye, EyeOff, LockKeyhole, Mail, ShieldCheck, Users } from "lucide-react";
+import { ArrowLeft, ArrowRight, Eye, EyeOff, KeyRound, LockKeyhole, Mail, ShieldCheck, Users } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
 import styles from "../auth.module.css";
 
@@ -30,6 +30,23 @@ function safeNextPath(): string | null {
   return next && next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\") ? next : null;
 }
 
+type SignedInUser = { id: string } & Record<string, unknown>;
+type TwoFactorStep = { challengeId: string; method: "email" | "totp"; emailHint?: string };
+
+/** Last step of every sign-in path: cache the user and load the dashboard. */
+function finishSignIn(user: SignedInUser) {
+  localStorage.setItem("werzio_auth_session", user.id);
+  localStorage.setItem(`werzio_user_cache_${user.id}`, JSON.stringify(user));
+  // Hard navigation, not router.replace: the dashboard is gated by an
+  // httpOnly cookie checked in middleware.ts, and Next's client router
+  // cache can still be holding the pre-login "redirected to /sign-in"
+  // result for /dashboard from earlier in the session. A soft nav can
+  // silently reuse that stale result; a full document load (same as a
+  // manual refresh, which is why that "fixes" it) re-runs middleware
+  // against the cookie that was just set.
+  window.location.href = safeNextPath() ?? "/dashboard";
+}
+
 export default function SignInPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -40,6 +57,9 @@ export default function SignInPage() {
   const [submitting, setSubmitting] = useState(false);
   const [verifiedMessage, setVerifiedMessage] = useState(false);
   const [portal, setPortal] = useState<"admin" | "staff">("admin");
+  const [twoFactor, setTwoFactor] = useState<TwoFactorStep | null>(null);
+  const [code, setCode] = useState("");
+  const [notice, setNotice] = useState("");
 
   useEffect(() => {
     report("page_loaded");
@@ -61,12 +81,16 @@ export default function SignInPage() {
       // Arriving from the attendance QR — that's always a staff login.
       if (safeNextPath()?.startsWith("/checkin/")) setPortal("staff");
       if (params.get("verified") === "true") setVerifiedMessage(true);
+      // Arriving from Google sign-in: the password-free first step is done, the code step is next.
+      const challenge = params.get("challenge");
+      if (challenge) setTwoFactor({ challengeId: challenge, method: params.get("method") === "totp" ? "totp" : "email" });
 
       const oauthErr = params.get("error");
       if (oauthErr === "google_cancelled") setError("Google sign-in was cancelled.");
       else if (oauthErr === "account_pending") setError("Your account has been created and is waiting for admin approval.");
       else if (oauthErr === "account_rejected") setError("Your account request was not approved. Please contact Salon Central support.");
       else if (oauthErr === "account_frozen") setError("Your account has been frozen by Salon Central. Please contact support to resolve this.");
+      else if (oauthErr === "twofa_failed") setError("We couldn't send your sign-in code. Please try again.");
       else if (oauthErr === "google_unverified_email") setError("Your Google account's email isn't verified. Verify it with Google, or sign in with your password.");
       else if (oauthErr) setError("Google sign-in failed. Please try again.");
       else if (params.get("expired") === "1") setError("Your session expired. Please sign in again to keep your data syncing.");
@@ -95,7 +119,7 @@ export default function SignInPage() {
       signal: controller.signal,
     })
       .then(async res => {
-        const data = await res.json().catch(() => ({ ok: false, error: `Server error (${res.status}). Please try again.` })) as { ok: boolean; error?: string; retryAfter?: number; user?: { id: string } & Record<string, unknown> };
+        const data = await res.json().catch(() => ({ ok: false, error: `Server error (${res.status}). Please try again.` })) as { ok: boolean; error?: string; retryAfter?: number; user?: SignedInUser; twoFactor?: TwoFactorStep };
         if (!data.ok) {
           report("error", email, `${res.status}: ${data.error ?? ""}`);
           if (res.status === 429) {
@@ -111,17 +135,15 @@ export default function SignInPage() {
           setSubmitting(false);
           return;
         }
+        if (data.twoFactor) {
+          report("2fa_step", email, data.twoFactor.method);
+          setTwoFactor(data.twoFactor);
+          setPassword("");
+          setSubmitting(false);
+          return;
+        }
         report("success", email);
-        localStorage.setItem("werzio_auth_session", data.user!.id);
-        localStorage.setItem(`werzio_user_cache_${data.user!.id}`, JSON.stringify(data.user));
-        // Hard navigation, not router.replace: the dashboard is gated by an
-        // httpOnly cookie checked in middleware.ts, and Next's client router
-        // cache can still be holding the pre-login "redirected to /sign-in"
-        // result for /dashboard from earlier in the session. A soft nav can
-        // silently reuse that stale result; a full document load (same as a
-        // manual refresh, which is why that "fixes" it) re-runs middleware
-        // against the cookie that was just set.
-        window.location.href = safeNextPath() ?? "/dashboard";
+        finishSignIn(data.user!);
       })
       .catch(err => {
         console.error("[sign-in] Error:", err);
@@ -135,6 +157,55 @@ export default function SignInPage() {
         );
       })
       .finally(() => window.clearTimeout(timeout));
+  }
+
+  async function submitCode() {
+    if (!twoFactor || submitting) return;
+    if (code.replace(/\D/g, "").length !== 6) { setError("Enter the 6-digit code."); return; }
+    setError(""); setNotice(""); setSubmitting(true);
+    try {
+      const res = await fetch("/api/auth/2fa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "verify", challengeId: twoFactor.challengeId, code }),
+      });
+      const data = await res.json().catch(() => ({ ok: false, error: "Server error. Please try again." })) as { ok: boolean; error?: string; user?: SignedInUser };
+      if (!data.ok || !data.user) {
+        setError(data.error || "That code isn't right.");
+        setCode("");
+        // An expired or used-up sign-in has to start again from the password.
+        if (/sign in again/i.test(data.error ?? "")) setTwoFactor(null);
+        setSubmitting(false);
+        return;
+      }
+      report("success", email || undefined, "2fa");
+      finishSignIn(data.user);
+    } catch {
+      setError("Couldn't reach the server. Please check your internet connection and try again.");
+      setSubmitting(false);
+    }
+  }
+
+  async function resendCode() {
+    if (!twoFactor) return;
+    setError(""); setNotice("");
+    try {
+      const res = await fetch("/api/auth/2fa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "resend", challengeId: twoFactor.challengeId }),
+      });
+      const data = await res.json() as { ok: boolean; error?: string };
+      if (data.ok) setNotice("A new code is on its way.");
+      else setError(data.error || "Couldn't send a new code.");
+    } catch {
+      setError("Couldn't reach the server. Please try again.");
+    }
+  }
+
+  function backToPassword() {
+    setTwoFactor(null); setCode(""); setError(""); setNotice("");
+    window.history.replaceState(null, "", window.location.pathname);
   }
 
   return (
@@ -168,6 +239,45 @@ export default function SignInPage() {
 
         <section className={styles.formPanel}>
           <div className={styles.formCard}>
+            {twoFactor ? (
+              <>
+                <div className={styles.formHeader}>
+                  <h2 className={styles.formTitle}>Enter your code</h2>
+                  <p className={styles.formSubtitle}>
+                    {twoFactor.method === "totp"
+                      ? "Open your authenticator app and enter the 6-digit code for Salon Central."
+                      : `We emailed a 6-digit code to ${twoFactor.emailHint ?? "your email"}. It expires in 10 minutes.`}
+                  </p>
+                </div>
+                <label className={styles.field}>
+                  <span className={styles.label}>Sign-in code</span>
+                  <div className={styles.inputWrap}>
+                    <KeyRound size={16} className={styles.inputIcon} />
+                    <input className={styles.input} inputMode="numeric" autoComplete="one-time-code" maxLength={6} autoFocus
+                      placeholder="123456" value={code} style={{ letterSpacing: "0.3em", fontWeight: 700 }}
+                      onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      onKeyDown={(e) => e.key === "Enter" && submitCode()} />
+                  </div>
+                </label>
+                {notice && <div style={{ fontSize: 13, color: "#059669", fontWeight: 600, marginBottom: 12 }}>{notice}</div>}
+                {error && <div className={styles.error}>{error}</div>}
+                <button type="button" onClick={submitCode} disabled={submitting} className={styles.primaryButton}
+                  style={submitting ? { opacity: 0.5, cursor: "not-allowed" } : undefined}>
+                  {submitting ? "Checking…" : <><span>Verify &amp; sign in</span> <ArrowRight size={14} /></>}
+                </button>
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16, fontSize: 13 }}>
+                  <button type="button" onClick={backToPassword} style={{ background: "none", border: "none", color: "#77738a", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, padding: 0 }}>
+                    <ArrowLeft size={14} /> Back
+                  </button>
+                  {twoFactor.method === "email" && (
+                    <button type="button" onClick={resendCode} style={{ background: "none", border: "none", color: "#6d28d9", fontWeight: 700, cursor: "pointer", padding: 0 }}>
+                      Resend code
+                    </button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
             <div className={styles.formHeader}>
               <h2 className={styles.formTitle}>{portal === "admin" ? "Admin login" : "Staff login"}</h2>
               <p className={styles.formSubtitle}>
@@ -241,6 +351,8 @@ export default function SignInPage() {
             <p className={styles.footerText}>
               New to Salon Central? <Link href="/sign-up" className={styles.footerLink}>Create an account</Link>
             </p>
+              </>
+            )}
           </div>
         </section>
       </div>

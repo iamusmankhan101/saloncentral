@@ -8,7 +8,7 @@ import { createHmac, timingSafeEqual, createHash } from "crypto";
 
 // Resolved lazily at call time so the module can be imported during build
 // without throwing (SESSION_SECRET is only available at runtime, not build time).
-function getSecret(): string {
+export function getSecret(): string {
   const s = process.env.SESSION_SECRET;
   if (!s && process.env.NODE_ENV === "production") {
     throw new Error("SESSION_SECRET environment variable is required in production.");

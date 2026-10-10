@@ -6,6 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { needsTwoFactor, startChallenge } from "@/lib/two-factor";
 import { findOrCreateGoogleUser } from "@/lib/auth-db";
 import { createSessionToken, COOKIE_NAME, cookieOptions, tokenId } from "@/lib/session";
 import { createDbSession } from "@/lib/auth-db";
@@ -111,6 +112,23 @@ export async function GET(req: NextRequest) {
 
   if (user.role !== "admin" && user.approvalStatus !== "approved") {
     return failRedirect(req, user.approvalStatus === "rejected" ? "account_rejected" : "account_pending");
+  }
+
+  // Owners and admins confirm a code first: the sign-in page picks the challenge up from the URL.
+  if (needsTwoFactor(user)) {
+    let challenge;
+    try {
+      challenge = await startChallenge(user);
+    } catch (err) {
+      console.error("[google/callback] 2FA challenge failed:", err);
+      return failRedirect(req, "twofa_failed");
+    }
+    const dest = new URL("/sign-in", req.url);
+    dest.searchParams.set("challenge", challenge.challengeId);
+    dest.searchParams.set("method", challenge.method);
+    const res = NextResponse.redirect(dest);
+    clearOAuthCookies(res);
+    return res;
   }
 
   // Issue session (identical to email/password login path)

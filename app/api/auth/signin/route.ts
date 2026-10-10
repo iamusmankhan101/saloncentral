@@ -3,13 +3,11 @@
  * Authenticate user with rate limiting and account lockout.
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { validateCredentials } from "@/lib/auth-db";
-import { createSessionToken, COOKIE_NAME, cookieOptions, tokenId } from "@/lib/session";
-import { createDbSession } from "@/lib/auth-db";
 import { clientIp, rateLimit, rateLimitClear } from "@/lib/rate-limit";
 import { logSigninEvent } from "@/lib/signin-log";
-import { sessionDeviceFromRequest } from "@/lib/api-auth";
+import { completeSignIn, needsTwoFactor, startChallenge } from "@/lib/two-factor";
 
 const BLOCK_MS = 30 * 60 * 1000; // 30-minute lockout
 
@@ -73,36 +71,14 @@ export async function POST(req: NextRequest) {
     await rateLimitClear("signin", ip);
     await rateLimitClear("signin-email", emailKey);
 
-    const res = NextResponse.json({
-      ok: true,
-      user: {
-        id: user.id,
-        email: user.email,
-        ownerName: user.ownerName,
-        salonName: user.salonName,
-        phone: user.phone,
-        role: user.role,
-        emailVerified: user.emailVerified,
-        approvalStatus: user.approvalStatus,
-        accountFrozen: user.accountFrozen,
-        freezeReason: user.freezeReason,
-        createdAt: user.createdAt,
-        salonOwnerId: user.salonOwnerId,
-        staffId: user.staffId,
-        locationId: user.locationId,
-        permissions: user.permissions,
-      },
-    });
+    // Owners and admins confirm a code before any session exists (lib/two-factor.ts).
+    if (needsTwoFactor(user)) {
+      const twoFactor = await startChallenge(user);
+      await logSigninEvent(req, "server", "2fa_challenge", email, `method=${twoFactor.method}`);
+      return Response.json({ ok: true, twoFactor });
+    }
 
-    // Persist session in DB so it can be immediately revoked on signout
-    const token = createSessionToken(user.id);
-    const expiresAt = new Date(Date.now() + cookieOptions.maxAge * 1000);
-    await createDbSession(tokenId(token), user.id, expiresAt, sessionDeviceFromRequest(req));
-
-    // Set HTTP-only cookie — not readable by JavaScript
-    res.cookies.set(COOKIE_NAME, token, cookieOptions);
-    await logSigninEvent(req, "server", "success", email, `role=${user.role}`);
-    return res;
+    return await completeSignIn(req, user);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Authentication failed.";
     await logSigninEvent(req, "server", "failed", email, message);

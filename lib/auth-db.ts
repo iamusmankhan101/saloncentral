@@ -6,6 +6,7 @@
 import { db } from "@/lib/db";
 import type { InValue } from "@libsql/client";
 import { randomBytes, randomInt, pbkdf2Sync, timingSafeEqual } from "crypto";
+import { sendWelcomeEmail } from "@/lib/welcome-email";
 
 // ─── Password hashing ─────────────────────────────────────────────────────────
 
@@ -64,6 +65,10 @@ async function ensureAuthTablesUncached(): Promise<void> {
   await db.execute("ALTER TABLE users ADD COLUMN approval_status TEXT NOT NULL DEFAULT 'approved'").catch(() => {});
   await db.execute("ALTER TABLE users ADD COLUMN account_frozen INTEGER NOT NULL DEFAULT 0").catch(() => {});
   await db.execute("ALTER TABLE users ADD COLUMN freeze_reason TEXT").catch(() => {});
+  // Two-step sign-in (lib/two-factor.ts): method, and the authenticator secret (encrypted) once set up.
+  await db.execute("ALTER TABLE users ADD COLUMN twofa_method TEXT NOT NULL DEFAULT 'email'").catch(() => {});
+  await db.execute("ALTER TABLE users ADD COLUMN totp_secret TEXT").catch(() => {});
+  await db.execute("ALTER TABLE users ADD COLUMN totp_pending TEXT").catch(() => {});
 
   // Create index for faster email lookups
   await db.execute(`
@@ -348,7 +353,11 @@ export async function resetUserPassword(id: string): Promise<string> {
 
   const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
   const password = Array.from({ length: 12 }, () => alphabet[randomInt(alphabet.length)]).join("");
-  await db.execute({ sql: "UPDATE users SET password = ? WHERE id = ?", args: [hashPassword(password), id] });
+  // Also back to emailed sign-in codes: a reset is usually a locked-out owner, often with a lost phone.
+  await db.execute({
+    sql: "UPDATE users SET password = ?, twofa_method = 'email', totp_secret = NULL, totp_pending = NULL WHERE id = ?",
+    args: [hashPassword(password), id],
+  });
   await revokeAllSessionsForUser(id);
   return password;
 }
@@ -624,6 +633,8 @@ export async function findOrCreateGoogleUser(profile: {
 
   const user = await getUserById(id);
   if (!user) throw new Error("Failed to create Google user");
+  // Same "sign-up received" email as the sign-up form sends.
+  await sendWelcomeEmail(user, { pending: true });
   return withoutPassword(user);
 }
 
