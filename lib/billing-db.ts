@@ -69,6 +69,9 @@ export async function ensureBillingTables(): Promise<void> {
       FOREIGN KEY (user_id) REFERENCES billing_users(id)
     )
   `);
+  // A salon's invoices (newest first), and the billing cron's "unpaid/overdue and due" sweep.
+  await db.execute("CREATE INDEX IF NOT EXISTS idx_billing_invoices_user ON billing_invoices(user_id, period_start)").catch(() => {});
+  await db.execute("CREATE INDEX IF NOT EXISTS idx_billing_invoices_status_due ON billing_invoices(status, due_date)").catch(() => {});
 
   await db.execute(`
     CREATE TABLE IF NOT EXISTS billing_run_log (

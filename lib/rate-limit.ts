@@ -55,7 +55,11 @@ function ensureTable() {
       blocked_until INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (bucket, key)
     )
-  `).catch((err) => { tableReady = null; throw err; });
+  `)
+    // Stale-row clean-up (DELETE … WHERE window_start < ?).
+    .then(() => db.execute("CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON rate_limits(window_start)").catch(() => {}))
+    .then(() => undefined)
+    .catch((err) => { tableReady = null; throw err; });
   return tableReady;
 }
 

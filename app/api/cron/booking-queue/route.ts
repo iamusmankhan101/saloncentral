@@ -179,6 +179,9 @@ async function ensureTables() {
       PRIMARY KEY (user_id, invoice_id)
     )
   `);
+  // The cron's "pending and due, oldest first" queries (getDueItems / getDuePosReceipts).
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_wa_booking_queue_due ON wa_booking_send_queue(status, scheduled_at)`).catch(() => {});
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_wa_pos_receipt_queue_due ON wa_pos_receipt_queue(status, scheduled_at)`).catch(() => {});
 }
 
 type QueueKind = "confirmation" | "groupalert" | "followup" | "cancellation" | "reminder" | "birthday" | "winback" | "lowstock" | "manual" | "aftercare";

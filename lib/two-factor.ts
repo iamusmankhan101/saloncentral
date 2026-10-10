@@ -50,6 +50,7 @@ function ensureChallengesTable(): Promise<void> {
       sends      INTEGER NOT NULL DEFAULT 1,
       expires_at TEXT NOT NULL
     )`);
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_twofa_challenges_expires ON twofa_challenges(expires_at)").catch(() => {});
   })().catch((err) => { challengesReady = null; throw err; });
   return challengesReady;
 }

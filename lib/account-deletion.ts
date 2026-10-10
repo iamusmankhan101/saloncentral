@@ -9,10 +9,6 @@
 import { db } from "@/lib/db";
 import { snapshotFullDatabase, snapshotSalonDataForOwner } from "@/lib/data-backup";
 
-function escapeLike(value: string): string {
-  return value.replace(/[\\%_]/g, (c) => "\\" + c);
-}
-
 // Relational tables (lib/db-schema.ts) scoped by a plain `user_id` column.
 const OWNER_SCOPED_TABLES = [
   "appointments", "clients", "staff", "services", "products", "invoices",
@@ -79,8 +75,9 @@ export async function deleteSalonAccount(ownerId: string): Promise<DeleteAccount
   // Generic key-value blob store — entities are keyed `${ownerId}` or
   // `${ownerId}_...` (e.g. `${ownerId}_settings`, `${ownerId}_main_clients`).
   await db.execute({
-    sql: "DELETE FROM salon_data WHERE entity = ? OR entity LIKE ? ESCAPE '\\'",
-    args: [ownerId, escapeLike(ownerId) + "\\_%"],
+    // Key range for the `${ownerId}_` prefix ('`' follows '_'): uses the primary key, unlike LIKE.
+    sql: "DELETE FROM salon_data WHERE entity = ? OR (entity >= ? AND entity < ?)",
+    args: [ownerId, `${ownerId}_`, `${ownerId}\``],
   }).catch(() => {});
 
   await db.execute({ sql: "DELETE FROM billing_invoices WHERE user_id = ?", args: [ownerId] }).catch(() => {});

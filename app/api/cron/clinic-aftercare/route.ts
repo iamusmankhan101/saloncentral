@@ -133,7 +133,7 @@ export async function GET(req: NextRequest) {
   if (!authorized(req)) return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   try {
     await ensureWinbackTables(); // creates wa_booking_send_queue if this deployment hasn't yet
-    const rows = await db.execute("SELECT entity, data FROM salon_data WHERE entity LIKE '%_settings'");
+    const rows = await db.execute("SELECT s.entity, s.data FROM users u JOIN salon_data s ON s.entity = u.id || '_settings'");
     let salons = 0;
     let queued = 0;
     for (const row of rows.rows) {

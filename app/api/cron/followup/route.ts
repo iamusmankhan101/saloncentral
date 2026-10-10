@@ -293,8 +293,10 @@ async function runFollowupCron() {
   let scheduleDelayMs = 0;
 
   // Get all users with followup enabled
+  // Settings live at `${userId}_settings` (app/api/settings/route.ts): one primary-key
+  // lookup per account rather than a LIKE that reads every row of salon_data.
   const settingsRows = await db.execute(
-    "SELECT entity, data FROM salon_data WHERE entity LIKE '%_settings'"
+    "SELECT s.entity, s.data FROM users u JOIN salon_data s ON s.entity = u.id || '_settings'"
   );
 
   for (const row of settingsRows.rows) {

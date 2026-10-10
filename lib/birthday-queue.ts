@@ -65,6 +65,8 @@ export async function ensureBirthdayTables() {
     )
   `);
   await db.execute(`ALTER TABLE birthday_message_queue ADD COLUMN opted_in INTEGER NOT NULL DEFAULT 1`).catch(() => {});
+  // The send cron's "pending and due" query.
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_birthday_queue_due ON birthday_message_queue(status, scheduled_at)`).catch(() => {});
   // wa_birthday_settings and wa_message_logs created by their own routes on first use
 }
 
@@ -146,7 +148,7 @@ async function getAllBirthdayUsers(): Promise<BirthdayUser[]> {
   try {
     // Pull all settings rows — entity format is "{userId}_settings"
     const result = await db.execute(
-      "SELECT entity, data FROM salon_data WHERE entity LIKE '%_settings'",
+      "SELECT s.entity, s.data FROM users u JOIN salon_data s ON s.entity = u.id || '_settings'",
     );
     for (const row of result.rows) {
       try {

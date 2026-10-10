@@ -99,6 +99,7 @@ export async function ensureSalonDataBackupTable(): Promise<void> {
   }
   await db.execute(`CREATE INDEX IF NOT EXISTS idx_salon_data_backups_user_created ON salon_data_backups (user_id, created_at DESC)`).catch(() => {});
   await db.execute(`CREATE INDEX IF NOT EXISTS idx_salon_data_backups_entity_created ON salon_data_backups (entity, created_at DESC)`).catch(() => {});
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_salon_data_backups_reason_created ON salon_data_backups (reason, created_at)`).catch(() => {});
 }
 
 function quoteSqlIdentifier(identifier: string): string {
@@ -235,8 +236,10 @@ export async function snapshotFullDatabase(reason: BackupReason = "manual-snapsh
 export async function snapshotSalonDataForOwner(userId: string, reason: BackupReason = "before-account-delete"): Promise<{ backupsCreated: number }> {
   await ensureSalonDataBackupTable();
   const rows = await db.execute({
-    sql: "SELECT entity, data, updated_at FROM salon_data WHERE entity = ? OR entity LIKE ? ESCAPE '\\'",
-    args: [userId, userId.replace(/[\\%_]/g, (c) => "\\" + c) + "\\_%"],
+    // Keys are `${userId}` or `${userId}_…`; '`' is the character after '_', so the
+    // range is exactly the `${userId}_` prefix — and, unlike LIKE, it uses the primary key.
+    sql: "SELECT entity, data, updated_at FROM salon_data WHERE entity = ? OR (entity >= ? AND entity < ?)",
+    args: [userId, `${userId}_`, `${userId}\``],
   });
   let backupsCreated = 0;
   for (const row of rows.rows) {
@@ -320,6 +323,7 @@ export async function ensureSalonBackupBundleTable(): Promise<void> {
     )
   `);
   await db.execute(`CREATE INDEX IF NOT EXISTS idx_salon_backup_bundles_user_created ON salon_backup_bundles (user_id, created_at DESC)`).catch(() => {});
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_salon_backup_bundles_reason_created ON salon_backup_bundles (reason, created_at)`).catch(() => {});
 }
 
 async function insertBundle(userId: string, entities: BundleEntity[], reason: BackupReason): Promise<string> {

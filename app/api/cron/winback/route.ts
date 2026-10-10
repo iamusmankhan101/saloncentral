@@ -22,7 +22,7 @@ function authorized(req: NextRequest): boolean {
 
 async function runWinbackCron() {
   const settingsRows = await db.execute(
-    "SELECT entity, data FROM salon_data WHERE entity LIKE '%_settings'",
+    "SELECT s.entity, s.data FROM users u JOIN salon_data s ON s.entity = u.id || '_settings'",
   );
 
   let salons = 0;

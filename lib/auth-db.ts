@@ -80,6 +80,9 @@ async function ensureAuthTablesUncached(): Promise<void> {
   await db.execute(`
     CREATE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id)
   `).catch(() => {});
+
+  // Staff logins are looked up by their salon (and staff record).
+  await db.execute("CREATE INDEX IF NOT EXISTS idx_users_salon_owner ON users(salon_owner_id, staff_id)").catch(() => {});
 }
 
 export async function ensureAuthTables(): Promise<void> {
@@ -444,6 +447,8 @@ async function ensureSessionsTableUncached(): Promise<void> {
     await db.execute(`ALTER TABLE sessions ADD COLUMN ${col}`).catch(() => {});
   }
   await db.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)").catch(() => {});
+  // Expired-session clean-up.
+  await db.execute("CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)").catch(() => {});
 }
 
 async function ensureSessionsTable(): Promise<void> {
