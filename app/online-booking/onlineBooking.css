@@ -406,6 +406,16 @@ html:has(.pageWrapper), body:has(.pageWrapper) { background: #f6f5f9; }
 .paySpin { animation: paySpin 0.9s linear infinite; }
 @keyframes paySpin { to { transform: rotate(360deg); } }
 
-/* Embedded in a salon's website: size to the content, not the frame (the host
-   page sets the frame's height from it — a min-height of 100vh would only grow). */
+/* Embedded in a salon's website (WordPress plugin): just the booking card.
+   The site has its own header, so the salon banner goes, the page turns
+   transparent to sit on the site's background, and the card fills the frame.
+   The frame's height comes from the content (the host page sets it), so no
+   100vh minimum — that would only ever grow. */
+html[data-embedded], html[data-embedded] body, html[data-embedded] .pageWrapper { background: transparent; }
 html[data-embedded] .pageWrapper { min-height: 0; }
+html[data-embedded] .bkHero { display: none; }
+html[data-embedded] .bookingSection { padding: 2px 2px 8px; }
+html[data-embedded] .bookingCard {
+  margin-top: 0; max-width: none;
+  box-shadow: none; border: 1px solid #ece9f5;
+}

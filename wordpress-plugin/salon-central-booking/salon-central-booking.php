@@ -3,7 +3,7 @@
  * Plugin Name:       Salon Central Booking
  * Plugin URI:        https://saloncentral.xyz
  * Description:       Adds your Salon Central online booking form to any page with the Salon Central Booking block or the [salon_central_booking] shortcode. Bookings go straight into your Salon Central dashboard.
- * Version:           1.0.0
+ * Version:           1.1.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Salon Central
@@ -17,6 +17,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 define( 'SCB_OPTION', 'salon_central_booking_url' );
+define( 'SCB_COLOR_OPTION', 'salon_central_booking_color' );
 
 /**
  * The salon's booking link, from the shortcode's url="" or the settings page.
@@ -28,13 +29,31 @@ function scb_booking_url( $override = '' ) {
 	return $url;
 }
 
+/** A #RRGGBB colour, or '' (meaning: use the salon's own colour from Salon Central). */
+function scb_clean_color( $color ) {
+	$color = trim( (string) $color );
+	return preg_match( '/^#[0-9a-fA-F]{6}$/', $color ) ? strtolower( $color ) : '';
+}
+
+/** The button colour: the shortcode's/block's color="" if set, else the settings page's. */
+function scb_color( $override = '' ) {
+	$color = scb_clean_color( $override );
+	return $color ? $color : scb_clean_color( get_option( SCB_COLOR_OPTION, '' ) );
+}
+
+/** The link the frame loads: the booking link, plus the button colour when one is chosen. */
+function scb_frame_url( $url, $color ) {
+	return $color ? add_query_arg( 'accent', substr( $color, 1 ), $url ) : $url;
+}
+
 /**
  * [salon_central_booking] — optional attributes:
  *   url="https://app.saloncentral.xyz/book/your-salon"  (overrides the saved link)
+ *   color="#b45309"                                      (button colour, overrides the saved one)
  *   height="900"                                         (starting height in px, before it auto-fits)
  */
 function scb_shortcode( $atts ) {
-	$atts = shortcode_atts( array( 'url' => '', 'height' => '900' ), $atts, 'salon_central_booking' );
+	$atts = shortcode_atts( array( 'url' => '', 'color' => '', 'height' => '900' ), $atts, 'salon_central_booking' );
 	$url  = scb_booking_url( $atts['url'] );
 
 	if ( ! $url ) {
@@ -52,7 +71,7 @@ function scb_shortcode( $atts ) {
 
 	return sprintf(
 		'<div class="scb-wrap"><iframe class="scb-frame" src="%1$s" title="%2$s" loading="lazy" style="width:100%%;height:%3$dpx;border:0;display:block;" allow="clipboard-write"></iframe></div>',
-		esc_url( $url ),
+		esc_url( scb_frame_url( $url, scb_color( $atts['color'] ) ) ),
 		esc_attr__( 'Book an appointment', 'salon-central-booking' ),
 		$height
 	);
@@ -115,7 +134,7 @@ function scb_register_block() {
     icon: "calendar-alt",
     category: "widgets",
     keywords: ["booking", "appointment", "salon"],
-    attributes: { url: { type: "string", default: "" } },
+    attributes: { url: { type: "string", default: "" }, color: { type: "string", default: "" } },
     supports: { html: false, align: ["wide", "full"] },
     edit: function (props) {
       var blockProps = blockEditor.useBlockProps({
@@ -130,10 +149,20 @@ function scb_register_block() {
               value: props.attributes.url,
               onChange: function (url) { props.setAttributes({ url: url }); }
             })
+          ),
+          el(components.PanelBody, { title: __("Button colour", "salon-central-booking") },
+            el("p", { style: { fontSize: "12px", color: "#757575", marginTop: 0 } },
+              __("Clear it to use the colour from Settings → Salon Central Booking (or the salon's own).", "salon-central-booking")),
+            el(components.ColorPalette, {
+              value: props.attributes.color || undefined,
+              clearable: true,
+              onChange: function (color) { props.setAttributes({ color: color || "" }); }
+            })
           )
         ),
         el("div", { style: { fontSize: "28px" } }, "📅"),
         el("strong", null, "Salon Central Booking"),
+        props.attributes.color && el("span", { style: { display: "inline-block", width: "12px", height: "12px", borderRadius: "50%", background: props.attributes.color, marginLeft: "8px", verticalAlign: "middle" } }),
         el("div", { style: { fontSize: "13px", marginTop: "6px", color: "#6b6b8a" } },
           props.attributes.url || __("Your booking form appears here on the live page.", "salon-central-booking"))
       );
@@ -147,9 +176,17 @@ JS
 		'salon-central/booking',
 		array(
 			'editor_script'   => 'scb-block-editor',
-			'attributes'      => array( 'url' => array( 'type' => 'string', 'default' => '' ) ),
+			'attributes'      => array(
+				'url'   => array( 'type' => 'string', 'default' => '' ),
+				'color' => array( 'type' => 'string', 'default' => '' ),
+			),
 			'render_callback' => function ( $attributes ) {
-				return scb_shortcode( array( 'url' => isset( $attributes['url'] ) ? $attributes['url'] : '' ) );
+				return scb_shortcode(
+					array(
+						'url'   => isset( $attributes['url'] ) ? $attributes['url'] : '',
+						'color' => isset( $attributes['color'] ) ? $attributes['color'] : '',
+					)
+				);
 			},
 		)
 	);
@@ -170,6 +207,30 @@ function scb_register_setting() {
 	);
 }
 add_action( 'admin_init', 'scb_register_setting' );
+
+function scb_register_color_setting() {
+	register_setting(
+		'scb_settings',
+		SCB_COLOR_OPTION,
+		array(
+			'type'              => 'string',
+			'sanitize_callback' => 'scb_clean_color',
+			'default'           => '',
+		)
+	);
+}
+add_action( 'admin_init', 'scb_register_color_setting' );
+
+/** WordPress's own colour picker, on this plugin's settings page only. */
+function scb_admin_assets( $hook ) {
+	if ( 'settings_page_salon-central-booking' !== $hook ) {
+		return;
+	}
+	wp_enqueue_style( 'wp-color-picker' );
+	wp_enqueue_script( 'wp-color-picker' );
+	wp_add_inline_script( 'wp-color-picker', 'jQuery(function ($) { $(".scb-color").wpColorPicker(); });' );
+}
+add_action( 'admin_enqueue_scripts', 'scb_admin_assets' );
 
 function scb_sanitize_url( $value ) {
 	$url = scb_booking_url( $value );
@@ -211,6 +272,14 @@ function scb_render_settings_page() {
 						<p class="description"><?php esc_html_e( 'Find it in your Salon Central dashboard under Account → Online Booking Link, and copy it here.', 'salon-central-booking' ); ?></p>
 					</td>
 				</tr>
+				<tr>
+					<th scope="row"><label for="scb-color"><?php esc_html_e( 'Button colour', 'salon-central-booking' ); ?></label></th>
+					<td>
+						<input id="scb-color" type="text" class="scb-color" name="<?php echo esc_attr( SCB_COLOR_OPTION ); ?>"
+							value="<?php echo esc_attr( scb_clean_color( get_option( SCB_COLOR_OPTION, '' ) ) ); ?>" data-default-color="" />
+						<p class="description"><?php esc_html_e( 'Colour for buttons, selected items and the step bar — pick one that matches your website. Leave empty (Clear) to use your salon colour from Salon Central.', 'salon-central-booking' ); ?></p>
+					</td>
+				</tr>
 			</table>
 			<?php submit_button(); ?>
 		</form>
@@ -221,7 +290,7 @@ function scb_render_settings_page() {
 
 		<?php if ( $url ) : ?>
 			<h2><?php esc_html_e( 'Preview', 'salon-central-booking' ); ?></h2>
-			<iframe src="<?php echo esc_url( $url ); ?>" title="<?php esc_attr_e( 'Booking form preview', 'salon-central-booking' ); ?>"
+			<iframe src="<?php echo esc_url( scb_frame_url( $url, scb_color() ) ); ?>" title="<?php esc_attr_e( 'Booking form preview', 'salon-central-booking' ); ?>"
 				style="width:100%;max-width:520px;height:640px;border:1px solid #dcdcde;border-radius:8px;background:#fff;"></iframe>
 		<?php endif; ?>
 	</div>

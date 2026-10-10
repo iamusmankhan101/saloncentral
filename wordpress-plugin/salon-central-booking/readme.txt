@@ -4,7 +4,7 @@ Tags: booking, appointments, salon, spa, beauty
 Requires at least: 5.8
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 1.0.0
+Stable tag: 1.1.0
 License: GPLv2 or later
 
 Show your Salon Central online booking form on your website. Bookings go straight into your Salon Central dashboard.
@@ -26,10 +26,17 @@ The form always matches your Salon Central settings — change a price or add a 
 = Can I use a different link on one page? =
 Yes. In the block's sidebar, fill in "Different link for this block". With the shortcode: [salon_central_booking url="https://app.saloncentral.xyz/book/other-branch"]
 
+= Can I change the button colour? =
+Yes. Settings → Salon Central Booking → Button colour sets it for every form. A single block can have its own colour in the block's sidebar, or with the shortcode: [salon_central_booking color="#b45309"]. Leave it empty to use your salon colour from Salon Central.
+
 = The form is cut off before the page has loaded =
 It resizes itself once it loads. To change the starting height: [salon_central_booking height="1100"]
 
 == Changelog ==
+
+= 1.1.0 =
+* Button colour option (settings page, block sidebar, shortcode color="").
+* The embedded form shows just the booking card, without the salon banner.
 
 = 1.0.0 =
 * First release.

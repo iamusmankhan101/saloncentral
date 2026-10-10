@@ -21,7 +21,7 @@ import { fmtCurrency as fmt } from "@/lib/format";
 import { enqueueWhatsAppConfirmation, normalizePhone } from "@/lib/whatsapp-scheduler";
 import { getDefaultLocationId } from "@/lib/locations";
 import { busySlots, isSlotFree, resourcesFree, type BusySlot } from "@/lib/availability";
-import { resolveSalonTheme, type SalonTheme } from "@/lib/salon-theme";
+import { buildTheme, resolveSalonTheme, type SalonTheme } from "@/lib/salon-theme";
 import { categoryLabel, groupByCategory, groupBySubcategory } from "@/lib/service-groups";
 
 /** How far ahead the date row reaches. */
@@ -428,15 +428,21 @@ function OnlineBookingInner({ salonIdOverride }: { salonIdOverride?: string }) {
     ? (remoteSettings?.appearance as { accent?: string } | undefined)?.accent
     : (settingsStore.appearance as { accent?: string }).accent;
 
-  // The salon's own colour — the one it picked, else its logo's, else the
-  // house purple — same rule as the client app (lib/salon-theme.ts).
+  // ?accent=RRGGBB — a colour chosen in the WordPress plugin to match the
+  // salon's website. Taken exactly as given, even the house purple.
+  const accentParam = searchParams.get("accent");
+  const linkAccent = accentParam && /^#?[0-9a-f]{6}$/i.test(accentParam) ? `#${accentParam.replace("#", "")}` : null;
+
+  // Otherwise the salon's own colour — the one it picked, else its logo's, else
+  // the house purple — same rule as the client app (lib/salon-theme.ts).
   useEffect(() => {
     if (!loaded) return;
+    if (linkAccent) { setTheme(buildTheme(linkAccent)); return; }
     let cancelled = false;
     resolveSalonTheme({ chosenAccent: salonAccent, logo: salonLogo })
       .then((t) => { if (!cancelled) setTheme(t); });
     return () => { cancelled = true; };
-  }, [loaded, salonAccent, salonLogo]);
+  }, [loaded, linkAccent, salonAccent, salonLogo]);
 
   // Embedded in a salon's own website (WordPress plugin): tell the host page how tall
   // the form is, so its frame fits without an inner scrollbar, and when the step changes,
