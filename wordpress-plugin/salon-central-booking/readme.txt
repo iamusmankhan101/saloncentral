@@ -4,7 +4,7 @@ Tags: booking, appointments, salon, spa, beauty
 Requires at least: 5.8
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 1.3.0
+Stable tag: 1.4.0
 License: GPLv2 or later
 
 Show your Salon Central online booking form on your website. Bookings go straight into your Salon Central dashboard.
@@ -36,6 +36,11 @@ Choose the Grid layout under Settings → Salon Central Booking → Layout. Serv
 It resizes itself once it loads. To change the starting height: [salon_central_booking height="1100"]
 
 == Changelog ==
+
+= 1.4.0 =
+* Security: only Salon Central booking links (https://app.saloncentral.xyz/book/…) are accepted, so the block and shortcode can't be used to show other websites.
+* Security: the form runs in a restricted (sandboxed) frame that can't navigate or take over your page; size messages are validated.
+* Deleting the plugin now removes all of its saved settings.
 
 = 1.3.0 =
 * Settings page shows desktop and mobile previews side by side, updating live as you change the layout or colour.

@@ -3,7 +3,7 @@
  * Plugin Name:       Salon Central Booking
  * Plugin URI:        https://saloncentral.xyz
  * Description:       Adds your Salon Central online booking form to any page with the Salon Central Booking block or the [salon_central_booking] shortcode. Bookings go straight into your Salon Central dashboard.
- * Version:           1.3.0
+ * Version:           1.4.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Salon Central
@@ -19,15 +19,32 @@ if ( ! defined( 'ABSPATH' ) ) {
 define( 'SCB_OPTION', 'salon_central_booking_url' );
 define( 'SCB_COLOR_OPTION', 'salon_central_booking_color' );
 define( 'SCB_LAYOUT_OPTION', 'salon_central_booking_layout' );
+define( 'SCB_VERSION', '1.4.0' );
+// The only site the form may load from. Links anywhere else are refused, so the
+// block/shortcode can't be used to frame other websites on the salon's pages.
+define( 'SCB_APP_HOST', 'app.saloncentral.xyz' );
 
 /**
- * The salon's booking link, from the shortcode's url="" or the settings page.
- * Only https links are accepted.
+ * A Salon Central booking link (https://app.saloncentral.xyz/book/... or
+ * /online-booking?salon=...), or '' for anything else.
  */
-function scb_booking_url( $override = '' ) {
-	$url = $override ? $override : get_option( SCB_OPTION, '' );
+function scb_clean_booking_url( $url ) {
 	$url = esc_url_raw( trim( (string) $url ), array( 'https' ) );
-	return $url;
+	if ( ! $url ) {
+		return '';
+	}
+	$parts = wp_parse_url( $url );
+	$host  = isset( $parts['host'] ) ? strtolower( $parts['host'] ) : '';
+	$path  = isset( $parts['path'] ) ? $parts['path'] : '';
+	$ok    = SCB_APP_HOST === $host
+		&& empty( $parts['user'] ) && empty( $parts['pass'] ) && empty( $parts['port'] )
+		&& ( preg_match( '#^/book/[A-Za-z0-9_-]+/?$#', $path ) || preg_match( '#^/online-booking/?$#', $path ) );
+	return $ok ? $url : '';
+}
+
+/** The salon's booking link, from the shortcode's/block's url="" or the settings page. */
+function scb_booking_url( $override = '' ) {
+	return scb_clean_booking_url( $override ? $override : get_option( SCB_OPTION, '' ) );
 }
 
 /** A #RRGGBB colour, or '' (meaning: use the salon's own colour from Salon Central). */
@@ -85,10 +102,14 @@ function scb_shortcode( $atts ) {
 	}
 
 	wp_enqueue_script( 'salon-central-booking' );
-	$height = max( 300, absint( $atts['height'] ) );
+	$height = min( 5000, max( 300, absint( $atts['height'] ) ) );
 
+	// sandbox: the form can run and open new tabs (e.g. directions), but can't
+	// navigate or take over the salon's page. referrerpolicy keeps page paths private.
 	return sprintf(
-		'<div class="scb-wrap"><iframe class="scb-frame" src="%1$s" title="%2$s" loading="lazy" style="width:100%%;height:%3$dpx;border:0;display:block;" allow="clipboard-write"></iframe></div>',
+		'<div class="scb-wrap"><iframe class="scb-frame" src="%1$s" title="%2$s" loading="lazy" style="width:100%%;height:%3$dpx;border:0;display:block;"'
+			. ' sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"'
+			. ' referrerpolicy="strict-origin-when-cross-origin" allow="clipboard-write"></iframe></div>',
 		esc_url( scb_frame_url( $url, scb_color( $atts['color'] ), scb_layout( $atts['layout'] ) ) ),
 		esc_attr__( 'Book an appointment', 'salon-central-booking' ),
 		$height
@@ -102,7 +123,7 @@ add_shortcode( 'salon_central_booking', 'scb_shortcode' );
  * Messages are only accepted from the frame's own page.
  */
 function scb_register_script() {
-	wp_register_script( 'salon-central-booking', false, array(), '1.0.0', true );
+	wp_register_script( 'salon-central-booking', false, array(), SCB_VERSION, true );
 	wp_add_inline_script(
 		'salon-central-booking',
 		<<<'JS'
@@ -114,9 +135,10 @@ function scb_register_script() {
     for (var i = 0; i < frames.length; i++) {
       var frame = frames[i];
       if (frame.contentWindow !== event.source) continue;
-      if (new URL(frame.src).origin !== event.origin) return;
-      if (data.type === "salon-central:height" && data.height > 0) {
-        frame.style.height = Math.ceil(data.height) + "px";
+      if (event.origin !== "https://app.saloncentral.xyz" || new URL(frame.src).origin !== event.origin) return;
+      var height = Number(data.height);
+      if (data.type === "salon-central:height" && isFinite(height) && height > 0) {
+        frame.style.height = Math.min(Math.ceil(height), 20000) + "px";
       } else if (data.type === "salon-central:step" && data.step !== 1) {
         var top = frame.getBoundingClientRect().top;
         if (top < 0) window.scrollBy({ top: top - 20, behavior: "smooth" });
@@ -139,7 +161,7 @@ function scb_register_block() {
 	if ( ! function_exists( 'register_block_type' ) ) {
 		return;
 	}
-	wp_register_script( 'scb-block-editor', false, array( 'wp-blocks', 'wp-element', 'wp-components', 'wp-block-editor', 'wp-i18n' ), '1.0.0', true );
+	wp_register_script( 'scb-block-editor', false, array( 'wp-blocks', 'wp-element', 'wp-components', 'wp-block-editor', 'wp-i18n' ), SCB_VERSION, true );
 	wp_add_inline_script(
 		'scb-block-editor',
 		<<<'JS'
@@ -163,7 +185,7 @@ function scb_register_block() {
           el(components.PanelBody, { title: __("Booking link", "salon-central-booking") },
             el(components.TextControl, {
               label: __("Different link for this block (optional)", "salon-central-booking"),
-              help: __("Leave empty to use the link from Settings → Salon Central Booking.", "salon-central-booking"),
+              help: __("Leave empty to use the link from Settings → Salon Central Booking. Only Salon Central booking links (https://app.saloncentral.xyz/book/…) work.", "salon-central-booking"),
               value: props.attributes.url,
               onChange: function (url) { props.setAttributes({ url: url }); }
             })
@@ -285,7 +307,9 @@ jQuery(function ($) {
   function previewSrc(color) {
     var url;
     try { url = new URL($("#scb-url").val().trim()); } catch (e) { return ""; }
-    if (url.protocol !== "https:") return "";
+    // Same rule as scb_clean_booking_url(): Salon Central booking links only.
+    if (url.protocol !== "https:" || url.host !== "app.saloncentral.xyz" || url.username || url.password) return "";
+    if (!/^\/(book\/[A-Za-z0-9_-]+\/?|online-booking\/?)$/.test(url.pathname)) return "";
     var c = color !== undefined ? color : $("#scb-color").val();
     if (/^#[0-9a-f]{6}$/i.test(c)) url.searchParams.set("accent", c.slice(1).toLowerCase());
     if ($("input[name='salon_central_booking_layout']:checked").val() === "grid") url.searchParams.set("layout", "grid");
@@ -328,7 +352,7 @@ add_action( 'admin_enqueue_scripts', 'scb_admin_assets' );
 function scb_sanitize_url( $value ) {
 	$url = scb_booking_url( $value );
 	if ( $value && ! $url ) {
-		add_settings_error( SCB_OPTION, 'scb_bad_url', __( 'Please paste your full booking link, starting with https://', 'salon-central-booking' ) );
+		add_settings_error( SCB_OPTION, 'scb_bad_url', __( 'That isn\'t a Salon Central booking link. Copy it from your Salon Central dashboard (Account → Online Booking Link) — it looks like https://app.saloncentral.xyz/book/your-salon', 'salon-central-booking' ) );
 	}
 	return $url;
 }
@@ -403,7 +427,7 @@ function scb_render_settings_page() {
 					<div class="scb-browser">
 						<div class="scb-bar"><i></i><i></i><i></i></div>
 						<div class="scb-viewport">
-							<iframe class="scb-preview-frame" src="<?php echo esc_url( $preview ); ?>" title="<?php esc_attr_e( 'Desktop preview', 'salon-central-booking' ); ?>"></iframe>
+							<iframe class="scb-preview-frame" sandbox="allow-scripts allow-same-origin allow-forms" referrerpolicy="strict-origin-when-cross-origin" src="<?php echo esc_url( $preview ); ?>" title="<?php esc_attr_e( 'Desktop preview', 'salon-central-booking' ); ?>"></iframe>
 						</div>
 					</div>
 				</figure>
@@ -411,7 +435,7 @@ function scb_render_settings_page() {
 					<figcaption><?php esc_html_e( 'Mobile', 'salon-central-booking' ); ?></figcaption>
 					<div class="scb-phone">
 						<div class="scb-viewport">
-							<iframe class="scb-preview-frame" src="<?php echo esc_url( $preview ); ?>" title="<?php esc_attr_e( 'Mobile preview', 'salon-central-booking' ); ?>"></iframe>
+							<iframe class="scb-preview-frame" sandbox="allow-scripts allow-same-origin allow-forms" referrerpolicy="strict-origin-when-cross-origin" src="<?php echo esc_url( $preview ); ?>" title="<?php esc_attr_e( 'Mobile preview', 'salon-central-booking' ); ?>"></iframe>
 						</div>
 					</div>
 				</figure>
