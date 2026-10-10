@@ -62,6 +62,8 @@ interface AccountUserRow {
   invoiceDueDate: string | null;
   invoiceId: string | null;
   activeDevices: number;
+  /** Two-step sign-in — owners and admins only, null for other roles. */
+  twoFactor: { enabled: boolean; method: "email" | "totp" } | null;
   createdAt: string;
 }
 
@@ -1646,6 +1648,24 @@ function UsersPanel() {
     }
   }
 
+  async function updateTwoFactor(userId: string, enabled: boolean) {
+    setUpdatingApproval(userId);
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, action: enabled ? "twofa-on" : "twofa-off" }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || "Could not change two-step sign-in.");
+      setRows((prev) => prev.map((row) => row.id === userId && row.twoFactor ? { ...row, twoFactor: { ...row.twoFactor, enabled } } : row));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Could not change two-step sign-in.");
+    } finally {
+      setUpdatingApproval(null);
+    }
+  }
+
   async function updateFreeze(userId: string, frozen: boolean, reason?: string): Promise<boolean> {
     setUpdatingApproval(userId);
     try {
@@ -1909,6 +1929,19 @@ function UsersPanel() {
                     <button onClick={() => updateApproval(row.id, "rejected")} disabled={updatingApproval === row.id}
                       style={{ padding: "7px 10px", borderRadius: 8, border: "1px solid #fecaca", background: "#fef2f2", color: "#dc2626", fontSize: 11, fontWeight: 800, cursor: updatingApproval === row.id ? "not-allowed" : "pointer" }}>
                       Disapprove
+                    </button>
+                  )}
+                  {row.role === "owner" && row.twoFactor && (
+                    <button onClick={() => updateTwoFactor(row.id, !row.twoFactor!.enabled)} disabled={updatingApproval === row.id}
+                      title={row.twoFactor.enabled
+                        ? `Two-step sign-in is on (${row.twoFactor.method === "totp" ? "authenticator app" : "email code"}) — click to turn off`
+                        : "Two-step sign-in is off — click to turn on"}
+                      style={{ padding: "7px 10px", borderRadius: 8, fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", gap: 4,
+                        border: row.twoFactor.enabled ? "1px solid #ddd6fe" : "1px solid #e4e4ee",
+                        background: row.twoFactor.enabled ? "#f5f3ff" : "#fff",
+                        color: row.twoFactor.enabled ? "#6d28d9" : "#9898b0",
+                        cursor: updatingApproval === row.id ? "not-allowed" : "pointer" }}>
+                      {row.twoFactor.enabled ? <Lock size={12} /> : <LockOpen size={12} />} 2FA {row.twoFactor.enabled ? "On" : "Off"}
                     </button>
                   )}
                   {row.role !== "admin" && (

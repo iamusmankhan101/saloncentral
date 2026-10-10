@@ -9,6 +9,7 @@
 import { NextRequest } from "next/server";
 import { getAllUsers, getUserById, updateUserApprovalStatus, updateAccountFreeze, resetUserPassword, countActiveSessionsByUser, type ApprovalStatus } from "@/lib/auth-db";
 import { sendWelcomeEmail } from "@/lib/welcome-email";
+import { canUseTwoFactor, getAllTwoFactorStatuses, setTwoFactorEnabled } from "@/lib/two-factor";
 import { requireAdmin } from "@/lib/api-auth";
 import { getBillingAdminSummaries } from "@/lib/billing-db";
 
@@ -20,9 +21,10 @@ export async function GET(req: NextRequest) {
   try {
     const users = await getAllUsers();
     const ownerIds = users.filter((user) => user.role === "owner").map((user) => user.id);
-    const [billingSummaries, deviceCounts] = await Promise.all([
+    const [billingSummaries, deviceCounts, twoFactor] = await Promise.all([
       getBillingAdminSummaries(ownerIds),
       countActiveSessionsByUser(),
+      getAllTwoFactorStatuses(),
     ]);
     const enrichedUsers = users.map((user) => {
       const billing = user.role === "owner" ? billingSummaries.get(user.id) : null;
@@ -34,6 +36,8 @@ export async function GET(req: NextRequest) {
         invoiceDueDate: billing?.invoiceDueDate ?? null,
         invoiceId: billing?.invoiceId ?? null,
         activeDevices: deviceCounts.get(user.id) ?? 0,
+        // Only owners and admins use two-step sign-in; null for everyone else.
+        twoFactor: canUseTwoFactor(user) ? twoFactor.get(user.id) ?? { enabled: true, method: "email" } : null,
       };
     });
     return Response.json({ ok: true, users: enrichedUsers });
@@ -48,7 +52,7 @@ export async function PATCH(req: NextRequest) {
     return Response.json({ ok: false, error: "Unauthorized" }, { status: 403 });
   }
 
-  let body: { userId?: string; approvalStatus?: ApprovalStatus; action?: "freeze" | "unfreeze" | "reset-password"; reason?: string };
+  let body: { userId?: string; approvalStatus?: ApprovalStatus; action?: "freeze" | "unfreeze" | "reset-password" | "twofa-on" | "twofa-off"; reason?: string };
   try {
     body = await req.json();
   } catch {
@@ -60,6 +64,15 @@ export async function PATCH(req: NextRequest) {
   }
 
   try {
+    if (body.action === "twofa-on" || body.action === "twofa-off") {
+      const target = await getUserById(body.userId);
+      if (!target || !canUseTwoFactor(target)) {
+        return Response.json({ ok: false, error: "Two-step sign-in only applies to salon owners and admins." }, { status: 400 });
+      }
+      await setTwoFactorEnabled(target.id, body.action === "twofa-on");
+      return Response.json({ ok: true, enabled: body.action === "twofa-on" });
+    }
+
     if (body.action === "reset-password") {
       // The plain password goes back to the admin once, in this response, and is never stored or logged.
       const password = await resetUserPassword(body.userId);
